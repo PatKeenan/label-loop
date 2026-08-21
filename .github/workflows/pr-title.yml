@@ -22,9 +22,13 @@ permissions:
   contents: read
   pull-requests: write
 
+# Serialised per PR, but NOT cancel-in-progress. A cancelled run leaves a CANCELLED check
+# that nothing supersedes — or no check at all — which is exactly what happened when a
+# rebase and a reopen landed within a second of each other. This job takes ~20s, so
+# cancelling buys nothing and costs a permanently unresolved status.
 concurrency:
   group: pr-title-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   lint-title:
