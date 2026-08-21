@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en" data-tone="light" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabelLoop — tokens.css preview (Direction: Instrument)</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  SCREEN: tokens-preview
+  ROLE:   stakeholder review only — not a product screen, never ported.
+  IMPLEMENTS: mockups/BRIEF.md "Create tokens.css FIRST and get it approved".
+  PURPOSE: render every token in tokens.css so it can be judged in a browser.
+  NOTE:   this page carries its own presentational CSS because tokens.css is
+          custom-properties-only. Every value below resolves from a token —
+          if something looks wrong here, the fix belongs in tokens.css.
+  OPEN QUESTIONS:
+   - Confidence band thresholds (0.85 / 0.60) are placeholders; product call.
+   - Licensed type pair not yet chosen; system stacks stand in.
+-->
+<style>
+  /* --- preview scaffolding only ------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--type-ui);
+    line-height: var(--leading-ui);
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: var(--space-16) var(--space-8) var(--space-20); }
+
+  .doc-head { border-bottom: var(--border-thick) solid var(--color-text); padding-bottom: var(--space-5); margin-bottom: var(--space-12); }
+  .doc-head h1 { font-size: var(--type-display); line-height: var(--leading-display); letter-spacing: var(--tracking-tight); margin: 0 0 var(--space-3); font-weight: var(--weight-semibold); }
+  .doc-head p { margin: 0 0 var(--space-2); max-width: var(--measure); font-size: var(--type-body); line-height: var(--leading-body); color: var(--color-text-muted); }
+
+  section { margin-bottom: var(--gap-section); }
+  h2 {
+    font-family: var(--font-mono); font-size: var(--type-micro); font-weight: var(--weight-regular);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-muted);
+    margin: 0 0 var(--space-4); padding-bottom: var(--space-2);
+    border-bottom: var(--border-hair) solid var(--color-line);
+  }
+  h3 {
+    font-family: var(--font-mono); font-size: var(--type-micro); font-weight: var(--weight-regular);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-faint);
+    margin: 0 0 var(--space-3);
+  }
+  .note { font-size: var(--type-data); color: var(--color-text-muted); max-width: var(--measure); line-height: var(--leading-normal); margin: 0 0 var(--space-4); }
+  code { font-family: var(--font-mono); font-size: 0.92em; color: var(--color-text); background: var(--color-sunken); padding: 1px 5px; border-radius: var(--radius-xs); }
+
+  /* --- swatches ---------------------------------------------------------- */
+  .ramp { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-6); }
+  .chipswatch { display: inline-block; width: 96px; vertical-align: top; }
+  .chipswatch i { display: block; height: 52px; border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-xs); }
+  .chipswatch b { display: block; font-family: var(--font-mono); font-size: var(--type-micro); font-weight: var(--weight-regular); margin-top: var(--space-1); color: var(--color-text); }
+  .chipswatch em { display: block; font-style: normal; font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); }
+
+  /* --- generic component styles, all token-driven ------------------------ */
+  .panel {
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+  }
+  .panel.flush { padding: 0; overflow: hidden; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-muted);
+  }
+  .title { font-size: var(--type-title); line-height: var(--leading-title); letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold); margin: 0; }
+  .display { font-size: var(--type-display); line-height: var(--leading-display); letter-spacing: var(--tracking-tight); font-weight: var(--weight-semibold); margin: 0; }
+  .body { font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); margin: 0; }
+  .data { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .num { font-family: var(--font-mono); font-size: var(--type-data); font-variant-numeric: tabular-nums; }
+
+  .mark {
+    display: inline-block;
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid;
+    border-radius: var(--radius-mark);
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .mark.success { color: var(--state-success-fg); background: var(--state-success-tint); border-color: var(--state-success-line); }
+  .mark.fail    { color: var(--state-fail-fg);    background: var(--state-fail-tint);    border-color: var(--state-fail-line); }
+  .mark.warning { color: var(--state-warning-fg); background: var(--state-warning-tint); border-color: var(--state-warning-line); }
+  .mark.info    { color: var(--state-info-fg);    background: var(--state-info-tint);    border-color: var(--state-info-line); }
+  .mark.neutral { color: var(--state-neutral-fg); background: var(--state-neutral-tint); border-color: var(--state-neutral-line); }
+
+  .btn {
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    padding: var(--pad-control-y) var(--pad-control-x);
+    border-radius: var(--radius-control);
+    border: var(--border-hair) solid var(--color-action);
+    background: var(--color-action); color: var(--color-action-text);
+    cursor: default; line-height: var(--leading-ui);
+  }
+  .btn.quiet { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn.focused { box-shadow: var(--shadow-focus); }
+
+  .field {
+    width: 100%; font-family: var(--font-ui); font-size: var(--type-ui); color: var(--color-text);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-field);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    line-height: var(--leading-normal); resize: none;
+  }
+  .quoted {
+    font-size: var(--type-body); line-height: var(--leading-body);
+    background: var(--color-raised);
+    border-left: var(--border-thick) solid var(--color-line-strong);
+    border-radius: 0 var(--radius-field) var(--radius-field) 0;
+    padding: var(--pad-field-y) var(--pad-field-x);
+    max-width: var(--measure);
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-family: var(--font-mono); font-weight: var(--weight-regular);
+    font-size: var(--type-micro); letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); background: var(--color-raised);
+    padding: var(--pad-cell-y) var(--pad-cell-x);
+    border-bottom: var(--border-hair) solid var(--color-line-strong);
+    white-space: nowrap;
+  }
+  td {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-cell-y) var(--pad-cell-x); height: var(--row-min);
+    border-bottom: var(--border-hair) solid var(--color-line);
+    color: var(--color-text); vertical-align: middle;
+  }
+  td.prose { font-family: var(--font-ui); font-size: var(--type-body); }
+  td.r, th.r { text-align: right; }
+  tr:last-child td { border-bottom: 0; }
+
+  .conf { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .track { display: inline-block; width: 52px; height: 4px; background: var(--confidence-track); border-radius: var(--radius-pill); overflow: hidden; }
+  .track i { display: block; height: 100%; }
+
+  .stack { display: flex; flex-direction: column; gap: var(--gap-stack); }
+  .inline { display: flex; flex-wrap: wrap; gap: var(--gap-inline); align-items: center; }
+  .tight { display: flex; flex-wrap: wrap; gap: var(--gap-tight); align-items: center; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); align-items: start; }
+  @media (max-width: 960px) { .two { grid-template-columns: 1fr; } }
+
+  /* a scoped block gets its own bg so tone changes are visible */
+  .scope { background: var(--color-bg); color: var(--color-text); padding: var(--space-6); border-radius: var(--radius-panel); border: var(--border-hair) solid var(--color-line); }
+
+  .spacebar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-1); }
+  .spacebar i { display: block; height: 12px; background: var(--chart-subject); border-radius: var(--radius-xs); }
+  .spacebar b { font-family: var(--font-mono); font-size: var(--type-micro); font-weight: var(--weight-regular); width: 112px; color: var(--color-text-muted); }
+
+  .radiibox { width: 92px; height: 60px; background: var(--color-sunken); border: var(--border-hair) solid var(--color-line-strong); display: flex; align-items: flex-end; justify-content: center; }
+  .radiibox span { font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-muted); padding-bottom: 4px; }
+
+  .shadowbox { width: 168px; height: 76px; background: var(--color-surface); border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-panel); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-muted); text-align: center; }
+
+  .rules li { font-size: var(--type-data); line-height: var(--leading-normal); margin-bottom: var(--space-2); color: var(--color-text); }
+  .rules { padding-left: var(--space-5); max-width: var(--measure); }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <header class="doc-head">
+    <h1>tokens.css — Direction: Instrument</h1>
+    <p><strong>Chrome is achromatic; colour is data.</strong> Structure comes from one cool graphite ramp. Hue appears only where it answers a question about the data — a classification state, a judge verdict, a confidence level, a drift signal.</p>
+    <p>Annotator and console are the same palette at two settings: <code>data-tone</code> (light/dark) and <code>data-density</code> (comfortable/compact), with <code>data-surface="annotator"</code> and <code>data-surface="console"</code> as presets for the two standard pairings.</p>
+    <p>Use the preset <em>or</em> the axes, never both on one element. A light, dense console for print or screenshots is <code>data-tone="light" data-density="compact"</code> with no <code>data-surface</code> — demonstrated in §8.</p>
+  </header>
+
+  <!-- ============================ 1. PRIMITIVES ============================ -->
+  <section>
+    <h2>1 · Primitive ramps — never referenced by a screen</h2>
+    <p class="note">Screens use the semantic layer only. These exist so the semantic layer has somewhere to point.</p>
+
+    <h3>Graphite — all structure, both tones</h3>
+    <div class="ramp">
+      <div class="chipswatch"><i style="background:var(--graphite-000)"></i><b>000</b><em>#FFFFFF</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-025)"></i><b>025</b><em>#F9FAFC</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-050)"></i><b>050</b><em>#F4F6F9</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-100)"></i><b>100</b><em>#EDF0F4</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-150)"></i><b>150</b><em>#E2E7EE</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-200)"></i><b>200</b><em>#D6DCE4</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-300)"></i><b>300</b><em>#AEB7C4</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-400)"></i><b>400</b><em>#8B95A5</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-500)"></i><b>500</b><em>#5A6575</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-600)"></i><b>600</b><em>#3A4351</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-700)"></i><b>700</b><em>#2A313C</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-800)"></i><b>800</b><em>#242A34</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-850)"></i><b>850</b><em>#1D222B</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-900)"></i><b>900</b><em>#161A21</em></div>
+      <div class="chipswatch"><i style="background:var(--graphite-950)"></i><b>950</b><em>#0E1116</em></div>
+    </div>
+
+    <h3>Signal — four hues, each with a fixed meaning</h3>
+    <div class="ramp">
+      <div class="chipswatch"><i style="background:var(--teal-700)"></i><b>teal 700</b><em>agree · light fg</em></div>
+      <div class="chipswatch"><i style="background:var(--teal-600)"></i><b>teal 600</b><em>—</em></div>
+      <div class="chipswatch"><i style="background:var(--teal-500)"></i><b>teal 500</b><em>light mark</em></div>
+      <div class="chipswatch"><i style="background:var(--teal-400)"></i><b>teal 400</b><em>dark fg + mark</em></div>
+    </div>
+    <div class="ramp">
+      <div class="chipswatch"><i style="background:var(--amber-700)"></i><b>amber 700</b><em>warn · light fg</em></div>
+      <div class="chipswatch"><i style="background:var(--amber-600)"></i><b>amber 600</b><em>—</em></div>
+      <div class="chipswatch"><i style="background:var(--amber-500)"></i><b>amber 500</b><em>light mark</em></div>
+      <div class="chipswatch"><i style="background:var(--amber-400)"></i><b>amber 400</b><em>dark fg + mark</em></div>
+    </div>
+    <div class="ramp">
+      <div class="chipswatch"><i style="background:var(--red-700)"></i><b>red 700</b><em>fail · light fg</em></div>
+      <div class="chipswatch"><i style="background:var(--red-600)"></i><b>red 600</b><em>—</em></div>
+      <div class="chipswatch"><i style="background:var(--red-500)"></i><b>red 500</b><em>light mark</em></div>
+      <div class="chipswatch"><i style="background:var(--red-400)"></i><b>red 400</b><em>dark fg + mark</em></div>
+    </div>
+    <div class="ramp">
+      <div class="chipswatch"><i style="background:var(--violet-700)"></i><b>violet 700</b><em>judge · light fg</em></div>
+      <div class="chipswatch"><i style="background:var(--violet-600)"></i><b>violet 600</b><em>—</em></div>
+      <div class="chipswatch"><i style="background:var(--violet-500)"></i><b>violet 500</b><em>light mark</em></div>
+      <div class="chipswatch"><i style="background:var(--violet-400)"></i><b>violet 400</b><em>dark fg + mark</em></div>
+    </div>
+  </section>
+
+  <!-- ======================= 2. STRUCTURE SEMANTICS ======================== -->
+  <section>
+    <h2>2 · Semantic structure — same token names, both tones</h2>
+    <p class="note">A screen never writes a hex value or picks a tone-specific colour. It writes <code>var(--color-surface)</code> and the tone resolves it.</p>
+    <div class="two">
+      <div data-tone="light" class="scope">
+        <h3>data-tone="light" — annotator default</h3>
+        <div class="ramp">
+          <div class="chipswatch"><i style="background:var(--color-bg)"></i><b>bg</b><em>page</em></div>
+          <div class="chipswatch"><i style="background:var(--color-surface)"></i><b>surface</b><em>panel</em></div>
+          <div class="chipswatch"><i style="background:var(--color-raised)"></i><b>raised</b><em>quoted/thead</em></div>
+          <div class="chipswatch"><i style="background:var(--color-sunken)"></i><b>sunken</b><em>track/well</em></div>
+        </div>
+        <div class="ramp">
+          <div class="chipswatch"><i style="background:var(--color-line-soft)"></i><b>line-soft</b><em>inner rule</em></div>
+          <div class="chipswatch"><i style="background:var(--color-line)"></i><b>line</b><em>default</em></div>
+          <div class="chipswatch"><i style="background:var(--color-line-strong)"></i><b>line-strong</b><em>section rule</em></div>
+        </div>
+        <div class="stack" style="gap:var(--space-2)">
+          <div style="color:var(--color-text)">--color-text · primary reading text</div>
+          <div style="color:var(--color-text-muted)">--color-text-muted · labels and units</div>
+          <div style="color:var(--color-text-faint)">--color-text-faint · placeholder, disabled</div>
+        </div>
+      </div>
+
+      <div data-tone="dark" class="scope">
+        <h3>data-tone="dark" — console default</h3>
+        <div class="ramp">
+          <div class="chipswatch"><i style="background:var(--color-bg)"></i><b>bg</b><em>page</em></div>
+          <div class="chipswatch"><i style="background:var(--color-surface)"></i><b>surface</b><em>panel</em></div>
+          <div class="chipswatch"><i style="background:var(--color-raised)"></i><b>raised</b><em>quoted/thead</em></div>
+          <div class="chipswatch"><i style="background:var(--color-sunken)"></i><b>sunken</b><em>track/well</em></div>
+        </div>
+        <div class="ramp">
+          <div class="chipswatch"><i style="background:var(--color-line-soft)"></i><b>line-soft</b><em>inner rule</em></div>
+          <div class="chipswatch"><i style="background:var(--color-line)"></i><b>line</b><em>default</em></div>
+          <div class="chipswatch"><i style="background:var(--color-line-strong)"></i><b>line-strong</b><em>section rule</em></div>
+        </div>
+        <div class="stack" style="gap:var(--space-2)">
+          <div style="color:var(--color-text)">--color-text · primary reading text</div>
+          <div style="color:var(--color-text-muted)">--color-text-muted · labels and units</div>
+          <div style="color:var(--color-text-faint)">--color-text-faint · placeholder, disabled</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 3. CLASSIFICATION STATES ========================= -->
+  <section>
+    <h2>3 · Classification states — five names, four tokens each</h2>
+    <p class="note">
+      <code>-fg</code> text · <code>-tint</code> fill · <code>-line</code> outline · <code>-mark</code> pure data colour for bars and charts.
+      Marks are square-cornered and outlined, not soft pills — a state is something <em>recorded</em>, not something decorative.
+    </p>
+    <div class="two">
+      <div data-tone="light" class="scope">
+        <h3>light</h3>
+        <div class="inline" style="margin-bottom:var(--space-4)">
+          <span class="mark success">agreed</span>
+          <span class="mark fail">disagreed</span>
+          <span class="mark warning">low conf</span>
+          <span class="mark info">judge v3</span>
+          <span class="mark neutral">unreviewed</span>
+        </div>
+        <div class="tight">
+          <span class="chipswatch"><i style="background:var(--state-success-mark)"></i><b>success</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-fail-mark)"></i><b>fail</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-warning-mark)"></i><b>warning</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-info-mark)"></i><b>info</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-neutral-mark)"></i><b>neutral</b><em>mark</em></span>
+        </div>
+      </div>
+      <div data-tone="dark" class="scope">
+        <h3>dark</h3>
+        <div class="inline" style="margin-bottom:var(--space-4)">
+          <span class="mark success">agreed</span>
+          <span class="mark fail">disagreed</span>
+          <span class="mark warning">low conf</span>
+          <span class="mark info">judge v3</span>
+          <span class="mark neutral">unreviewed</span>
+        </div>
+        <div class="tight">
+          <span class="chipswatch"><i style="background:var(--state-success-mark)"></i><b>success</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-fail-mark)"></i><b>fail</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-warning-mark)"></i><b>warning</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-info-mark)"></i><b>info</b><em>mark</em></span>
+          <span class="chipswatch"><i style="background:var(--state-neutral-mark)"></i><b>neutral</b><em>mark</em></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================== 4. JUDGE + CONFIDENCE + AUTHORSHIP ================= -->
+  <section>
+    <h2>4 · Judge agreement, authorship, confidence</h2>
+    <p class="note">Judge tokens are aliases of the state tokens — “the judge agrees” and “this eval passed” look identical because they mean the same thing. <code>--judge-owned-*</code> vs <code>--human-owned-*</code> is load-bearing: violet means a machine wrote it, graphite means a person did.</p>
+    <div class="two">
+      <div data-tone="light" class="scope">
+        <h3>light</h3>
+        <div class="inline" style="margin-bottom:var(--space-4)">
+          <span class="mark success">judge agrees</span>
+          <span class="mark fail">judge differs</span>
+          <span class="mark neutral">judge pending</span>
+          <span class="mark info">judge-labelled</span>
+          <span class="mark warning">honeypot</span>
+        </div>
+        <div class="stack" style="gap:var(--space-2)">
+          <div class="conf"><span class="track"><i style="width:94%;background:var(--confidence-high)"></i></span><span class="num">0.94</span> <span class="data">high</span></div>
+          <div class="conf"><span class="track"><i style="width:71%;background:var(--confidence-medium)"></i></span><span class="num">0.71</span> <span class="data">medium</span></div>
+          <div class="conf"><span class="track"><i style="width:52%;background:var(--confidence-low)"></i></span><span class="num">0.52</span> <span class="data">low</span></div>
+        </div>
+      </div>
+      <div data-tone="dark" class="scope">
+        <h3>dark</h3>
+        <div class="inline" style="margin-bottom:var(--space-4)">
+          <span class="mark success">judge agrees</span>
+          <span class="mark fail">judge differs</span>
+          <span class="mark neutral">judge pending</span>
+          <span class="mark info">judge-labelled</span>
+          <span class="mark warning">honeypot</span>
+        </div>
+        <div class="stack" style="gap:var(--space-2)">
+          <div class="conf"><span class="track"><i style="width:94%;background:var(--confidence-high)"></i></span><span class="num">0.94</span> <span class="data">high</span></div>
+          <div class="conf"><span class="track"><i style="width:71%;background:var(--confidence-medium)"></i></span><span class="num">0.71</span> <span class="data">medium</span></div>
+          <div class="conf"><span class="track"><i style="width:52%;background:var(--confidence-low)"></i></span><span class="num">0.52</span> <span class="data">low</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= 5. TYPE ROLES =============================== -->
+  <section>
+    <h2>5 · Type roles — the annotator/console split is mostly this</h2>
+    <p class="note">Six roles, rebound per density. A screen writes <code>var(--type-body)</code> and never a pixel value.</p>
+    <div class="two">
+      <div data-density="comfortable" class="scope">
+        <h3>comfortable · annotator</h3>
+        <div class="stack">
+          <div><span class="eyebrow">--type-display · 30px</span><div class="display">0.71 agreement</div></div>
+          <div><span class="eyebrow">--type-title · 21px</span><div class="title">Judge drifted on 41 traces</div></div>
+          <div><span class="eyebrow">--type-body · 17px</span><p class="body">Human agreement fell after prompt v4 shipped. Nineteen of the disagreements cluster under ambiguous-bug-vs-question.</p></div>
+          <div><span class="eyebrow">--type-ui · 15px</span><div class="inline"><button class="btn">Yes, that's right</button><button class="btn quiet">No, change it</button></div></div>
+          <div><span class="eyebrow">--type-data · 13px</span><div class="data">trace_01J9F2QK · $0.0042 · 412 ms · claude-opus-5</div></div>
+          <div><span class="eyebrow">--type-micro · 11px — this label is the specimen</span></div>
+        </div>
+      </div>
+      <div data-density="compact" class="scope">
+        <h3>compact · console</h3>
+        <div class="stack">
+          <div><span class="eyebrow">--type-display · 24px</span><div class="display">0.71 agreement</div></div>
+          <div><span class="eyebrow">--type-title · 17px</span><div class="title">Judge drifted on 41 traces</div></div>
+          <div><span class="eyebrow">--type-body · 13px</span><p class="body">Human agreement fell after prompt v4 shipped. Nineteen of the disagreements cluster under ambiguous-bug-vs-question.</p></div>
+          <div><span class="eyebrow">--type-ui · 13px</span><div class="inline"><button class="btn">Yes, that's right</button><button class="btn quiet">No, change it</button></div></div>
+          <div><span class="eyebrow">--type-data · 12px</span><div class="data">trace_01J9F2QK · $0.0042 · 412 ms · claude-opus-5</div></div>
+          <div><span class="eyebrow">--type-micro · 10px — this label is the specimen</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== 6. SPACING SCALE ============================= -->
+  <section>
+    <h2>6 · Spacing scale — 4px grid, no exceptions</h2>
+    <div class="spacebar"><b>--space-1 · 4</b><i style="width:var(--space-1)"></i></div>
+    <div class="spacebar"><b>--space-2 · 8</b><i style="width:var(--space-2)"></i></div>
+    <div class="spacebar"><b>--space-3 · 12</b><i style="width:var(--space-3)"></i></div>
+    <div class="spacebar"><b>--space-4 · 16</b><i style="width:var(--space-4)"></i></div>
+    <div class="spacebar"><b>--space-5 · 20</b><i style="width:var(--space-5)"></i></div>
+    <div class="spacebar"><b>--space-6 · 24</b><i style="width:var(--space-6)"></i></div>
+    <div class="spacebar"><b>--space-7 · 28</b><i style="width:var(--space-7)"></i></div>
+    <div class="spacebar"><b>--space-8 · 32</b><i style="width:var(--space-8)"></i></div>
+    <div class="spacebar"><b>--space-10 · 40</b><i style="width:var(--space-10)"></i></div>
+    <div class="spacebar"><b>--space-12 · 48</b><i style="width:var(--space-12)"></i></div>
+    <div class="spacebar"><b>--space-16 · 64</b><i style="width:var(--space-16)"></i></div>
+    <div class="spacebar"><b>--space-20 · 80</b><i style="width:var(--space-20)"></i></div>
+
+    <h3 style="margin-top:var(--space-6)">Density-bound padding — same tokens, two settings</h3>
+    <div class="two">
+      <div data-density="comfortable" class="scope">
+        <h3>comfortable</h3>
+        <div class="spacebar"><b>--pad-panel-x · 32</b><i style="width:var(--pad-panel-x)"></i></div>
+        <div class="spacebar"><b>--pad-control-x · 20</b><i style="width:var(--pad-control-x)"></i></div>
+        <div class="spacebar"><b>--pad-cell-y · 12</b><i style="width:var(--pad-cell-y)"></i></div>
+        <div class="spacebar"><b>--row-min · 44</b><i style="width:var(--row-min)"></i></div>
+        <div class="spacebar"><b>--gap-stack · 20</b><i style="width:var(--gap-stack)"></i></div>
+      </div>
+      <div data-density="compact" class="scope">
+        <h3>compact</h3>
+        <div class="spacebar"><b>--pad-panel-x · 16</b><i style="width:var(--pad-panel-x)"></i></div>
+        <div class="spacebar"><b>--pad-control-x · 12</b><i style="width:var(--pad-control-x)"></i></div>
+        <div class="spacebar"><b>--pad-cell-y · 6</b><i style="width:var(--pad-cell-y)"></i></div>
+        <div class="spacebar"><b>--row-min · 30</b><i style="width:var(--row-min)"></i></div>
+        <div class="spacebar"><b>--gap-stack · 12</b><i style="width:var(--gap-stack)"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 7. RADII / BORDERS / SHADOWS ===================== -->
+  <section>
+    <h2>7 · Radii, borders, shadows</h2>
+    <h3>Radius primitives</h3>
+    <div class="inline" style="margin-bottom:var(--space-6)">
+      <div class="radiibox" style="border-radius:var(--radius-0)"><span>0</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-xs)"><span>xs · 2</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-sm)"><span>sm · 4</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-md)"><span>md · 6</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-lg)"><span>lg · 8</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-xl)"><span>xl · 12</span></div>
+      <div class="radiibox" style="border-radius:var(--radius-pill)"><span>pill</span></div>
+    </div>
+
+    <h3>Borders — elevation is drawn with these, not with shadows</h3>
+    <div class="stack" style="gap:var(--space-3); margin-bottom:var(--space-6); max-width:var(--measure)">
+      <div style="border-top:var(--border-hair) solid var(--color-line-soft); padding-top:var(--space-2)"><span class="data">--border-hair + --color-line-soft · dividers inside a panel</span></div>
+      <div style="border-top:var(--border-hair) solid var(--color-line); padding-top:var(--space-2)"><span class="data">--border-hair + --color-line · table rows, panel edges</span></div>
+      <div style="border-top:var(--border-hair) solid var(--color-line-strong); padding-top:var(--space-2)"><span class="data">--border-hair + --color-line-strong · under a table head</span></div>
+      <div style="border-top:var(--border-thick) solid var(--color-text); padding-top:var(--space-2)"><span class="data">--border-thick + --color-text · section rule, top of page</span></div>
+    </div>
+
+    <h3>Shadows — only for things that genuinely float</h3>
+    <div class="inline">
+      <div class="shadowbox" style="box-shadow:var(--shadow-none)">--shadow-none<br>panels, cards, tables</div>
+      <div class="shadowbox" style="box-shadow:var(--shadow-raise)">--shadow-raise<br>≤1 per screen</div>
+      <div class="shadowbox" style="box-shadow:var(--shadow-overlay)">--shadow-overlay<br>menus, modals, toasts</div>
+      <div class="shadowbox"><button class="btn focused">--shadow-focus</button></div>
+    </div>
+  </section>
+
+  <!-- ================= 8. THE TWO SURFACES, SAME COMPONENTS ================ -->
+  <section>
+    <h2>8 · Both surfaces — identical markup, different preset</h2>
+    <p class="note">The two blocks below use the <em>same</em> classes and the same content. The only difference is <code>data-surface</code> on the wrapper. This is the whole annotator/console argument in one comparison.</p>
+
+    <div class="two">
+      <!-- ANNOTATOR -->
+      <div data-surface="annotator" class="scope">
+        <h3>data-surface="annotator" — light + comfortable</h3>
+        <div class="panel" style="box-shadow:var(--shadow-raise)">
+          <div class="eyebrow">Item 8 of 20</div>
+          <div class="title" style="margin:var(--space-3) 0 var(--space-5)">Did we label this correctly?</div>
+          <div class="quoted">“Crash when uploading a .heic avatar larger than 8&nbsp;MB — spinner hangs, no error shown.”</div>
+          <div class="eyebrow" style="display:block;margin:var(--space-5) 0 var(--space-2)">We said</div>
+          <div class="inline"><span class="mark info">bug</span><span class="data">confidence 0.94</span></div>
+          <div class="eyebrow" style="display:block;margin:var(--space-5) 0 var(--space-2)">Anything worth noting?</div>
+          <textarea class="field" rows="3" placeholder="Optional"></textarea>
+          <div class="inline" style="margin-top:var(--space-5)">
+            <button class="btn">Yes, that's right</button>
+            <button class="btn quiet">No, change it</button>
+          </div>
+          <div class="data" style="margin-top:var(--space-5)">12 more to hit today's goal · streak 6 days</div>
+        </div>
+      </div>
+
+      <!-- CONSOLE -->
+      <div data-surface="console" class="scope">
+        <h3>data-surface="console" — dark + compact</h3>
+        <div class="panel" style="box-shadow:var(--shadow-raise)">
+          <div class="eyebrow">Item 8 of 20</div>
+          <div class="title" style="margin:var(--space-3) 0 var(--space-5)">Did we label this correctly?</div>
+          <div class="quoted">“Crash when uploading a .heic avatar larger than 8&nbsp;MB — spinner hangs, no error shown.”</div>
+          <div class="eyebrow" style="display:block;margin:var(--space-5) 0 var(--space-2)">We said</div>
+          <div class="inline"><span class="mark info">bug</span><span class="data">confidence 0.94</span></div>
+          <div class="eyebrow" style="display:block;margin:var(--space-5) 0 var(--space-2)">Anything worth noting?</div>
+          <textarea class="field" rows="3" placeholder="Optional"></textarea>
+          <div class="inline" style="margin-top:var(--space-5)">
+            <button class="btn">Yes, that's right</button>
+            <button class="btn quiet">No, change it</button>
+          </div>
+          <div class="data" style="margin-top:var(--space-5)">12 more to hit today's goal · streak 6 days</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:var(--space-8)">The same trace table at both densities</h3>
+    <div class="stack">
+      <div data-surface="console" class="scope">
+        <h3>console — the intended home for dense data</h3>
+        <div class="panel flush">
+          <table>
+            <thead><tr><th>trace</th><th>input</th><th>label</th><th>confidence</th><th>judge</th><th class="r">cost</th></tr></thead>
+            <tbody>
+              <tr><td>01J9F2QK</td><td class="prose">Crash on .heic avatar upload &gt;8MB</td><td>bug</td><td><span class="conf"><span class="track"><i style="width:94%;background:var(--confidence-high)"></i></span><span class="num">0.94</span></span></td><td><span class="mark success">agree</span></td><td class="r num">$0.0042</td></tr>
+              <tr><td>01J9F2R8</td><td class="prose">Can we get dark mode on the dashboard?</td><td>feature</td><td><span class="conf"><span class="track"><i style="width:88%;background:var(--confidence-high)"></i></span><span class="num">0.88</span></span></td><td><span class="mark success">agree</span></td><td class="r num">$0.0039</td></tr>
+              <tr><td>01J9F2SC</td><td class="prose">Is the v2 API rate limit per key or per org?</td><td>question</td><td><span class="conf"><span class="track"><i style="width:61%;background:var(--confidence-medium)"></i></span><span class="num">0.61</span></span></td><td><span class="mark fail">differ</span></td><td class="r num">$0.0044</td></tr>
+              <tr><td>01J9F2T1</td><td class="prose">Billing charged twice for August — refund?</td><td>needs-human</td><td><span class="conf"><span class="track"><i style="width:52%;background:var(--confidence-low)"></i></span><span class="num">0.52</span></span></td><td><span class="mark fail">differ</span></td><td class="r num">$0.0051</td></tr>
+              <tr><td>01J9F2TW</td><td class="prose">Docs typo in quickstart curl example</td><td>bug</td><td><span class="conf"><span class="track"><i style="width:79%;background:var(--confidence-medium)"></i></span><span class="num">0.79</span></span></td><td><span class="mark warning">honeypot</span></td><td class="r num">$0.0037</td></tr>
+              <tr><td>01J9F2UD</td><td class="prose">SDK throws on empty label_set array</td><td>bug</td><td><span class="conf"><span class="track"><i style="width:97%;background:var(--confidence-high)"></i></span><span class="num">0.97</span></span></td><td><span class="mark neutral">pending</span></td><td class="r num">$0.0040</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-tone="light" data-density="compact" class="scope">
+        <h3>tone light + density compact — the axes are independent (print / screenshot console, no data-surface)</h3>
+        <div class="panel flush">
+          <table>
+            <thead><tr><th>trace</th><th>input</th><th>label</th><th>confidence</th><th>judge</th><th class="r">cost</th></tr></thead>
+            <tbody>
+              <tr><td>01J9F2QK</td><td class="prose">Crash on .heic avatar upload &gt;8MB</td><td>bug</td><td><span class="conf"><span class="track"><i style="width:94%;background:var(--confidence-high)"></i></span><span class="num">0.94</span></span></td><td><span class="mark success">agree</span></td><td class="r num">$0.0042</td></tr>
+              <tr><td>01J9F2SC</td><td class="prose">Is the v2 API rate limit per key or per org?</td><td>question</td><td><span class="conf"><span class="track"><i style="width:61%;background:var(--confidence-medium)"></i></span><span class="num">0.61</span></span></td><td><span class="mark fail">differ</span></td><td class="r num">$0.0044</td></tr>
+              <tr><td>01J9F2TW</td><td class="prose">Docs typo in quickstart curl example</td><td>bug</td><td><span class="conf"><span class="track"><i style="width:79%;background:var(--confidence-medium)"></i></span><span class="num">0.79</span></span></td><td><span class="mark warning">honeypot</span></td><td class="r num">$0.0037</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================== 9. CHART TOKENS ============================ -->
+  <section>
+    <h2>9 · Chart tokens — series colours ARE the state marks</h2>
+    <p class="note">There is no decorative series palette. Every line in this product is a state over time. <code>--chart-baseline</code> is the frontier reference; <code>--chart-subject</code> is the thing under examination; <code>--chart-threshold</code> is an eligibility gate or cap.</p>
+    <div class="two">
+      <div data-tone="light" class="scope">
+        <h3>light</h3>
+        <div class="tight">
+          <span class="chipswatch"><i style="background:var(--chart-grid)"></i><b>grid</b><em>—</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-axis)"></i><b>axis</b><em>—</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-baseline)"></i><b>baseline</b><em>frontier</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-subject)"></i><b>subject</b><em>fine-tune</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-annotation)"></i><b>annotation</b><em>version cut</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-threshold)"></i><b>threshold</b><em>gate</em></span>
+        </div>
+      </div>
+      <div data-tone="dark" class="scope">
+        <h3>dark</h3>
+        <div class="tight">
+          <span class="chipswatch"><i style="background:var(--chart-grid)"></i><b>grid</b><em>—</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-axis)"></i><b>axis</b><em>—</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-baseline)"></i><b>baseline</b><em>frontier</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-subject)"></i><b>subject</b><em>fine-tune</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-annotation)"></i><b>annotation</b><em>version cut</em></span>
+          <span class="chipswatch"><i style="background:var(--chart-threshold)"></i><b>threshold</b><em>gate</em></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 10. RULES =============================== -->
+  <section>
+    <h2>10 · Rules this file enforces</h2>
+    <ol class="rules">
+      <li>Screens use semantic tokens only. Reaching for <code>--graphite-700</code> or <code>--teal-400</code> in a screen means a gap in tokens.css — edit tokens.css, not the screen.</li>
+      <li>No ad-hoc colour, font, spacing, or radius values anywhere. None.</li>
+      <li>Never hard-code a light or dark value. Set <code>data-tone</code> and let the tokens resolve.</li>
+      <li>A token whose value depends on tone must be declared in full inside <em>both</em> tone blocks. CSS resolves <code>var()</code> inside a custom property at the element where it is <em>declared</em>, not where it is used — so an alias parked on <code>:root</code> silently keeps its light value forever inside a dark scope.</li>
+      <li>If a colour on screen doesn't answer a question about the data, remove it. There is no brand colour.</li>
+      <li>Elevation is hairlines and one-step background shifts. A shadow means the thing genuinely floats.</li>
+      <li>Money, IDs, latencies, and token counts are mono and achromatic. Numbers earn colour only when the colour is the finding.</li>
+      <li>Judge-authored content is violet; human-authored content is graphite. That distinction is evidence, not decoration.</li>
+    </ol>
+  </section>
+
+</div>
+</body>
+</html>

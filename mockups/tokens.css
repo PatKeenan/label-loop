@@ -1,0 +1,577 @@
+/* ============================================================================
+   LabelLoop — tokens.css
+   THE LOCKED STYLE GUIDE. Single aesthetic decision point for Phase A.
+   Direction: INSTRUMENT
+   ----------------------------------------------------------------------------
+   THESIS
+   Chrome is achromatic; colour is data. Every structural surface, border, and
+   piece of body text is drawn from one cool graphite ramp. Hue appears only
+   where it carries meaning — a classification state, a judge verdict, a
+   confidence level, a drift signal. If a colour on screen does not answer a
+   question about the data, it is a bug.
+
+   Corollaries the tokens enforce:
+   - There is no brand colour. Primary buttons are graphite; nav is graphite.
+   - Elevation is drawn with hairlines and one-step background shifts, not
+     shadows. Shadows are reserved for things that genuinely float.
+   - Classification and judge states render as MARKS (square-cornered, outlined,
+     tinted) — borrowed from the Ledger direction. Not soft pills.
+
+   ----------------------------------------------------------------------------
+   HOW THE TWO SURFACES WORK  (PRODUCT.md 5.5)
+   The annotator flow and the engineer console are ONE palette at two settings.
+   Two independent axes, set with data-attributes on any container:
+
+     data-tone="light" | "dark"                 polarity of the graphite ramp
+     data-density="comfortable" | "compact"     type scale, padding, radii
+
+   Plus one preset shorthand, which is exactly the pairing of both axes:
+
+     data-surface="annotator"  ==  tone light + density comfortable
+     data-surface="console"    ==  tone dark  + density compact
+
+   USE THE PRESET OR THE AXES — NEVER BOTH ON THE SAME ELEMENT. Combining
+   data-surface with a contradicting data-tone/data-density is undefined here
+   (the blocks share specificity and the dark/compact rules are declared last,
+   so they would win). Want a light, dense console for print or screenshots?
+   Write data-tone="light" data-density="compact" and leave data-surface off.
+
+   Defaults on :root are LIGHT + COMFORTABLE. The friendlier surface is the
+   default; the console opts in.
+
+   ----------------------------------------------------------------------------
+   WHY THE TONE BLOCKS REPEAT THEMSELVES  (read before editing)
+   A custom property's var() references are resolved on the element where the
+   property is DECLARED, not where it is used. So this does NOT work:
+
+     :root               { --chart-grid: var(--color-line-soft); }
+     [data-tone="dark"]  { --color-line-soft: #242A34; }
+
+   ...because --chart-grid is resolved against :root's --color-line-soft the
+   moment it is declared; the dark override arrives too late to affect it.
+
+   --chart-grid would stay light forever inside dark scopes. Therefore every
+   token whose value depends on tone is declared IN FULL inside BOTH tone
+   blocks, pointing at primitives (which never vary) rather than at other
+   semantic tokens. The two blocks must be edited together — if you add a
+   tone-dependent token to one, add it to the other in the same commit.
+
+   Density tokens do not have this problem: they only ever point at the
+   invariant size/space/radius primitives.
+
+   ----------------------------------------------------------------------------
+   RULES OF USE (apply to every mockup screen)
+   1. Screens use SEMANTIC tokens only. Never reference a primitive ramp step
+      (--graphite-700, --teal-400) directly in a screen — if a screen needs a
+      value the semantic layer does not offer, that is a gap in this file, and
+      this file is what gets edited.
+   2. No ad-hoc colour, font, spacing, or radius values in any screen. None.
+   3. Never hard-code a light or dark value in a screen. Set the tone and let
+      the tokens resolve.
+   4. Money, IDs, counts, latencies, and token counts are MONO and achromatic.
+      Numbers earn colour only when the colour is the finding (a regression, a
+      disagreement, a saving).
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. PRIMITIVES
+   Raw values. NEVER referenced by a screen; only by the semantic layer below.
+   Nothing in this block varies by tone or density.
+   ========================================================================== */
+:root {
+
+  /* --- Structure ramp: cool and slightly blue, so the warm signal hues
+         (amber, red) read as intrusions on it. Used at both polarities. --- */
+  --graphite-000: #FFFFFF;
+  --graphite-025: #F9FAFC;
+  --graphite-050: #F4F6F9;
+  --graphite-100: #EDF0F4;
+  --graphite-150: #E2E7EE;
+  --graphite-200: #D6DCE4;
+  --graphite-300: #AEB7C4;
+  --graphite-400: #8B95A5;
+  --graphite-500: #5A6575;
+  --graphite-600: #3A4351;
+  --graphite-700: #2A313C;
+  --graphite-800: #242A34;
+  --graphite-850: #1D222B;
+  --graphite-900: #161A21;
+  --graphite-950: #0E1116;
+  --graphite-ink: #131820;   /* text on light — deeper than 950 reads on paper */
+  --graphite-mute: #6B7686;  /* muted text on light */
+  --graphite-paper: #E7EBF1; /* text on dark */
+
+  /* --- Signal ramps. Four hues, each with one fixed meaning.
+         The -rgb channel triplets exist so tints can be expressed as one
+         literal alpha per tone. They never vary, so referencing them from a
+         tone block is safe. --- */
+  --teal-700: #0B6B5A;    /* agreement / success — foreground on light */
+  --teal-600: #0F8571;
+  --teal-500: #17A98F;    /* mark on light */
+  --teal-400: #2ED3B0;    /* foreground + mark on dark */
+  --teal-rgb: 23 169 143;
+
+  --amber-700: #8A5A05;   /* warning / low confidence / honeypot */
+  --amber-600: #B0770D;
+  --amber-500: #D9941C;
+  --amber-400: #F0A93B;
+  --amber-rgb: 217 148 28;
+
+  --red-700: #A32027;     /* failure / disagreement / regression */
+  --red-600: #C92F38;
+  --red-500: #E8464F;
+  --red-400: #FF5C63;
+  --red-rgb: 232 70 79;
+
+  --violet-700: #5B3FBF;  /* judge / machine-authored / informational */
+  --violet-600: #7355E0;
+  --violet-500: #8B6DF0;
+  --violet-400: #A98BFF;
+  --violet-rgb: 139 109 240;
+
+  --slate-rgb: 122 133 149;  /* neutral / unreviewed — achromatic by design */
+
+  /* --- Type primitives.
+         One grotesque, one mono, chosen to sit at a similar x-height so
+         numeric columns and prose align optically. Mockups use system stacks;
+         production substitutes a licensed pair without touching any screen.
+         Scale is ~1.18 rounded to whole pixels — tight enough that the compact
+         end stays dense and the comfortable end never feels ceremonial.
+         ROLE tokens (§4) are what screens use; these steps are raw. --- */
+  --font-ui: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --size-10: 10px;
+  --size-11: 11px;
+  --size-12: 12px;
+  --size-13: 13px;
+  --size-14: 14px;
+  --size-15: 15px;
+  --size-17: 17px;
+  --size-21: 21px;
+  --size-24: 24px;
+  --size-30: 30px;
+  --size-36: 36px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-flat: 1.1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.4;
+  --leading-normal: 1.55;
+  --leading-loose: 1.65;
+
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-micro: 0.13em;   /* uppercase mono eyebrows and column heads only */
+
+  /* --- Space primitives. 4px grid. No screen may use a value off this scale. */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* --- Radius, border, motion, layering. --- */
+  --radius-0: 0;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  --border-hair: 1px;
+  --border-thick: 2px;
+
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --easing: cubic-bezier(0.2, 0, 0.2, 1);
+
+  --layer-base: 0;
+  --layer-sticky: 10;
+  --layer-overlay: 100;
+  --layer-toast: 200;
+
+  /* --- Tone- and density-invariant semantics. --- */
+  --shadow-none: none;
+  --radius-mark: var(--radius-xs);   /* a state mark stays square at every density */
+}
+
+
+/* ============================================================================
+   2. TONE — LIGHT   (also the :root default, and the annotator preset)
+   Everything in this block has a counterpart in the dark block below.
+   Edit them together.
+   ============================================================================
+   STRUCTURE TOKENS — what screens use for surfaces, lines, and text. All
+   achromatic. If you are reaching for one of these and wishing it were
+   coloured, you are fighting the direction.
+
+     --color-bg           the page itself
+     --color-surface      a panel or card sitting on the page
+     --color-raised       a nested block: quoted trace text, code, table head
+     --color-sunken       an inset well: progress track, empty state
+     --color-line         default hairline: table rows, panel borders
+     --color-line-soft    dividers inside a panel where the hairline is noisy
+     --color-line-strong  section rules, the underside of a table head
+     --color-text         primary reading text and numbers
+     --color-text-muted   labels, units, secondary metadata
+     --color-text-faint   placeholders, disabled, timestamps at the margin
+     --color-text-invert  text sitting ON --color-text (i.e. a primary button)
+   ========================================================================== */
+:root,
+[data-tone="light"],
+[data-surface="annotator"] {
+  --color-bg: var(--graphite-050);
+  --color-surface: var(--graphite-000);
+  --color-raised: var(--graphite-050);
+  --color-sunken: var(--graphite-100);
+
+  --color-line: var(--graphite-150);
+  --color-line-soft: var(--graphite-100);
+  --color-line-strong: var(--graphite-300);
+
+  --color-text: var(--graphite-ink);
+  --color-text-muted: var(--graphite-mute);
+  --color-text-faint: var(--graphite-400);
+  --color-text-invert: var(--graphite-000);
+
+  /* Interactive chrome — achromatic on purpose. The primary action is the
+     darkest thing on a light page (and the lightest thing on a dark one). */
+  --color-action: var(--graphite-ink);
+  --color-action-text: var(--graphite-000);
+  --color-action-hover: #000000;
+  --color-action-quiet-line: var(--graphite-300);
+  --color-focus: var(--graphite-ink);
+  --color-selection: rgb(var(--slate-rgb) / 0.18);
+
+  /* Shadows. A shadow means "this floats above the page": menus, popovers,
+     modals, toasts, drag states. Never a static card, table, or panel.
+     --shadow-raise exists for the annotator's single focused card and should
+     appear at most once per screen. */
+  --shadow-raise: 0 1px 2px rgb(19 24 32 / 0.06);
+  --shadow-overlay: 0 8px 24px rgb(19 24 32 / 0.14), 0 1px 3px rgb(19 24 32 / 0.08);
+  --shadow-focus: 0 0 0 2px var(--graphite-050), 0 0 0 4px var(--graphite-ink);
+
+  /* --------------------------------------------------------------------
+     CLASSIFICATION STATES — five names, four tokens each, not interchangeable:
+       -fg    text/icon colour, legible on --color-surface at this tone
+       -tint  fill behind a mark, or a highlighted table row
+       -line  the mark's outline
+       -mark  the pure data colour: chart series, bars, dots, sparklines.
+              Sits on its own fill, so it stays saturated at both tones.
+
+     Meaning in this product:
+       success  agreement, passing eval, met threshold, cost saving
+       fail     disagreement, failed eval, regression, revoked access
+       warning  low confidence, honeypot, drift detected, approaching cap
+       info     judge-generated, system action, model/version metadata
+       neutral  unreviewed, pending, not-yet-run, skipped
+     -------------------------------------------------------------------- */
+  --state-success-fg: var(--teal-700);
+  --state-success-mark: var(--teal-500);
+  --state-success-tint: rgb(var(--teal-rgb) / 0.10);
+  --state-success-line: rgb(var(--teal-rgb) / 0.32);
+
+  --state-fail-fg: var(--red-700);
+  --state-fail-mark: var(--red-500);
+  --state-fail-tint: rgb(var(--red-rgb) / 0.10);
+  --state-fail-line: rgb(var(--red-rgb) / 0.32);
+
+  --state-warning-fg: var(--amber-700);
+  --state-warning-mark: var(--amber-500);
+  --state-warning-tint: rgb(var(--amber-rgb) / 0.10);
+  --state-warning-line: rgb(var(--amber-rgb) / 0.32);
+
+  --state-info-fg: var(--violet-700);
+  --state-info-mark: var(--violet-500);
+  --state-info-tint: rgb(var(--violet-rgb) / 0.10);
+  --state-info-line: rgb(var(--violet-rgb) / 0.32);
+
+  --state-neutral-fg: var(--graphite-mute);
+  --state-neutral-mark: var(--graphite-400);
+  --state-neutral-tint: rgb(var(--slate-rgb) / 0.10);
+  --state-neutral-line: rgb(var(--slate-rgb) / 0.32);
+
+  /* --------------------------------------------------------------------
+     JUDGE AGREEMENT & AUTHORSHIP
+     Deliberately identical to the state colours: "the judge agrees" and "this
+     eval passed" look the same because they mean the same thing. They keep
+     separate names because they appear on nearly every screen and the intent
+     should be readable in the markup.
+
+     --judge-owned-* marks something the JUDGE authored (a suggested label, an
+     auto-score) as distinct from --human-owned-*. Violet means a machine wrote
+     it; graphite means a person did. That distinction is evidence for the
+     audit log (PRODUCT.md 5.12), not decoration.
+     -------------------------------------------------------------------- */
+  --judge-agree-fg: var(--teal-700);
+  --judge-agree-mark: var(--teal-500);
+  --judge-agree-tint: rgb(var(--teal-rgb) / 0.10);
+  --judge-agree-line: rgb(var(--teal-rgb) / 0.32);
+
+  --judge-differ-fg: var(--red-700);
+  --judge-differ-mark: var(--red-500);
+  --judge-differ-tint: rgb(var(--red-rgb) / 0.10);
+  --judge-differ-line: rgb(var(--red-rgb) / 0.32);
+
+  --judge-pending-fg: var(--graphite-mute);
+  --judge-pending-mark: var(--graphite-400);
+  --judge-pending-tint: rgb(var(--slate-rgb) / 0.10);
+  --judge-pending-line: rgb(var(--slate-rgb) / 0.32);
+
+  --judge-owned-fg: var(--violet-700);
+  --judge-owned-mark: var(--violet-500);
+  --judge-owned-tint: rgb(var(--violet-rgb) / 0.10);
+  --judge-owned-line: rgb(var(--violet-rgb) / 0.32);
+
+  --human-owned-fg: var(--graphite-ink);
+  --human-owned-mark: var(--graphite-ink);
+
+  /* Honeypot: a gold-standard trace with a known answer (PRODUCT.md 5.5).
+     Warning family, own name — it is never an error, it is a test. */
+  --honeypot-fg: var(--amber-700);
+  --honeypot-mark: var(--amber-500);
+  --honeypot-tint: rgb(var(--amber-rgb) / 0.10);
+  --honeypot-line: rgb(var(--amber-rgb) / 0.32);
+
+  /* Confidence bands. The thresholds are a product decision, not a style one;
+     these are the three colours those bands resolve to.
+     Working assumption: high >= 0.85, medium 0.60–0.85, low < 0.60. */
+  --confidence-high: var(--teal-500);
+  --confidence-medium: var(--amber-500);
+  --confidence-low: var(--red-500);
+  --confidence-track: var(--graphite-100);
+
+  /* --------------------------------------------------------------------
+     CHARTS
+     Series colours ARE the state marks. There is no decorative series
+     palette, because every line on every chart in this product is a state
+     over time — agreement rate, failure rate, cost, drift. If a chart needs a
+     sixth arbitrary colour, the chart is asking the wrong question.
+     -------------------------------------------------------------------- */
+  --chart-grid: var(--graphite-100);
+  --chart-axis: var(--graphite-300);
+  --chart-label: var(--graphite-mute);
+  --chart-baseline: var(--graphite-400);    /* the frontier-model reference line */
+  --chart-subject: var(--graphite-ink);     /* the series under examination */
+  --chart-annotation: var(--violet-500);    /* deploy markers, version cuts */
+  --chart-threshold: var(--amber-500);      /* eligibility gates, usage caps */
+}
+
+
+/* ============================================================================
+   3. TONE — DARK   (and the console preset)
+   Mirror of §2. Same token names, same order. Edit both or neither.
+   Note the signal hues step UP (500 -> 400) so they hold contrast on graphite,
+   and -fg collapses onto -mark: on a dark surface the readable colour and the
+   data colour are the same value.
+   ========================================================================== */
+[data-tone="dark"],
+[data-surface="console"] {
+  --color-bg: var(--graphite-950);
+  --color-surface: var(--graphite-900);
+  --color-raised: var(--graphite-850);
+  --color-sunken: var(--graphite-800);
+
+  --color-line: var(--graphite-700);
+  --color-line-soft: var(--graphite-800);
+  --color-line-strong: var(--graphite-600);
+
+  --color-text: var(--graphite-paper);
+  --color-text-muted: var(--graphite-400);
+  --color-text-faint: var(--graphite-500);
+  --color-text-invert: var(--graphite-950);
+
+  --color-action: var(--graphite-paper);
+  --color-action-text: var(--graphite-950);
+  --color-action-hover: var(--graphite-000);
+  --color-action-quiet-line: var(--graphite-600);
+  --color-focus: var(--graphite-paper);
+  --color-selection: rgb(var(--slate-rgb) / 0.30);
+
+  --shadow-raise: none;   /* on dark, a one-step background shift does the job */
+  --shadow-overlay: 0 10px 30px rgb(0 0 0 / 0.55), 0 1px 3px rgb(0 0 0 / 0.40);
+  --shadow-focus: 0 0 0 2px var(--graphite-950), 0 0 0 4px var(--graphite-paper);
+
+  --state-success-fg: var(--teal-400);
+  --state-success-mark: var(--teal-400);
+  --state-success-tint: rgb(var(--teal-rgb) / 0.16);
+  --state-success-line: rgb(var(--teal-rgb) / 0.45);
+
+  --state-fail-fg: var(--red-400);
+  --state-fail-mark: var(--red-400);
+  --state-fail-tint: rgb(var(--red-rgb) / 0.16);
+  --state-fail-line: rgb(var(--red-rgb) / 0.45);
+
+  --state-warning-fg: var(--amber-400);
+  --state-warning-mark: var(--amber-400);
+  --state-warning-tint: rgb(var(--amber-rgb) / 0.16);
+  --state-warning-line: rgb(var(--amber-rgb) / 0.45);
+
+  --state-info-fg: var(--violet-400);
+  --state-info-mark: var(--violet-400);
+  --state-info-tint: rgb(var(--violet-rgb) / 0.16);
+  --state-info-line: rgb(var(--violet-rgb) / 0.45);
+
+  --state-neutral-fg: var(--graphite-400);
+  --state-neutral-mark: var(--graphite-500);
+  --state-neutral-tint: rgb(var(--slate-rgb) / 0.16);
+  --state-neutral-line: rgb(var(--slate-rgb) / 0.45);
+
+  --judge-agree-fg: var(--teal-400);
+  --judge-agree-mark: var(--teal-400);
+  --judge-agree-tint: rgb(var(--teal-rgb) / 0.16);
+  --judge-agree-line: rgb(var(--teal-rgb) / 0.45);
+
+  --judge-differ-fg: var(--red-400);
+  --judge-differ-mark: var(--red-400);
+  --judge-differ-tint: rgb(var(--red-rgb) / 0.16);
+  --judge-differ-line: rgb(var(--red-rgb) / 0.45);
+
+  --judge-pending-fg: var(--graphite-400);
+  --judge-pending-mark: var(--graphite-500);
+  --judge-pending-tint: rgb(var(--slate-rgb) / 0.16);
+  --judge-pending-line: rgb(var(--slate-rgb) / 0.45);
+
+  --judge-owned-fg: var(--violet-400);
+  --judge-owned-mark: var(--violet-400);
+  --judge-owned-tint: rgb(var(--violet-rgb) / 0.16);
+  --judge-owned-line: rgb(var(--violet-rgb) / 0.45);
+
+  --human-owned-fg: var(--graphite-paper);
+  --human-owned-mark: var(--graphite-paper);
+
+  --honeypot-fg: var(--amber-400);
+  --honeypot-mark: var(--amber-400);
+  --honeypot-tint: rgb(var(--amber-rgb) / 0.16);
+  --honeypot-line: rgb(var(--amber-rgb) / 0.45);
+
+  --confidence-high: var(--teal-400);
+  --confidence-medium: var(--amber-400);
+  --confidence-low: var(--red-400);
+  --confidence-track: var(--graphite-800);
+
+  --chart-grid: var(--graphite-800);
+  --chart-axis: var(--graphite-600);
+  --chart-label: var(--graphite-400);
+  --chart-baseline: var(--graphite-500);
+  --chart-subject: var(--graphite-paper);
+  --chart-annotation: var(--violet-400);
+  --chart-threshold: var(--amber-400);
+}
+
+
+/* ============================================================================
+   4. DENSITY — COMFORTABLE   (the :root default, and the annotator preset)
+
+   TYPE ROLES. Screens use these, never the raw steps in §1. The annotator /
+   console split is largely THIS: identical role names, different bindings.
+
+     --type-display  the one big number or verdict on a screen
+     --type-title    panel and section headings
+     --type-body     reading prose — trace text, label definitions, questions
+     --type-ui       buttons, form labels, nav, tabs
+     --type-data     mono: IDs, money, latency, tokens, confidence
+     --type-micro    uppercase mono eyebrows and table column heads
+
+   DENSITY. Padding, row rhythm, radii. The console is not a different design;
+   it is these numbers turned down.
+   ========================================================================== */
+:root,
+[data-density="comfortable"],
+[data-surface="annotator"] {
+  --type-display: var(--size-30);
+  --type-title: var(--size-21);
+  --type-body: var(--size-17);
+  --type-ui: var(--size-15);
+  --type-data: var(--size-13);
+  --type-micro: var(--size-11);
+
+  --leading-display: var(--leading-flat);
+  --leading-title: var(--leading-tight);
+  --leading-body: var(--leading-loose);
+  --leading-ui: var(--leading-snug);
+
+  --measure: 62ch;    /* max reading width for body prose */
+
+  --pad-panel-y: var(--space-7);
+  --pad-panel-x: var(--space-8);
+  --pad-control-y: var(--space-3);
+  --pad-control-x: var(--space-5);
+  --pad-field-y: var(--space-3);
+  --pad-field-x: var(--space-3);
+  --pad-cell-y: var(--space-3);
+  --pad-cell-x: var(--space-3);
+  --pad-mark-y: 3px;
+  --pad-mark-x: var(--space-2);
+
+  --row-min: 44px;
+  --gap-stack: var(--space-5);
+  --gap-section: var(--space-10);
+  --gap-inline: var(--space-3);
+  --gap-tight: var(--space-2);
+
+  --radius-panel: var(--radius-lg);
+  --radius-control: var(--radius-md);
+  --radius-field: var(--radius-md);
+}
+
+
+/* ============================================================================
+   5. DENSITY — COMPACT   (and the console preset)
+   Mirror of §4.
+   ========================================================================== */
+[data-density="compact"],
+[data-surface="console"] {
+  --type-display: var(--size-24);
+  --type-title: var(--size-17);
+  --type-body: var(--size-13);
+  --type-ui: var(--size-13);
+  --type-data: var(--size-12);
+  --type-micro: var(--size-10);
+
+  --leading-display: var(--leading-flat);
+  --leading-title: var(--leading-tight);
+  --leading-body: var(--leading-snug);
+  --leading-ui: var(--leading-snug);
+
+  --measure: 80ch;
+
+  --pad-panel-y: var(--space-4);
+  --pad-panel-x: var(--space-4);
+  --pad-control-y: var(--space-2);
+  --pad-control-x: var(--space-3);
+  --pad-field-y: var(--space-2);
+  --pad-field-x: var(--space-2);
+  --pad-cell-y: 6px;
+  --pad-cell-x: var(--space-2);
+  --pad-mark-y: 2px;
+  --pad-mark-x: 6px;
+
+  --row-min: 30px;
+  --gap-stack: var(--space-3);
+  --gap-section: var(--space-6);
+  --gap-inline: var(--space-2);
+  --gap-tight: var(--space-1);
+
+  --radius-panel: var(--radius-md);
+  --radius-control: var(--radius-sm);
+  --radius-field: var(--radius-sm);
+}

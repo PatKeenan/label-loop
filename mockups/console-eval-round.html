@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 3 — GitHub issue triage — LabelLoop</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  ============================================================================
+  SCREEN:     console-eval-round                              *** PROPOSAL ***
+  ROLE:       engineer / admin (the developer's entry into the eval loop)
+  STATUS:     NOT YET IN PRODUCT.md. This screen is being used as the spec for
+              a concept the product document does not currently contain — the
+              annotation round as a frozen, versioned object. Reviewed first,
+              written into PRODUCT.md second, by explicit instruction.
+  IMPLEMENTS: would extend 5.5 (agreement), 5.6 (axial coding), 5.10
+              (dashboards); depends on nothing that does not already exist
+              except the round object itself.
+  SURFACE:    data-surface="console" — dark + compact
+  ============================================================================
+
+  WHAT THIS SCREEN IS FOR
+  The trace explorer answers "show me traces matching X". It cannot answer
+  "what is systematically wrong", because that is an aggregate question over a
+  fixed set. This is that screen: a closed round of SME annotation, measured.
+  It is the handover point where the SMEs' work becomes the developer's input
+  — the "central spot" where the two roles actually meet.
+
+  THE CONCEPT BEING PROPOSED
+
+  1. A ROUND IS FROZEN AND VERSIONED. A saved filter is not a dataset: it
+     re-runs and returns different rows tomorrow. Nothing can be measured or
+     compared against a moving target, so "κ was 0.61 on this set" and "round 3
+     beat round 2" both require the set to be immutable. A round pins its trace
+     ids, its annotations, and the label/prompt/judge versions in force when it
+     ran. This is what CLAUDE.md's immutable dataset-version rule is pointing
+     at, one layer earlier than fine-tuning curation (5.8).
+
+  2. THE CONFUSION MATRIX IS THE CENTREPIECE, NOT A CHART. For a classifier,
+     it is the diagnostic that names the actual problem: not "accuracy is 80%"
+     but "the model calls bugs questions, 27 times". A single confusable label
+     PAIR is almost always the story, and the pair is what the arbiter revises
+     definitions for. It appears nowhere in PRODUCT.md today.
+
+  3. THE SME'S NOTES ARE ON THIS SCREEN, NOT JUST THEIR LABELS. The label is
+     the cheap part of an annotation; the note is where the expertise is. A
+     developer screen that shows the verdict and drops the reasoning wastes the
+     scarcest input the product has. The notes panel is the on-ramp to axial
+     coding (5.6) and the answer to "why did they disagree with us".
+
+  4. AGREEMENT IS SHOWN PER LABEL, NEVER ONLY IN AGGREGATE. One bad label pair
+     drags a whole-classifier κ down and hides where the damage is. The
+     per-label table is what makes the number actionable.
+
+  5. THE ROUND ENDS IN AN ACTION, NOT A REPORT. Every measurement on this
+     screen routes somewhere: splits to the alignment session, notes to axial
+     coding, confused pairs to the label definitions. A dashboard that only
+     informs is the failure mode this screen is designed against.
+
+  6. RAW AGREEMENT IS NEVER A HEADLINE; TPR AND TNR ARE. [r2, after Husain]
+     Agreement is a trap metric under class imbalance — if a label is rare, a
+     model (or judge) that never predicts it still scores well. The first draft
+     of this screen led with "79.5% model matched human", which is exactly the
+     number PRODUCT.md 5.5 already says must never be the headline. It is now a
+     footnote under the matrix. The headline is how many labels fail the 80%
+     TPR bar, and the per-label table carries TPR/TNR beside κ.
+
+     needs-human is the case that proves the point: 97% TNR, 77% TPR. It almost
+     never fires wrongly and misses a quarter of the cases that needed a
+     person — invisible to any accuracy-style metric, and the most costly miss
+     in the label set.
+
+  7. COLOUR IS RESERVED FOR THE MATRIX AND THE VERDICTS. Counts, ids, costs,
+     and κ values are mono and achromatic. In the matrix, intensity encodes
+     magnitude — the one place on the screen where a value's SIZE is the
+     finding rather than its identity.
+
+  OPEN QUESTIONS — resolve these before this goes into PRODUCT.md
+  - Q1. What closes a round? Manual ("close round"), a target count, a cadence
+        (weekly), or a coverage threshold? Manual is drawn. Automatic rounds
+        risk closing mid-disagreement.
+  - Q2. Is a round scoped to one classifier, or can it span several? Drawn as
+        one classifier, which is simpler and matches how label definitions are
+        versioned.
+  - Q3. Can a round be reopened? Currently no — reopening breaks immutability,
+        and "round 4" is cheap. But late annotations then land nowhere.
+  - Q4. Does the round own the traces, or reference them? Reference, with the
+        annotation set frozen. A trace can appear in several rounds over time,
+        which is what makes round-over-round comparison meaningful.
+  - Q5. Is "round" the right word to a customer? Alternatives: eval run,
+        annotation batch, review cycle. "Run" collides with judge runs.
+  - Q6. Should the matrix be model-vs-human (drawn) or also offer
+        judge-vs-human and annotator-vs-annotator? All three are real
+        questions; three matrices on one screen is too many.
+  - Q7. Where does this live in the nav — under Annotation, or its own
+        section? Drawn as its own "Rounds" section.
+  - Q8. THIS SCREEN MEASURES THE MODEL. The judge — the instrument that runs
+        continuously against live traffic — needs the same treatment against
+        human labels, plus TPR/TNR-based correction of its estimates on
+        unlabelled traffic. That is a separate screen (console-judge-alignment,
+        added to BRIEF.md) and a gap in PRODUCT.md 5.7, which currently
+        specifies no metric for judge validation at all.
+  - Q9. Round-over-round comparison is drawn as a single delta strip. It may
+        deserve to be the whole of console-dashboard instead, with this screen
+        staying inside one round.
+
+  NOT DRAWN: the round list/index, matrix cell drill-through, the axial coding
+  workspace itself (that is taxonomy-builder), significance testing on the
+  round-over-round delta.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--type-ui);
+    line-height: var(--leading-ui);
+  }
+  ::selection { background: var(--color-selection); }
+
+  .app { display: grid; grid-template-columns: 15rem 1fr; min-height: 100vh; }
+
+  /* --- shell (same pattern as console-trace-explorer) ------------------- */
+  .rail {
+    background: var(--color-surface);
+    border-right: var(--border-hair) solid var(--color-line);
+    padding: var(--space-4) 0;
+    display: flex; flex-direction: column; gap: var(--space-5);
+  }
+  .brand { padding: 0 var(--space-4); display: flex; align-items: baseline; gap: var(--gap-tight); }
+  .brand b { font-size: var(--type-ui); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-snug); }
+  .brand span { font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); }
+  .switcher { margin: 0 var(--space-3); }
+  .switcher-btn {
+    width: 100%; text-align: left;
+    background: var(--color-raised); color: var(--color-text);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-control);
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-ui); font-size: var(--type-ui); cursor: pointer;
+  }
+  .switcher-btn small { display: block; font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); margin-top: var(--space-1); }
+  .nav-group { display: flex; flex-direction: column; }
+  .nav-label {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-faint); padding: 0 var(--space-4) var(--space-2);
+  }
+  .nav-item {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--gap-tight);
+    padding: var(--space-2) var(--space-4);
+    color: var(--color-text-muted); text-decoration: none; font-size: var(--type-ui);
+    border-left: var(--border-thick) solid transparent;
+  }
+  .nav-item:hover { background: var(--color-raised); color: var(--color-text); }
+  .nav-item[aria-current="page"] { color: var(--color-text); background: var(--color-raised); border-left-color: var(--color-text); font-weight: var(--weight-semibold); }
+  .nav-item .count { font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--gap-inline);
+    padding: var(--space-3) var(--space-5);
+    border-bottom: var(--border-hair) solid var(--color-line);
+    flex-wrap: wrap;
+  }
+  .crumb { display: flex; align-items: baseline; gap: var(--gap-tight); font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .crumb b { color: var(--color-text); font-weight: var(--weight-semibold); }
+  .row-actions { display: flex; gap: var(--gap-tight); align-items: center; flex-wrap: wrap; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--gap-tight);
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    line-height: var(--leading-ui);
+    padding: var(--pad-control-y) var(--pad-control-x);
+    border: var(--border-hair) solid var(--color-action);
+    border-radius: var(--radius-control);
+    background: var(--color-action); color: var(--color-action-text);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--color-action-hover); border-color: var(--color-action-hover); }
+  .btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+  .btn.quiet { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn.quiet:hover { background: var(--color-raised); border-color: var(--color-line-strong); }
+
+  .body { padding: var(--space-5); display: grid; gap: var(--space-5); }
+
+  .mark {
+    display: inline-block;
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid;
+    border-radius: var(--radius-mark);
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase;
+  }
+  .mark.frozen { color: var(--state-neutral-fg); background: var(--state-neutral-tint); border-color: var(--state-neutral-line); }
+  .mark.differ { color: var(--state-fail-fg); background: var(--state-fail-tint); border-color: var(--state-fail-line); }
+  .mark.agree { color: var(--state-success-fg); background: var(--state-success-tint); border-color: var(--state-success-line); }
+  .mark.warn { color: var(--state-warning-fg); background: var(--state-warning-tint); border-color: var(--state-warning-line); }
+  .mark.machine { color: var(--judge-owned-fg); background: var(--judge-owned-tint); border-color: var(--judge-owned-line); }
+
+  /* --- round header ----------------------------------------------------- */
+  .round-head {
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    display: flex; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap;
+  }
+  .round-title { font-size: var(--type-title); line-height: var(--leading-title); font-weight: var(--weight-semibold); margin: var(--space-2) 0 var(--space-2); }
+  .eyebrow {
+    display: block; font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-muted);
+  }
+  .pins { display: flex; gap: var(--gap-inline); flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .pins b { color: var(--color-text); font-weight: var(--weight-regular); }
+
+  /* --- stat strip -------------------------------------------------------- */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--border-hair); background: var(--color-line); border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-panel); overflow: hidden; }
+  @media (min-width: 60rem) { .stats { grid-template-columns: repeat(5, 1fr); } }
+  .stat { background: var(--color-surface); padding: var(--space-4); }
+  .stat-v { font-family: var(--font-mono); font-size: var(--type-display); font-variant-numeric: tabular-nums; line-height: var(--leading-display); }
+  .stat-l { font-size: var(--type-data); color: var(--color-text-muted); margin-top: var(--space-2); }
+  .delta { font-family: var(--font-mono); font-size: var(--type-data); margin-left: var(--gap-tight); }
+  .delta.up { color: var(--state-success-fg); }
+  .delta.down { color: var(--state-fail-fg); }
+  .stat-v.attention { color: var(--state-warning-fg); }
+
+  .panel {
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    min-width: 0;
+  }
+  .panel-title { font-size: var(--type-title); font-weight: var(--weight-semibold); margin: var(--space-2) 0 var(--space-1); }
+  .panel-note { font-size: var(--type-data); color: var(--color-text-muted); margin: 0 0 var(--space-5); max-width: var(--measure); }
+  .cols { display: grid; gap: var(--space-5); align-items: start; }
+  @media (min-width: 72rem) { .cols.matrix-split { grid-template-columns: 1.1fr 1fr; } }
+
+  /* --- confusion matrix -------------------------------------------------- */
+  .matrix { border-collapse: collapse; width: 100%; }
+  .matrix th {
+    font-family: var(--font-mono); font-size: var(--type-micro); font-weight: var(--weight-regular);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); padding: var(--space-2); text-align: center; white-space: nowrap;
+  }
+  .matrix th.rowhead { text-align: right; }
+  .matrix td {
+    position: relative;
+    font-family: var(--font-mono); font-size: var(--type-data); font-variant-numeric: tabular-nums;
+    text-align: center; padding: var(--space-3) var(--space-2);
+    border: var(--border-hair) solid var(--color-line);
+    color: var(--color-text);
+  }
+  /* Intensity encodes magnitude — the one place a value's SIZE is the finding.
+     Opacity on a tinted overlay, so the hue still comes from a token. */
+  .cell-fill { position: absolute; inset: 0; }
+  .cell-fill.hit { background: var(--state-success-tint); }
+  .cell-fill.miss { background: var(--state-fail-tint); }
+  .cell-n { position: relative; }
+  .matrix td.zero { color: var(--color-text-faint); }
+  .axis-note { font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); margin-top: var(--space-3); }
+
+  /* --- per-label + pairs -------------------------------------------------- */
+  table.plain { width: 100%; border-collapse: collapse; }
+  table.plain th {
+    text-align: left; font-family: var(--font-mono); font-weight: var(--weight-regular);
+    font-size: var(--type-micro); letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); padding: var(--pad-cell-y) var(--pad-cell-x);
+    border-bottom: var(--border-hair) solid var(--color-line-strong); white-space: nowrap;
+  }
+  table.plain td {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-cell-y) var(--pad-cell-x); height: var(--row-min);
+    border-bottom: var(--border-hair) solid var(--color-line); vertical-align: middle;
+  }
+  table.plain td.r, table.plain th.r { text-align: right; }
+  table.plain tr:last-child td { border-bottom: 0; }
+  .kbad { color: var(--state-fail-fg); }
+  .kok { color: var(--color-text); }
+
+  .pair { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-inline); padding: var(--space-3) 0; border-bottom: var(--border-hair) solid var(--color-line); }
+  .pair:last-of-type { border-bottom: 0; }
+  .pair-what { font-family: var(--font-mono); font-size: var(--type-data); }
+  .pair-what b { color: var(--color-text); font-weight: var(--weight-regular); }
+  .pair-what small { display: block; font-family: var(--font-ui); font-size: var(--type-data); color: var(--color-text-muted); margin-top: var(--space-1); max-width: 32rem; }
+  .pair-n { font-family: var(--font-mono); font-size: var(--type-title); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* --- notes: the SME's reasoning, on the developer's screen ------------- */
+  .theme { border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-field); padding: var(--space-4); margin-bottom: var(--space-3); background: var(--color-raised); }
+  .theme-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-inline); flex-wrap: wrap; }
+  .theme-name { font-size: var(--type-ui); font-weight: var(--weight-semibold); }
+  .theme-n { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .quote {
+    font-size: var(--type-body); line-height: var(--leading-normal);
+    color: var(--color-text); margin: var(--space-3) 0 0;
+    padding-left: var(--space-3); border-left: var(--border-thick) solid var(--color-line-strong);
+    max-width: var(--measure);
+  }
+  .quote cite { display: block; font-style: normal; font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); margin-top: var(--space-2); }
+</style>
+</head>
+
+<body data-surface="console">
+<div class="app">
+
+  <aside class="rail">
+    <div class="brand"><b>LabelLoop</b><span>acme</span></div>
+    <div class="switcher">
+      <button class="switcher-btn" type="button">
+        GitHub issue triage
+        <small>clf_7fq2 · 4 labels · frontier</small>
+      </button>
+    </div>
+    <nav class="nav-group">
+      <span class="nav-label">Classifier</span>
+      <a class="nav-item" href="console-trace-explorer.html">Traces <span class="count">18.4k</span></a>
+      <a class="nav-item" href="#">Dashboard</a>
+      <a class="nav-item" href="#">Annotation <span class="count">12</span></a>
+      <a class="nav-item" href="#" aria-current="page">Rounds <span class="count">3</span></a>
+      <a class="nav-item" href="#">Alignment <span class="count">3</span></a>
+      <a class="nav-item" href="#">Taxonomy</a>
+      <a class="nav-item" href="#">Judge</a>
+      <a class="nav-item" href="#">Fine-tuning</a>
+      <a class="nav-item" href="#">Settings</a>
+    </nav>
+    <nav class="nav-group">
+      <span class="nav-label">Organisation</span>
+      <a class="nav-item" href="#">Annotators</a>
+      <a class="nav-item" href="#">Audit log</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb"><b>Rounds</b> <span>· round 3</span></div>
+      <div class="row-actions">
+        <button class="btn quiet" type="button">Export</button>
+        <button class="btn quiet" type="button">Compare rounds</button>
+      </div>
+    </header>
+
+    <div class="body">
+
+      <!-- The round as an object: frozen, versioned, pinned. -->
+      <section class="round-head">
+        <div>
+          <span class="eyebrow">Annotation round</span>
+          <h1 class="round-title">Round 3 · 420 traces</h1>
+          <div class="pins">
+            <span><span class="mark frozen">frozen</span></span>
+            <span>closed <b>18 Aug 2026</b></span>
+            <span>labels <b>@v2</b></span>
+            <span>prompt <b>@v4</b></span>
+            <span>judge <b>@v3</b></span>
+            <span>set <b>sha 4f9c21e</b></span>
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn quiet" type="button">Open alignment session · 3 unresolved</button>
+          <button class="btn" type="button">Start axial coding · 60 notes</button>
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stat">
+          <div class="stat-v">420</div>
+          <div class="stat-l">traces annotated · 105 with overlap (25%)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-v">0.61<span class="delta up">+0.09</span></div>
+          <div class="stat-l">Krippendorff's α · human vs human</div>
+        </div>
+        <div class="stat">
+          <div class="stat-v attention">2 <span class="delta">of 4</span></div>
+          <div class="stat-l">labels below the 80% TPR bar · question, needs-human</div>
+        </div>
+        <div class="stat">
+          <div class="stat-v">94%</div>
+          <div class="stat-l">honeypot accuracy · 47 of 50</div>
+        </div>
+        <div class="stat">
+          <div class="stat-v">3</div>
+          <div class="stat-l">splits awaiting the arbiter</div>
+        </div>
+      </section>
+
+      <div class="cols matrix-split">
+        <!-- THE CENTREPIECE -->
+        <section class="panel">
+          <span class="eyebrow">Diagnostic</span>
+          <h2 class="panel-title">Confusion matrix</h2>
+          <p class="panel-note">What the model said, against what the humans decided. The diagonal is agreement; everything off it is a specific, nameable mistake.</p>
+
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th></th>
+                <th colspan="4">human decided</th>
+              </tr>
+              <tr>
+                <th class="rowhead">model said</th>
+                <th>bug</th><th>feature</th><th>question</th><th>needs-human</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th class="rowhead">bug</th>
+                <td><span class="cell-fill hit" style="opacity:1"></span><span class="cell-n">142</span></td>
+                <td><span class="cell-fill miss" style="opacity:.2"></span><span class="cell-n">4</span></td>
+                <td><span class="cell-fill miss" style="opacity:.7"></span><span class="cell-n">18</span></td>
+                <td><span class="cell-fill miss" style="opacity:.15"></span><span class="cell-n">3</span></td>
+              </tr>
+              <tr>
+                <th class="rowhead">feature</th>
+                <td><span class="cell-fill miss" style="opacity:.25"></span><span class="cell-n">6</span></td>
+                <td><span class="cell-fill hit" style="opacity:1"></span><span class="cell-n">61</span></td>
+                <td><span class="cell-fill miss" style="opacity:.2"></span><span class="cell-n">5</span></td>
+                <td class="zero">1</td>
+              </tr>
+              <tr>
+                <th class="rowhead">question</th>
+                <td><span class="cell-fill miss" style="opacity:1"></span><span class="cell-n">27</span></td>
+                <td><span class="cell-fill miss" style="opacity:.15"></span><span class="cell-n">3</span></td>
+                <td><span class="cell-fill hit" style="opacity:1"></span><span class="cell-n">88</span></td>
+                <td><span class="cell-fill miss" style="opacity:.35"></span><span class="cell-n">9</span></td>
+              </tr>
+              <tr>
+                <th class="rowhead">needs-human</th>
+                <td><span class="cell-fill miss" style="opacity:.2"></span><span class="cell-n">4</span></td>
+                <td class="zero">0</td>
+                <td><span class="cell-fill miss" style="opacity:.25"></span><span class="cell-n">6</span></td>
+                <td><span class="cell-fill hit" style="opacity:1"></span><span class="cell-n">43</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="axis-note">334 of 420 on the diagonal · 86 disagreements<br>
+            79.5% raw agreement — shown for context only. It flatters skewed label sets, so it is never the headline.</p>
+        </section>
+
+        <div style="display:grid; gap:var(--space-5)">
+          <section class="panel">
+            <span class="eyebrow">Where the damage is</span>
+            <h2 class="panel-title">Agreement by label</h2>
+            <p class="panel-note">TPR is what a headline accuracy number hides: of the issues that really were this label, how many did we catch. Target is 80% on both rates.</p>
+            <table class="plain">
+              <thead><tr><th>label</th><th class="r">n</th><th class="r">TPR</th><th class="r">TNR</th><th class="r">κ</th><th>worst confusion</th></tr></thead>
+              <tbody>
+                <tr><td>bug</td><td class="r">179</td><td class="r kbad">79%</td><td class="r kok">90%</td><td class="r kok">0.68</td><td>→ question ×18</td></tr>
+                <tr><td>feature</td><td class="r">68</td><td class="r kok">90%</td><td class="r kok">97%</td><td class="r kok">0.81</td><td>→ bug ×6</td></tr>
+                <tr><td>question</td><td class="r">117</td><td class="r kbad">75%</td><td class="r kok">87%</td><td class="r kbad">0.44</td><td>→ bug ×27</td></tr>
+                <tr><td>needs-human</td><td class="r">56</td><td class="r kbad">77%</td><td class="r kok">97%</td><td class="r kok">0.59</td><td>→ question ×6</td></tr>
+              </tbody>
+            </table>
+            <p class="axis-note">n is how many the humans decided were this label. <span class="kbad">Red</span> is below the 80% target.<br>
+              needs-human posts 97% TNR and 77% TPR: it almost never fires wrongly, and it misses nearly a quarter of the cases that needed a person. No accuracy-style metric would show that.</p>
+          </section>
+
+          <section class="panel">
+            <span class="eyebrow">Act on this</span>
+            <h2 class="panel-title">Top confusions</h2>
+            <div class="pair">
+              <span class="pair-what"><b>question ⇄ bug</b>
+                <small>45 of 86 disagreements. The humans read "is this expected?" as a defect report; the label definitions do not say which wins.</small>
+              </span>
+              <span class="pair-n">45</span>
+            </div>
+            <div class="pair">
+              <span class="pair-what"><b>question → needs-human</b>
+                <small>Account- and billing-specific questions the model answers generically.</small>
+              </span>
+              <span class="pair-n">9</span>
+            </div>
+            <div class="pair">
+              <span class="pair-what"><b>feature ⇄ bug</b>
+                <small>"Works but shouldn't" cases. Low volume, stable across rounds.</small>
+              </span>
+              <span class="pair-n">10</span>
+            </div>
+            <div class="row-actions" style="margin-top:var(--space-4)">
+              <button class="btn quiet" type="button">Revise label definitions</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- The SMEs' reasoning, on the developer's screen. -->
+      <section class="panel">
+        <span class="eyebrow">What the reviewers said</span>
+        <h2 class="panel-title">Failure notes · 60 in this round</h2>
+        <p class="panel-note">Clustered automatically as a starting point. Confirming, merging, and naming these is axial coding (5.6) — the labels above tell you <em>that</em> something is wrong; these tell you <em>what</em>.</p>
+
+        <div class="theme">
+          <div class="theme-head">
+            <span class="theme-name">Question phrasing masks a defect</span>
+            <span class="theme-n"><span class="mark machine">suggested</span> 19 notes · 17 are question ⇄ bug</span>
+          </div>
+          <blockquote class="quote">Reads like a question, but the missing retry cap in the docs is the real problem.
+            <cite>rosa.petrov · trace 01J9F2V4</cite>
+          </blockquote>
+        </div>
+
+        <div class="theme">
+          <div class="theme-head">
+            <span class="theme-name">Undocumented behaviour, reported politely</span>
+            <span class="theme-n"><span class="mark machine">suggested</span> 11 notes</span>
+          </div>
+          <blockquote class="quote">They're asking because the docs are silent. That's still a bug in the docs.
+            <cite>j.okafor · trace 01J9F31K</cite>
+          </blockquote>
+        </div>
+
+        <div class="theme">
+          <div class="theme-head">
+            <span class="theme-name">Billing and account issues need a person</span>
+            <span class="theme-n"><span class="mark machine">suggested</span> 7 notes</span>
+          </div>
+          <blockquote class="quote">Anything touching someone's money should go to a human, even when the answer looks obvious.
+            <cite>rosa.petrov · trace 01J9F2T1</cite>
+          </blockquote>
+        </div>
+
+        <div class="theme">
+          <div class="theme-head">
+            <span class="theme-name">Not yet clustered</span>
+            <span class="theme-n">23 notes</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <span class="eyebrow">Round over round</span>
+        <h2 class="panel-title">Did the last revision work?</h2>
+        <p class="panel-note">Round 2 ended with the arbiter rewriting the <code>question</code> definition and publishing labels@v2. This is what happened next.</p>
+        <table class="plain">
+          <thead><tr><th>round</th><th>labels</th><th class="r">traces</th><th class="r">α</th><th class="r">model match</th><th class="r">question κ</th></tr></thead>
+          <tbody>
+            <tr><td>round 1</td><td>@v1</td><td class="r">180</td><td class="r">0.48</td><td class="r">71.2%</td><td class="r kbad">0.31</td></tr>
+            <tr><td>round 2</td><td>@v1</td><td class="r">310</td><td class="r">0.52</td><td class="r">75.4%</td><td class="r kbad">0.36</td></tr>
+            <tr><td>round 3</td><td>@v2</td><td class="r">420</td><td class="r">0.61</td><td class="r">79.5%</td><td class="r kbad">0.44</td></tr>
+          </tbody>
+        </table>
+        <p class="axis-note">question κ is still the worst label in the set after one revision. The pair, not the label, may be the problem.</p>
+      </section>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>

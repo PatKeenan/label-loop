@@ -1,0 +1,51 @@
+# ---------- secrets ----------
+# .env.example IS committed and must stay exhaustive (CONVENTIONS.md "Config").
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- dependencies ----------
+node_modules/
+.bun/
+# Lockfiles ARE committed (reproducible installs in CI and containers):
+# bun.lock / bun.lockb are intentionally absent from this list.
+
+# ---------- build output ----------
+dist/
+build/
+.output/
+*.tsbuildinfo
+.vite/
+
+# ---------- test + coverage ----------
+coverage/
+*.lcov
+.nyc_output/
+
+# ---------- logs ----------
+*.log
+logs/
+
+# ---------- local infra state ----------
+# Container volume data if ever bind-mounted into the repo; named volumes
+# (the default per ADR-0009) never land here.
+infra/**/data/
+infra/**/*.local.yml
+
+# ---------- k6 ----------
+# Scripts are committed; run artifacts are not.
+k6-summary.json
+k6-results/
+
+# ---------- tooling / editor ----------
+.claude/settings.local.json
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
