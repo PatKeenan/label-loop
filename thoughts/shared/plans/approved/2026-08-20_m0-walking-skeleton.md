@@ -81,13 +81,13 @@ Files:
 - [x] `bun install` succeeds on a clean clone; `bun.lock` committed
 - [x] Root scripts `lint`, `typecheck`, `test` exist and exit 0 on the empty tree
 - [x] `console.log` outside `scripts/` is a lint **error**, proven by a temporary file
-- [ ] commitlint rejects a non-conventional message locally (hook) and in CI
+- [x] commitlint rejects a non-conventional message locally (hook) and in CI
 - [x] MIT `LICENSE` committed; README names the display title "LabelLoop"
 - [x] GitHub repo `label-loop` created **public**, push protection + secret scanning on,
       remote added, `main` pushed (**stakeholder action**, confirmed 2026-08-21)
-- [ ] CI runs on `pull_request` **and** `push: main` and is green
-- [ ] Dependabot config committed; gitleaks runs in CI and is green
-- [ ] release-please workflow committed; its standing Release PR appears
+- [x] CI runs on `pull_request` **and** `push: main` and is green
+- [x] Dependabot config committed; gitleaks runs in CI and is green
+- [x] release-please workflow committed; its standing Release PR appears
 
 **Automated verification**
 ```bash
@@ -450,6 +450,33 @@ exits non-zero on "0 test files".
 failure still fails. Cost of `--if-present`: a workspace that forgets to define a
 `typecheck` script is silently skipped rather than erroring — mitigated by every
 workspace defining one, and visible in CI output.
+
+### P0 — commit linting moved from the PR's commits to the PR's title
+**Expected:** P0's CI lints the PR's commit range with commitlint.
+**Found:** two problems, surfaced by Dependabot's first three PRs. (1) Dependabot writes
+`ci: Bump x from 1 to 2`; the type is ours (dependabot.yml sets the prefix) but the
+capital B fails `subject-case`, and Dependabot exposes no knob for the subject. (2) More
+importantly, the job was linting the wrong text: what release-please parses is what lands
+on `main`, and under squash merging the branch's commits are discarded in favour of the
+PR title — which nothing checked. All three merge strategies were enabled, so which text
+reached `main` was not even deterministic.
+**Resolution** (stakeholder chose both halves, 2026-08-21):
+- Repo pinned to squash-only, `squash_merge_commit_title=PR_TITLE`, delete-branch-on-merge.
+- `pr-title.yml` lints the PR title. `edited` is in its trigger list deliberately — not a
+  default `pull_request` type, and without it a corrected title never re-runs the check.
+- `ci.yml`'s PR commitlint job is replaced by one running on direct pushes to `main`,
+  which nothing in CI covered before (P0's own commits went unchecked by CI).
+- `normalize-bot-pr-title.yml` lowercases a capitalised subject on bot PRs, via
+  `pull_request_target` (the only event that grants a write token on a Dependabot PR)
+  and with no checkout of the head ref. The rewrite requires `<upper><lower>` so acronyms
+  survive, and non-conventional titles pass through untouched so commitlint still fails
+  them rather than the workflow silently mangling them.
+`subject-case` stays strict; the alternative considered and rejected was relaxing it,
+on the grounds that casing cannot cause a wrong version bump.
+
+**Follow-on, not yet closed:** the three in-flight Dependabot PRs branch from `eb30bc8`
+and carry the *old* `ci.yml`, because `pull_request` workflows run from the head ref.
+They need a rebase onto current `main` before they go green.
 
 ### P0 — `prepare` hardened against the no-git-dir case (the thing Husky handles for you)
 **Trigger:** stakeholder asked what Husky buys over a hand-rolled `.githooks` directory.
