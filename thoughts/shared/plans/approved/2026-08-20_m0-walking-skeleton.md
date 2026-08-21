@@ -1,10 +1,13 @@
 ---
 date: 2026-08-21T03:05:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-08-21T17:56:02Z
+approved_by: Pat Keenan
 milestone: M0
 topic: m0-walking-skeleton
-related_adrs: [0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011]
+related_adrs: [0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011,
+               0012, 0013, 0014, 0015, 0016, 0017, 0018]
 ---
 
 # Plan — M0 walking skeleton
@@ -434,7 +437,10 @@ gh run list --limit 3 && gh release list
 ---
 
 ## Decisions made
-Each line becomes an ADR stub at `/approve_plan`.
+ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**
+(which amends ADR-0009), **D-P → ADR-0014**, **D-I → ADR-0015**, **D-G → ADR-0016**,
+**D-J → ADR-0017**, **D-M/D-N → ADR-0018**. The remainder are sequencing, tooling, or
+applications of an existing convention, and are recorded here only.
 
 - **D-A. Phase ordering front-loads Bun-risk seams (P3 db/auth-schema, P5 pg-boss, P6
   OTel) ahead of polish (P7 web, P8 compose).** These three are the research's named
