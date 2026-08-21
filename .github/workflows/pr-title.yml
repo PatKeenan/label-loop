@@ -1,19 +1,26 @@
 name: pr-title
 
-# Under squash-only merges the PR title becomes the commit message on main, which is
-# what release-please parses to derive the version and the CHANGELOG (ADR-0011).
-# Linting the title is therefore linting the thing that actually ships; the branch's
-# individual commits are scratch work and never reach main.
+# Under squash-only merges the PR title becomes the commit message on main, which is what
+# release-please parses to derive the version and the CHANGELOG (ADR-0011). Linting the
+# title is therefore linting the thing that actually ships; the branch's individual
+# commits are scratch work and never reach main.
 #
-# `edited` is in the trigger list deliberately — it is NOT a default `pull_request`
-# type, and without it a corrected title would never re-run this check.
+# Normalising and linting live in ONE job on purpose. They were two workflows first, and
+# that could not work: `gh pr edit` authenticated with GITHUB_TOKEN does not trigger a new
+# workflow run (GitHub suppresses those to prevent recursion), so the lint kept its verdict
+# from before the rewrite. Sequential steps in one job have no such race.
+#
+# pull_request_target rather than pull_request for two reasons: it is the only event that
+# grants a write token on a Dependabot PR, and it resolves the workflow from the BASE ref,
+# so edits here apply to already-open PRs without rebasing them.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, edited, synchronize]
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: pr-title-${{ github.event.pull_request.number }}
@@ -24,12 +31,66 @@ jobs:
     name: conventional commit title
     runs-on: ubuntu-latest
     steps:
+      # pull_request_target checks out the BASE ref by default. Keep it that way: this
+      # job holds a write token, so running any code from the head ref would be the
+      # classic privilege-escalation hole.
       - uses: actions/checkout@v6
+
+      # Dependabot writes "ci: Bump x from 1 to 2". The type is ours (dependabot.yml sets
+      # the prefix) but the capital B fails subject-case, and Dependabot exposes no knob
+      # for the subject — so rewrite it rather than relaxing the rule for everyone.
+      # A rebase resets the title, which is why this reruns on synchronize.
+      - name: Normalise a capitalised subject on bot PRs
+        id: normalise
+        if: endsWith(github.event.pull_request.user.login, '[bot]')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Via env, never inlined into the script: a PR title is attacker-controlled text.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # type(scope)!: Subject -> type(scope)!: subject.
+          # Requires <upper><lower> so acronyms survive: "fix: API timeout" is left alone.
+          # A non-conventional title is passed through untouched, so the lint below still
+          # fails it rather than this step silently mangling it into something that passes.
+          # tr rather than ${x,,} so the logic is identical under bash 3.2 and can be
+          # exercised on a dev machine, not only on the runner.
+          if [[ "$PR_TITLE" =~ ^([a-z]+(\([^\)]+\))?!?:[[:space:]])([A-Z])([a-z].*)$ ]]; then
+            head="${BASH_REMATCH[1]}"
+            initial="${BASH_REMATCH[3]}"
+            tail="${BASH_REMATCH[4]}"
+            normalized="${head}$(printf '%s' "$initial" | tr '[:upper:]' '[:lower:]')${tail}"
+          else
+            normalized="$PR_TITLE"
+          fi
+
+          if [[ "$normalized" != "$PR_TITLE" ]]; then
+            echo "Rewriting PR title:"
+            echo "  from: $PR_TITLE"
+            echo "    to: $normalized"
+            gh pr edit "$PR_NUMBER" --title "$normalized"
+          else
+            echo "Title already conforms — nothing to rewrite."
+          fi
+          # Hand the result to the lint step so it never reads a stale title.
+          # Delimiter form, not `title=...`: a PR title is untrusted text and the
+          # bare form lets it forge additional step outputs.
+          {
+            echo 'title<<__PR_TITLE_EOF__'
+            printf '%s\n' "$normalized"
+            echo '__PR_TITLE_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
+
       - name: Lint the PR title
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_TITLE: ${{ steps.normalise.outputs.title || github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | bunx commitlint --verbose
