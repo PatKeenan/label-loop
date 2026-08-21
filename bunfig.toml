@@ -1,0 +1,11 @@
+# Bun workspace configuration.
+# The container's Bun is the authoritative runtime (ADR-0011 reasoning, plan D-K);
+# the host tracks it so the committed bun.lock cannot drift under --frozen-lockfile.
+
+[install]
+exact = false
+# Lockfile is committed; CI and images install with --frozen-lockfile.
+frozenLockfile = false
+
+[test]
+coverage = false

@@ -1,0 +1,30 @@
+{
+  "name": "labelloop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Classification-as-a-service with an eval-to-fine-tune flywheel.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "bun": "1.4.0"
+  },
+  "scripts": {
+    "prepare": "bun run setup",
+    "setup": "git config core.hooksPath .githooks",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "bun run --filter '*' --if-present typecheck",
+    "test": "bun test --pass-with-no-tests"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "typescript": "^7.0.2"
+  }
+}

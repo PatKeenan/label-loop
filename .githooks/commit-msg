@@ -1,0 +1,5 @@
+#!/bin/sh
+# Conventional commits are load-bearing: release-please derives the version and the
+# CHANGELOG from them (ADR-0011). A mistyped type produces a wrong version bump, so
+# this is enforced rather than trusted. CI re-runs the same check on PR commits.
+exec bunx --bun commitlint --edit "$1"
