@@ -36,10 +36,13 @@ jobs:
       - name: Test
         run: bun run test
 
-  commitlint:
-    name: conventional commits
+  commit-messages:
+    name: conventional commits (main)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # PR *titles* are linted by pr-title.yml, because under squash-only merges the title
+    # is the commit that lands. This job covers the other way onto main — a direct push —
+    # which nothing in CI checked before.
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,14 +51,17 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      # release-please derives versions from these messages (ADR-0011), so a bad
-      # type is a wrong version bump, not a style nit.
-      - name: Lint commit messages in this PR
+      - name: Lint the pushed commit messages
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
-          bunx commitlint \
-            --from "${{ github.event.pull_request.base.sha }}" \
-            --to "${{ github.event.pull_request.head.sha }}" \
-            --verbose
+          set -euo pipefail
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Branch created in this push — no range to compare."
+            exit 0
+          fi
+          bunx commitlint --from "$BEFORE" --to "$AFTER" --verbose
 
   secrets:
     name: secret scan

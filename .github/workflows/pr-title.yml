@@ -1,0 +1,35 @@
+name: pr-title
+
+# Under squash-only merges the PR title becomes the commit message on main, which is
+# what release-please parses to derive the version and the CHANGELOG (ADR-0011).
+# Linting the title is therefore linting the thing that actually ships; the branch's
+# individual commits are scratch work and never reach main.
+#
+# `edited` is in the trigger list deliberately — it is NOT a default `pull_request`
+# type, and without it a corrected title would never re-run this check.
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint-title:
+    name: conventional commit title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Lint the PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | bunx commitlint --verbose
