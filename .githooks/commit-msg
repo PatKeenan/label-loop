@@ -2,4 +2,15 @@
 # Conventional commits are load-bearing: release-please derives the version and the
 # CHANGELOG from them (ADR-0011). A mistyped type produces a wrong version bump, so
 # this is enforced rather than trusted. CI re-runs the same check on PR commits.
+
+# GUI git clients (Sourcetree, GitHub Desktop, IDE integrations) launch with a minimal
+# PATH that often omits a version-manager-installed Bun. Fail with an explanation
+# rather than a bare "bunx: not found".
+if ! command -v bunx >/dev/null 2>&1; then
+  echo "commit-msg: 'bunx' is not on PATH, so the commit message was not linted." >&2
+  echo "  Your git client is probably not inheriting your shell PATH." >&2
+  echo "  Add Bun to the client's PATH, or commit from a terminal." >&2
+  exit 1
+fi
+
 exec bunx --bun commitlint --edit "$1"

@@ -83,7 +83,7 @@ Files:
 - [x] `console.log` outside `scripts/` is a lint **error**, proven by a temporary file
 - [ ] commitlint rejects a non-conventional message locally (hook) and in CI
 - [x] MIT `LICENSE` committed; README names the display title "LabelLoop"
-- [ ] GitHub repo `label-loop` created **public**, push protection + secret scanning on,
+- [x] GitHub repo `label-loop` created **public**, push protection + secret scanning on,
       remote added, `main` pushed (**stakeholder action**, confirmed 2026-08-21)
 - [ ] CI runs on `pull_request` **and** `push: main` and is green
 - [ ] Dependabot config committed; gitleaks runs in CI and is green
@@ -450,6 +450,20 @@ exits non-zero on "0 test files".
 failure still fails. Cost of `--if-present`: a workspace that forgets to define a
 `typecheck` script is silently skipped rather than erroring — mitigated by every
 workspace defining one, and visible in CI output.
+
+### P0 — `prepare` hardened against the no-git-dir case (the thing Husky handles for you)
+**Trigger:** stakeholder asked what Husky buys over a hand-rolled `.githooks` directory.
+**Found:** two of Husky's three real jobs were missing here, and one was a latent bug.
+`prepare` ran `git config core.hooksPath` unconditionally; outside a git directory that
+exits 128, and `bun install` fails the whole install on a failing `prepare` (verified).
+P8's `.dockerignore` excludes `.git`, so the API and web image builds would have failed
+at `bun install` — a P8 break planted in P0. Separately, the hook called `bunx` with no
+guard, so a GUI git client launched with a minimal PATH would fail on "bunx: not found"
+with no explanation.
+**Resolution:** `setup` now guards on `git rev-parse --git-dir` and reports a skip
+instead of failing; `commit-msg` checks for `bunx` and explains the PATH problem before
+exiting. Husky's third job — being a layout other developers recognise — is not worth a
+dependency here. No new dependency; ~6 lines.
 
 ### P0 — TypeScript resolved to 7.0.2 (the native compiler)
 **Expected:** the plan named no TypeScript version.
