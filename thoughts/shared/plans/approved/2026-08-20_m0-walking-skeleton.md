@@ -460,23 +460,41 @@ importantly, the job was linting the wrong text: what release-please parses is w
 on `main`, and under squash merging the branch's commits are discarded in favour of the
 PR title — which nothing checked. All three merge strategies were enabled, so which text
 reached `main` was not even deterministic.
-**Resolution** (stakeholder chose both halves, 2026-08-21):
-- Repo pinned to squash-only, `squash_merge_commit_title=PR_TITLE`, delete-branch-on-merge.
-- `pr-title.yml` lints the PR title. `edited` is in its trigger list deliberately — not a
-  default `pull_request` type, and without it a corrected title never re-runs the check.
-- `ci.yml`'s PR commitlint job is replaced by one running on direct pushes to `main`,
-  which nothing in CI covered before (P0's own commits went unchecked by CI).
-- `normalize-bot-pr-title.yml` lowercases a capitalised subject on bot PRs, via
-  `pull_request_target` (the only event that grants a write token on a Dependabot PR)
-  and with no checkout of the head ref. The rewrite requires `<upper><lower>` so acronyms
-  survive, and non-conventional titles pass through untouched so commitlint still fails
-  them rather than the workflow silently mangling them.
-`subject-case` stays strict; the alternative considered and rejected was relaxing it,
-on the grounds that casing cannot cause a wrong version bump.
+**Resolution — arrived at in two steps, the first of which was wrong:**
 
-**Follow-on, not yet closed:** the three in-flight Dependabot PRs branch from `eb30bc8`
-and carry the *old* `ci.yml`, because `pull_request` workflows run from the head ref.
-They need a rebase onto current `main` before they go green.
+*First attempt (reverted).* Repo pinned to squash-only with
+`squash_merge_commit_title=PR_TITLE` and delete-branch-on-merge; `pr-title.yml` lints the
+title (`edited` is in its trigger list deliberately — not a default `pull_request` type,
+so without it a corrected title never re-runs the check); `ci.yml`'s PR commitlint job
+replaced by one running on direct pushes to `main`, which nothing in CI covered before.
+`subject-case` was kept strict and a workflow rewrote capitalised bot titles instead.
+
+**That rewrite could not work, and the repo has the evidence.** Dependabot treats the PR
+title as its own field and reasserts it on every rebase — and every push to `main`
+triggers a rebase of every open Dependabot PR. PR #2's timeline shows the tug-of-war:
+`renamed github-actions[bot]` → `renamed dependabot[bot]` → `head_ref_force_pushed` →
+`renamed github-actions[bot]`. Each move fired further `edited` and `synchronize` runs.
+Two intermediate fixes were tried and neither addressed the cause: merging the normaliser
+and the linter into one job (because `gh pr edit` under GITHUB_TOKEN does not trigger a
+re-run, so the lint kept a pre-rewrite verdict), then turning off `cancel-in-progress`
+(because a cancelled run leaves a check nothing supersedes). Roughly 85 workflow runs
+accumulated, amplified by repeatedly pushing to `main` and nudging live PRs while
+iterating — the diagnosis should have come before the third attempt, not after.
+
+*Final state.* `subject-case` relaxed to `[2, 'never', ['start-case', 'pascal-case',
+'upper-case']]` — a leading capital is allowed, so Dependabot's own title passes untouched
+and there is nothing to fight over; `CI: FIX THE THING` and Start Case subjects are still
+errors. The rewrite is deleted and `pr-title.yml` holds no write permission and modifies
+nothing. The squash-only + PR-title-lint half of the decision stands unchanged and is
+correct: it is what makes the linted text and the shipped commit the same string.
+
+The justification for relaxing is the same one that justifies enforcing at all: ADR-0011
+enforces commit messages because a mistyped **type** produces a wrong version bump.
+Casing cannot. Enforce what is load-bearing.
+
+**Verified live:** v0.1.0 tagged and released from PR #4, CHANGELOG generated,
+`package.json` and the manifest both at 0.1.0, and `ci: Bump actions/checkout from 6 to 7`
+merged with its capital B and passed the lint.
 
 ### P0 — `prepare` hardened against the no-git-dir case (the thing Husky handles for you)
 **Trigger:** stakeholder asked what Husky buys over a hand-rolled `.githooks` directory.
