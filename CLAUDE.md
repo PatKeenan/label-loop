@@ -38,6 +38,14 @@ This project uses the HumanLayer-style workflow via slash commands in .claude/co
    checkbox updates, pause after each phase for manual verification.
 6. `/log_decision <what>` at ANY time to capture in-conversation decisions.
 
+## Branching
+All new code lands on a feature branch and merges to `main` through a PR. NEVER commit
+or push work directly to `main`. Granularity is **one branch + PR per plan phase**
+(`feat/m0-p1-contracts`), matching the phase boundary where manual verification and the
+context reset already happen. The PR title is the shipped commit — the repo is squash-only
+with `squash_merge_commit_title=PR_TITLE` and `pr-title.yml` lints it — so it must be a
+conventional-commit message, and the description names its BUILD_SPINE milestone.
+
 Hard rules: NEVER implement from drafts/ or from conversation alone — only from
 thoughts/shared/plans/approved/. Keep context utilization moderate; prefer ending a
 session and starting fresh from artifacts over pushing a bloated context. The human is
