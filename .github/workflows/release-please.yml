@@ -15,7 +15,7 @@ jobs:
       # Maintains a standing Release PR carrying the version bump and CHANGELOG.
       # Merging that PR is the "ship it" gesture (ADR-0011). Versions are never
       # written by hand.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
