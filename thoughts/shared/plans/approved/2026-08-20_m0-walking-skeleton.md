@@ -150,25 +150,25 @@ outside `/v1`),
 `routes/health.ts`, `ports/error-reporter.ts` + `adapters/{noop,sentry}-error-reporter.ts`,
 `ports/clock.ts` + `adapters/{system,fixed}-clock.ts`, `docs.ts` (Scalar mount).
 
-- [ ] `config.ts` parses env against a Zod schema and **crashes at boot naming the
+- [x] `config.ts` parses env against a Zod schema and **crashes at boot naming the
       field**; `.env.example` updated exhaustively; `APP_VERSION`/`GIT_SHA` included
-- [ ] `AppError` base (code, status, retryable, safe message, `cause`) + one
+- [x] `AppError` base (code, status, retryable, safe message, `cause`) + one
       `app.onError` and one `notFound`; **no route builds an error response**
-- [ ] Contract-validation failures auto-map to `VALIDATION_ERROR` with field issues
-- [ ] pino via `hono-pino`; `c.var.logger` carries `request_id`; **zero transports**;
+- [x] Contract-validation failures auto-map to `VALIDATION_ERROR` with field issues
+- [x] pino via `hono-pino`; `c.var.logger` carries `request_id`; **zero transports**;
       bodies never logged
-- [ ] `request_id` generated as a W3C-format id by `request-context.ts` (P6 replaces the
+- [x] `request_id` generated as a W3C-format id by `request-context.ts` (P6 replaces the
       generator with the active span's trace id — the seam is deliberate)
-- [ ] `/healthz` returns process liveness **plus version + git SHA** (ADR-0011)
-- [ ] Two synthetic routes mounted **outside `/v1`** — `/_demo/rate-limited` (429 with
+- [x] `/healthz` returns process liveness **plus version + git SHA** (ADR-0011)
+- [x] Two synthetic routes mounted **outside `/v1`** — `/_demo/rate-limited` (429 with
       `Retry-After`) and `/_demo/boom` (500) — because nothing in M0 legitimately
       produces those codes. 422 and 401 are proven on the real classify endpoint at P4,
       not faked here (D-I)
-- [ ] The 500 path reports to the `ErrorReporter` port with `request_id`; Sentry adapter
+- [x] The 500 path reports to the `ErrorReporter` port with `request_id`; Sentry adapter
       is a no-op when `SENTRY_DSN` is unset (zero-secret boot, ADR-0009)
-- [ ] OpenAPIHono mounted under `/v1`; `/openapi.json` served; Scalar renders at `/docs`
+- [x] OpenAPIHono mounted under `/v1`; `/openapi.json` served; Scalar renders at `/docs`
       with the API-key securityScheme (ADR-0002)
-- [ ] SIGTERM: stop accepting, drain in-flight, exit 0 — **with a test**
+- [x] SIGTERM: stop accepting, drain in-flight, exit 0 — **with a test**
 
 **Automated verification**
 ```bash
@@ -571,6 +571,98 @@ constraint that immediately caught two loose test fixtures, which is the evidenc
 works.
 
 ---
+
+### P2 — Bun's `stop(false)` drains handlers, not un-accepted sockets
+**Expected:** a subprocess test would fire N requests, signal, and see all N answered.
+**Found:** 24 of 25 were severed. Characterising `Bun.Server.stop(false)` directly
+settled it: a handler **actively running** completes (`stop()` waited 302ms for a 400ms
+handler and the response arrived intact), a request started after `stop()` is refused,
+and a socket the client opened but the server had not yet accepted is dropped. The last
+is correct behaviour, not a bug — the test was asserting something draining never
+promised, because firing 25 `fetch()` calls and signalling in the same tick means most
+sockets never reach `accept()`.
+**Resolution:** the drain proof moved to `lifecycle.test.ts`, against a real `Bun.serve`
+with a 300ms handler that is unambiguously mid-flight when shutdown begins — it asserts
+the in-flight response arrives *and* that a request started after the signal is refused.
+`server.test.ts` keeps what only a real process can prove: the entrypoint wires the
+signal, and exit is 0. Deterministic, and it survived repeated runs.
+
+### P2 — `hono-pino` duplicated every base binding on every request line
+**Expected:** pino's `base` puts `service`/`version`/`git_sha`/`env` on each line once.
+**Found:** twice. `hono-pino` seeds its per-request child from `rootLogger.bindings()`
+and then creates that child *from the root logger*, which already carries them — so
+everything in `base` was emitted a second time on every request log line. It also emitted
+the request id twice under two names: `referRequestIdKey` defaults to `"requestId"`,
+which happens to be our context key, so it added `reqId` alongside our `request_id`.
+**Resolution:** `base: null` (which also drops pino's pid/hostname, meaningless in a
+container) and the fields moved to `mixin`, which puts them on every line without being
+bindings for the child to copy. `referRequestIdKey` points at a deliberately absent key
+so `request_id` — matching the envelope — is the only spelling. Both are now regression-
+tested by reading the bytes the logger writes rather than trusting configuration.
+
+### P2 — `PORT=0` had to be allowed
+**Expected:** `PORT` validated as a real port, `1..65535`.
+**Found:** that rejects `0`, the standard "ask the OS for a free port" value, which the
+subprocess tests need so concurrent runs cannot collide on a fixed port.
+**Resolution:** minimum lowered to 0 and documented in `.env.example`. The cost is that a
+misconfigured deploy could bind an arbitrary port instead of failing loudly; judged
+smaller than the alternative of tests racing over a hardcoded one.
+
+### P2 — `@types/node` added at the root
+**Expected:** `@types/bun` covers Bun's globals.
+**Found:** `bun-types` declares only its own `process` additions (`memoryPressure`) and
+`/// <reference types="node" />` for the rest. With `@types/node` unresolvable at the
+root, `process.on('SIGTERM', …)` did not typecheck. It was present under `.bun/` as a
+transitive dependency but not linked where TypeScript looks.
+**Resolution:** added to the root `devDependencies`, the same shape as the `@types/bun`
+entry at P1. Types only; no runtime dependency.
+
+### P2 — the API surface is at `/v1/docs` and `/v1/openapi.json`, not `/docs`
+**Expected:** the plan says "Scalar renders at `/docs`".
+**Found:** the OpenAPIHono sub-app is mounted at `/v1`, so paths registered on it are
+prefixed. Serving `/docs` from the root would mean either a second mount or a redirect.
+**Resolution:** kept under the `/v1` prefix, so the spec and the reference version
+together with the API they describe — when `/v2` exists it gets its own `/v2/docs`
+rather than one document trying to describe both. **Flagged for the stakeholder:** if a
+stable top-level `/docs` is wanted for marketing links, a redirect is a one-liner, but it
+should be a decision rather than a default. ADR-0002 says only "`/docs`", so this is a
+divergence from its letter.
+
+### P2 — gitleaks failed CI on a test fixture, correctly
+**Expected:** the secret scan passes; the fixtures are obviously fake.
+**Found:** `generic-api-key` fired on the logger test's stand-in credential — a
+constant named for a secret, holding an `llk_live_` prefix followed by sixteen hex
+characters. Not a false positive worth suppressing: that is precisely the shape of a real
+leaked key, so the rule firing is evidence the scanner would catch the real thing.
+**Resolution:** the fixture became a low-entropy, self-describing string that names
+itself as an example, and the constants were renamed off `SECRET_*`. No allowlist entry,
+no `.gitleaks.toml`, no inline `gitleaks:allow` — the scanner keeps its full strength,
+which is the point of having it.
+
+**And the fix had to be a history rewrite, not a follow-up commit.** gitleaks scans the
+whole commit range of a PR, so the original commit still failed the scan even after a
+later commit corrected the file. The branch was reset and recommitted as one commit so
+the literal never exists at any point in the range. Worth remembering: a secret in a
+pushed commit is not fixed by deleting it in the next one.
+
+Standing rules this leaves behind: fixtures standing in for credentials get
+obviously-fake, low-entropy values, and prose describing a leak — commit messages,
+deviation records, PR bodies — describes the shape rather than quoting the string, since
+the scanner reads those files too.
+
+### P2 — `@sentry/bun` brings a large transitive tree
+**Expected:** D6 decided Sentry; the plan lists a `sentry-error-reporter` adapter.
+**Found:** `@sentry/bun` depends on `@sentry/node`, which pulls `@opentelemetry/*` and
+`import-in-the-middle` — auto-instrumentation machinery that ADR-0007 bans outright, and
+a bigger tree than CONVENTIONS' dependency threshold likes for a repo that scans
+dependencies in CI from M0.
+**Resolution:** installed, but constrained twice. The SDK is loaded by a **dynamic
+`import()` inside the factory**, so an unset `SENTRY_DSN` never loads it at all (proven
+by a test asserting the returned reporter *is* the no-op object). And it initialises via
+`initWithoutDefaultIntegrations`, so no auto-instrumentation is registered.
+**Watch item for P6:** Sentry's SDK can register its own OpenTelemetry tracer provider.
+P6 installs the manual one. If they collide, the fallback is dropping the SDK for a
+direct envelope POST, and this entry gets the outcome appended.
 
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**
