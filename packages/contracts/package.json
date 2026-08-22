@@ -1,0 +1,19 @@
+{
+  "name": "@labelloop/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The single source of type truth: error taxonomy, response envelope, prefixed ids, and endpoint schemas.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^1.6.1",
+    "hono": "^4.13.3",
+    "zod": "^4.4.3"
+  }
+}

@@ -122,11 +122,11 @@ Files: `packages/contracts/src/{errors,envelope,ids,classify,index}.ts` + co-loc
 - `classify.ts` — request (`input`, optional metadata) and response (`label`,
   `confidence`, `trace_id`) schemas; `trace_id` lives in `data`.
 
-- [ ] Enum + status/retryable map with an exhaustiveness test
-- [ ] Envelope schemas parse a success and a failure fixture; `request_id` required on both
-- [ ] Id helpers round-trip, reject wrong prefixes, and sort lexicographically by time
-- [ ] Classify schemas exported and OpenAPI-describable (`.openapi()` metadata)
-- [ ] Removing a map entry fails `bun run typecheck` (proven once, then reverted)
+- [x] Enum + status/retryable map with an exhaustiveness test
+- [x] Envelope schemas parse a success and a failure fixture; `request_id` required on both
+- [x] Id helpers round-trip, reject wrong prefixes, and sort lexicographically by time
+- [x] Classify schemas exported and OpenAPI-describable (`.openapi()` metadata)
+- [x] Removing a map entry fails `bun run typecheck` (proven once, then reverted)
 
 **Automated verification**
 ```bash
@@ -526,6 +526,49 @@ the outcome appended.
 **Found:** a full product-overview README was committed in `3bf6563`, already titled
 "LabelLoop" and already carrying a `## License` section.
 **Resolution:** kept as is; P8 appends the fresh-clone walkthrough to it as planned.
+
+### P1 — `@types/bun` was missing (a P0 gap the empty tree could not surface)
+**Expected:** P0 left the tree typechecking.
+**Found:** `tsconfig.base.json` sets `"types": ["bun"]`, but no package provided that
+type library. P0's `typecheck` never caught it: with no workspaces,
+`bun run --filter '*' --if-present typecheck` had nothing to run, so the first real
+workspace was also the first thing to compile. `tsc --noEmit` failed with
+"Cannot find type definition file for 'bun'".
+**Resolution:** `@types/bun` added to the root `devDependencies`. It is a type package
+for an already-decided runtime (D1/D11), not a technology choice, so no STACK_DECISIONS
+row is involved.
+
+### P1 — the error body carries an optional `issues[]`
+**Expected:** CONVENTIONS' failure envelope is `{ error: { code, message }, request_id }`.
+**Found:** the same document also requires that "contract validation failures auto-map to
+`VALIDATION_ERROR` with field-level issues", and the plan repeats that at P2 and P4.
+There is nowhere in the two-field error body to put them.
+**Resolution:** `errorBodySchema` gains an **optional** `issues: { path, message }[]`,
+documented as present only on `VALIDATION_ERROR`. Additive, so every response the
+original shape describes still validates; this reconciles the two CONVENTIONS clauses
+rather than departing from either. Should be folded back into CONVENTIONS' envelope line
+so the document stops contradicting itself.
+
+### P1 — `packages/contracts` depends on Hono
+**Expected:** contracts is the shared type package imported by api, web, and (once) sdk.
+**Found:** `.openapi()` metadata comes from `@hono/zod-openapi`, whose peer dependency is
+`hono` — so the package every workspace imports pulls the server framework into its
+dependency graph, `apps/web` included.
+**Resolution:** accepted. The alternative implementations (`zod-openapi`, raw zod v4
+`.meta()`) do not feed OpenAPIHono, which ADR-0004 makes the source of the published
+spec, so using a second one would mean maintaining metadata twice. Both are ESM and
+Vite tree-shakes, so P7 should confirm nothing meaningful reaches the browser bundle —
+noted there rather than assumed here.
+
+### P1 — prefixed ULIDs are hand-rolled
+**Expected:** the plan said "prefixed-ULID generator + parser" without naming a source.
+**Found:** no dependency was needed. The encoder is ~50 lines of Crockford base32 with
+no architectural weight, which CONVENTIONS' dependency threshold leaves to the planner.
+**Resolution:** hand-rolled in `ids.ts`, with the timestamp injectable so id generation
+is deterministic under test (and, later, under the `Clock` port). Ids are Zod-branded
+via `.brand<P>()`, so a `cls_` id is a compile error where a `tr_` id is expected — a
+constraint that immediately caught two loose test fixtures, which is the evidence it
+works.
 
 ---
 
