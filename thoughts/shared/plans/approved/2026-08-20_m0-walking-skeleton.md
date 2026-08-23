@@ -179,8 +179,12 @@ bun run --cwd apps/api dev & sleep 2; curl -s localhost:3000/healthz; \
 for r in rate-limited boom; do curl -si localhost:3000/_demo/$r | head -12; done; kill %1
 ```
 **Manual verification**
-- `/docs` renders in a browser and the demo routes are callable from it.
-- Unset a required env var → the process exits naming that field.
+- `/v1/docs` renders in a browser. The demo routes are **not** listed there, by design
+  (ADR-0015) — call them with curl and check them against the README instead.
+- Set a required env var to an invalid value → the process exits naming that field. At
+  P2 nothing is *required* (zero-secret boot), so the crash path is exercised by an
+  invalid value or by `NODE_ENV=production` without `APP_VERSION`. The first genuinely
+  required variable is `DATABASE_URL` at P3.
 - Every error body is `{ error: { code, message }, request_id }`; the 429 carries `Retry-After`.
 - Logs are raw NDJSON on stdout, pretty only through a `| pino-pretty` pipe.
 
@@ -627,6 +631,33 @@ rather than one document trying to describe both. **Flagged for the stakeholder:
 stable top-level `/docs` is wanted for marketing links, a redirect is a one-liner, but it
 should be a decision rather than a default. ADR-0002 says only "`/docs`", so this is a
 divergence from its letter.
+
+### P2 — two stale instructions in the plan itself, caught by the stakeholder
+**Expected:** P2's manual-verification list described what to check.
+**Found:** two of its four bullets contradicted decisions the same plan had already made.
+(1) "`/docs` renders in a browser and the demo routes are callable from it" — written
+before D-I was revised to move the demo routes outside `/v1`, so it sent a reader looking
+for endpoints that ADR-0015 deliberately keeps out of the spec. The revision updated the
+checkboxes and the phase description but not this list. (2) "Unset a required env var" —
+there are no required variables at P2, because zero-secret boot is the point; the first
+one arrives at P3.
+**Resolution:** both bullets corrected in place. Recorded rather than silently fixed
+because it is the more interesting failure mode of this workflow: a revised decision
+propagated to the parts of the plan that were being *implemented* but not to the parts
+that were only being *read*, and the implementation was correct while the instructions
+were not.
+
+### P2 — ADR-0015's README obligation was missed
+**Expected:** P2 was complete once the demo routes were mounted outside `/v1`.
+**Found:** ADR-0015 says those routes are "documented in the README rather than the
+OpenAPI spec". The README documented no endpoints at all. Keeping them out of the spec
+without the README half does not implement the decision, it only implements the part that
+had a test.
+**Resolution:** a "Running it locally" section added to the README covering `/healthz`,
+`/v1/openapi.json`, `/v1/docs` and both demo routes, with an explicit note on why the
+demo pair is absent from the spec and when it is deleted. The README's status banner was
+also corrected — it claimed there was "nothing to run yet", which stopped being true when
+the API booted.
 
 ### P2 — gitleaks failed CI on a test fixture, correctly
 **Expected:** the secret scan passes; the fixtures are obviously fake.
