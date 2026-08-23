@@ -222,9 +222,13 @@ Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,ju
 
 - [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable, carrying the
       pass `threshold`), `judges` (`jud_`), `judge_versions` (`jdv_`, immutable, carrying
-      `type` of `code` | `llm`, `weight`, and **`polarity`**), `api_keys` (`key_`,
+      `type` of `code` | `llm`, `weight`, `required`, and **`polarity`**), `api_keys` (`key_`,
       SHA-256 hash + last-4 + status, scoped to one panel),
       `traces` (`tr_` PK **and** a `request_id` column — ADR-0010), `audit_events`
+- [ ] `required` on a judge version: a `skipped`, `failed` or `error` on a required judge
+      fails the panel outright, whatever the score says. Ships as a column at M0 and stays
+      unenforced until the fan-out exists — the same "cheap column now, painful migration
+      later" reasoning as `org_members.role` (D-P)
 - [ ] **`polarity` is three-valued** — answering `true` `passes` | `fails` | `does_not_score`
       — not a boolean. `is-missing-repro: true` is a failure, `on-brand: true` is a
       success, `is-bug: true` is a label with no valence. Modelling it as a boolean makes

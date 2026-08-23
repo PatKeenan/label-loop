@@ -95,6 +95,18 @@ console-dashboard): agreement by judge version + cost per call.
 **Not now:** automated clustering UI; a script + human confirmation is fine.
 
 ## M7 — Fine-tune & serving (Categories 3, 4)
+> **DECISION REQUIRED BEFORE PLANNING THIS MILESTONE — do not start M7 without it.**
+> The fine-tuned judge is where the business model lives (PRODUCT 5.11): bring-your-own-key
+> is a hard enterprise requirement, so frontier judging earns subscription revenue only,
+> and metered inference on the model *we* trained and host is the durable margin — with
+> the SME surcharge riding on it. But PRODUCT 5.9 and core-loop step 10 **promise adapter
+> download for graduated tenants**, which is incompatible with being that model's
+> exclusive inference provider, and the BYOK enterprises most likely to demand
+> portability are exactly the ones this bites. Resolve it — download on a higher tier,
+> download as an exit right that ends the loop, or withdraw the promise — and record it as
+> an ADR before any of this is built. Full pros and cons: PRODUCT 5.11; provenance:
+> `thoughts/shared/research/2026-08-22_judge-as-a-service-reframe.md`.
+
 Curate dataset from annotations (dedup, split, version). LoRA-train one small
 open-weights model. Held-out comparison vs frontier, published honestly. Inference
 server with dynamic adapter loading (STACK_DECISIONS.md D7); router flag
@@ -104,6 +116,13 @@ outputs to the trace.
 **Not now:** multiple base families, adapter download portal, training UI (CLI is fine).
 
 ## M8 — Billing, compliance, public proof (Categories 6, 9, 8)
+> **DECISION REQUIRED BEFORE PLANNING THIS MILESTONE.** Pricing cannot assume a margin on
+> frontier tokens, because BYOK tenants route judge calls to their own provider. Settle
+> what subscriptions must cover across M1–M7, what per-token pricing on fine-tuned judges
+> looks like, and the GPU density the model needs to clear its floor — one tenant's LoRA
+> on a dedicated GPU costs more than frontier tokens, so multi-adapter serving is what
+> makes the margin real. See PRODUCT 5.11 and the M7 gate above; they are one decision.
+
 Stripe metered billing; tier quotas (max panels, max keys, monthly calls) enforced
 at the endpoint. Append-only audit log surfaced in console. `COMPLIANCE_READINESS.md`
 control mapping. Final writeup + demo video; ADR index complete.

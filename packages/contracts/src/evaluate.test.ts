@@ -47,6 +47,7 @@ describe('verdict', () => {
     judge_id: newId('jud_'),
     key: 'is-missing-repro',
     status: 'evaluated' as const,
+    error_code: null,
     reasoning: 'Steps are present but no expected-versus-actual behaviour is stated.',
     verdict: true,
     passed: false,
@@ -78,8 +79,8 @@ describe('verdict', () => {
     ).toMatchObject({ verdict: true, passed: true })
   })
 
-  test('a skipped or failed judge answers nothing at all — and is not a pass', () => {
-    for (const status of ['skipped', 'failed'] as const) {
+  test('a judge that did not answer is never a pass, whatever the reason', () => {
+    for (const status of ['skipped', 'failed', 'error'] as const) {
       const absent = verdictSchema.parse({
         ...verdict,
         status,
@@ -114,6 +115,35 @@ describe('verdict', () => {
 
   test('an unknown status is rejected — the set is closed', () => {
     expect(verdictSchema.safeParse({ ...verdict, status: 'pending' }).success).toBe(false)
+  })
+
+  test('failed and error are different things, and error names its cause', () => {
+    // failed  = the call completed and the answer was unusable. A rubric problem;
+    //           retrying the identical request tends not to help.
+    // error   = the call never completed. Infrastructure; often worth retrying.
+    const failed = verdictSchema.parse({
+      ...verdict,
+      status: 'failed',
+      reasoning: null,
+      verdict: null,
+      passed: null,
+      weight: null,
+    })
+    expect(failed.error_code).toBeNull()
+
+    const errored = verdictSchema.parse({
+      ...verdict,
+      status: 'error',
+      error_code: 'PROVIDER_TIMEOUT',
+      reasoning: null,
+      verdict: null,
+      passed: null,
+      weight: null,
+    })
+    // Drawn from the same closed taxonomy as every other error in the API, so a caller
+    // branches on the code rather than parsing prose.
+    expect(errored.error_code).toBe('PROVIDER_TIMEOUT')
+    expect(verdictSchema.safeParse({ ...verdict, error_code: 'KAPUT' }).success).toBe(false)
   })
 
   test('an informational judge scores nothing — a label is not a grade', () => {
@@ -154,6 +184,7 @@ describe('evaluation response', () => {
       key: `judge-${index}`,
       reasoning: 'Because.',
       status: 'evaluated' as const,
+      error_code: null,
       verdict: index < passing,
       passed: index < passing,
       weight: 1 / 6,
@@ -225,6 +256,7 @@ describe('evaluation response', () => {
           judge_id: newId('jud_'),
           key,
           status: 'evaluated' as const,
+          error_code: null,
           reasoning: 'Classification only.',
           verdict: key === 'is-bug',
           passed: null,
@@ -234,6 +266,7 @@ describe('evaluation response', () => {
           judge_id: newId('jud_'),
           key: 'needs-human',
           status: 'evaluated' as const,
+          error_code: null,
           reasoning: 'Clear enough for the bot to route.',
           verdict: false,
           passed: true,

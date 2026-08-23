@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi'
-import { successEnvelope } from './envelope.ts'
+import { errorCodeSchema, successEnvelope } from './envelope.ts'
 import { idSchema } from './ids.ts'
 
 /**
@@ -72,14 +72,21 @@ export const evaluateRequestSchema = z
  * the schema's property order determines generation order, so reversing these two fields
  * silently produces a worse judge that still looks correct (CONVENTIONS.md, ADR-0019).
  */
-export const VERDICT_STATUSES = ['evaluated', 'skipped', 'failed'] as const
+export const VERDICT_STATUSES = ['evaluated', 'skipped', 'failed', 'error'] as const
 
 export const verdictStatusSchema = z.enum(VERDICT_STATUSES).openapi({
   description:
-    'What happened to this judge on this call. `evaluated` — it ran and answered. ' +
-    '`skipped` — sampling excluded it, so it has no opinion. `failed` — it ran and did ' +
-    'not return a usable answer. Skipped and failed are NOT passes, and a caller must ' +
-    'never treat them as one.',
+    'What happened to this judge on this call.\n' +
+    '- `evaluated` — it ran and answered.\n' +
+    '- `skipped` — sampling excluded it, so it has no opinion.\n' +
+    '- `failed` — the call COMPLETED but the answer was unusable: unparseable output, ' +
+    'a refusal, a response that did not match the schema. Usually a rubric problem, and ' +
+    'retrying the identical request tends not to help.\n' +
+    '- `error` — the call DID NOT COMPLETE: provider timeout, circuit open, rate limit, ' +
+    'context length exceeded. Usually infrastructure, and often worth retrying. ' +
+    '`error_code` names which.\n\n' +
+    'The split matters because the two demand opposite responses. None of the three ' +
+    'non-`evaluated` statuses is a pass, and a caller must never treat one as one.',
   example: 'evaluated',
 })
 
@@ -91,6 +98,14 @@ export const verdictSchema = z
       example: 'is-missing-repro',
     }),
     status: verdictStatusSchema,
+    error_code: errorCodeSchema.nullable().openapi({
+      description:
+        'Why the call did not complete, drawn from the same closed taxonomy as every ' +
+        'other error in the API. Non-null only when `status` is `error`, so a caller can ' +
+        'branch on PROVIDER_TIMEOUT (retry) versus CIRCUIT_OPEN (do not) without parsing ' +
+        'prose.',
+      example: 'PROVIDER_TIMEOUT',
+    }),
     reasoning: z
       .string()
       .nullable()
@@ -171,7 +186,8 @@ export const evaluationSchema = z
     complete: z.boolean().openapi({
       description:
         'Whether every scoring judge on the panel actually ran. When false, some judge ' +
-        'was skipped or failed and `score` was computed over a SMALLER denominator — so ' +
+        'was skipped, failed or errored and `score` was computed over a SMALLER ' +
+        'denominator — so ' +
         'the number is real but partial, and a gate reading `passed` alone would be ' +
         'acting on incomplete information. We return the partial result and say so, ' +
         'rather than pretending or failing the whole call because one judge did.',

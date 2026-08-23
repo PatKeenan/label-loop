@@ -48,6 +48,7 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 - Organization accounts with OAuth/OIDC login; roles: admin, engineer, annotator, guest expert.
 - Role-adaptive UI: role determines the surface a user lands on, not just permissions (see 5.5).
 - Scoped API keys per panel; key rotation and revocation.
+- **Key scopes, not one flat key.** An evaluation key must not be able to rewrite the panel that judges the traffic — that is a privilege-escalation path straight through the product. Minimum split: `evaluate` (call panels and judges), `read` (pull traces and annotations, the documented exit route), `manage` (mutate panel and judge configuration). ADR-0003 defined keys as per-panel with their own quotas but said nothing about scopes; this needs an ADR amendment before the management API ships. Distinct from CONVENTIONS' rule that API keys never grant *console* access, which still holds.
 - Guest-expert access: orgs invite external experts with time-boxed, panel-scoped access, full audit logging, and configurable data visibility (e.g., PII masking on traces).
 - Full tenant data isolation.
 
@@ -56,6 +57,8 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 - Judge type: `llm` or `code`. Code judges are deterministic checks (schema assertion, regex) with near-zero cost and latency and nothing to align.
 - **Judge polarity, set per judge and three-valued:** answering `true` either passes, fails, or does not score. `is-missing-repro: true` is a failure; `on-brand: true` is a success; `is-bug: true` is a label with no valence and is excluded from the score entirely. A triage panel is mostly informational judges plus a gate or two; a taste panel is mostly scoring ones. Without polarity the panel score is uncomputable.
 - Per-judge weight and the panel's pass threshold, both configured by the customer — we never decide a caller's risk tolerance.
+- **Failure tolerance, configured per panel.** Real fan-outs partially fail, so the customer declares what is acceptable rather than us guessing: which judges are `required` (a `skipped`, `failed` or `error` on one fails the panel outright, whatever the score says) and which may drop out silently. Everything else is best-effort, and the result is returned marked `complete: false`. Deliberately two dials and not ten — the UX cost of a settings matrix is real, and most tenants should never leave the defaults (all judges best-effort, nothing required).
+- Configuration is available in the console **and** over a management API, so a team can keep panels in version control rather than clicking. That needs **scoped keys** — see 5.1.
 - Model selection per panel or per judge, and prompt/config versioning (`pnv_`, `jdv_`).
 
 ### 5.3 Evaluation API
@@ -122,6 +125,15 @@ Alignment is a **discrete, repeatable event with its own surface**, not a backgr
 - **The fine-tune is where the economics actually live.** A fine-tuned judge is an artifact the platform created and hosts — trained on the tenant's annotations and their expert's alignment sessions, served from our inference infrastructure. Metered per input and output token, priced by us, with the SME surcharge riding on top. It is defensible rather than extractive: the tenant gets a judge that is faster and cheaper than the frontier calls it replaces, and pays only for the thing we built and run.
 - **Two consequences to design for, not defer.** (a) This makes the frontier phase a loss-leader for BYOK tenants, so subscription tiers must carry M1–M7. (b) It needs GPU density: one tenant's LoRA on a dedicated GPU costs more than frontier tokens, and only multi-adapter serving (5.9) makes the margin real — the model has a minimum viable tenant count.
 - **Unresolved tension:** 5.9 and the core loop both promise adapter download for graduated tenants, which is incompatible with being the exclusive inference provider for that model. Options include download on a higher tier, download as an exit right that ends the loop, or withdrawing the promise. It is a written commitment today and needs a deliberate answer before M7.
+
+**Pros and cons of hosting the fine-tune as the revenue centre** — recorded now, decided at M7 (see the gate on that milestone in BUILD_SPINE):
+
+| For | Against |
+|---|---|
+| Charges for an artifact we actually created and run, rather than renting access to someone else's model. Defensible, not extractive. | Ownership of a model trained on the tenant's traffic and their expert's labels is a contractual claim, not a technical one. Enterprise procurement will push on it, and "we host it exclusively" is a much easier position to defend than "we own it". |
+| Incentives point the right way: we earn more when the fine-tune is genuinely good, which requires alignment to be real rather than theatrical. | Revenue arrives only at M7. Everything before it is subscription-funded, which is a long runway to price correctly on the first try. |
+| Gives the SME royalty a natural funding source — a surcharge on a model that person's judgment trained. | Needs GPU density to clear its cost floor. A single tenant's LoRA on a dedicated GPU is more expensive than frontier tokens; only multi-adapter serving makes it work, so the model has a minimum viable tenant count. |
+| Survives BYOK, which subscription-plus-token-margin does not. | Directly contradicts the adapter-download promise above, and portability is precisely what BYOK enterprises care about. |
 
 ### 5.12 Governance & audit layer
 - **Immutable audit log** of every consequential event — judgment served, annotation made, judge run, prompt/config change, training job, routing cutover, guest-expert data access — with actor, timestamp, and before/after state.

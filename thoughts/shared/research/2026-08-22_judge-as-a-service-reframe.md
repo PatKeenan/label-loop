@@ -365,3 +365,19 @@ decision with a versioning cost.
   incompatible with being that model's exclusive inference provider.
 - **Durable execution for the fan-out** (Temporal / Inngest) parked to `PARKING_LOT.md`
   with its failure-mode questions written out.
+- **`error` is a distinct verdict status from `failed`.** `failed` means the call
+  completed and the answer was unusable — a rubric problem, where retrying the identical
+  request tends not to help. `error` means the call never completed — provider timeout,
+  circuit open, context length — which is infrastructure and often worth retrying. The
+  two demand opposite responses, so they are separate, and `error` carries an
+  `error_code` from the same closed taxonomy as the rest of the API.
+- **Failure tolerance is customer configuration, not our guess.** A panel declares which
+  judges are `required` (any non-`evaluated` status fails the panel outright, whatever
+  the score) and which may drop out. Two dials, not ten — a settings matrix is its own UX
+  failure. Available in the console and over a management API, which in turn requires
+  **scoped keys** (`evaluate` / `read` / `manage`), since an evaluation key must not be
+  able to rewrite the panel judging the traffic. ADR-0003 needs an amendment for that.
+- **The business-model conversation is scheduled, not resolved.** Pros and cons are
+  written into PRODUCT 5.11, and **BUILD_SPINE now carries blocking decision gates on M7
+  and M8** so the question cannot be skipped past. That is the mechanism that makes this
+  conversation reappear at the right moment rather than being rediscovered.
