@@ -4,8 +4,8 @@
 
 ## Decision
 Error codes are demonstrated against real endpoints wherever a real endpoint can do it:
-422 by posting a malformed body to classify, 401 by presenting a missing, revoked, or
-wrong-classifier key. Only 429 and 500 get synthetic routes, and those mount outside
+422 by posting a malformed body to a panel evaluation, 401 by presenting a missing, revoked, or
+wrong-panel key. Only 429 and 500 get synthetic routes, and those mount outside
 `/v1`, documented in the README rather than the OpenAPI spec, and are deleted at M2.
 
 ## Context

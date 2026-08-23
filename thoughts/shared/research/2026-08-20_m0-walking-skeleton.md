@@ -9,6 +9,14 @@ related_adrs: [0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009]
 
 # Research — M0 walking skeleton
 
+> **SUPERSEDED IN PART — 2026-08-22.** This document predates [ADR-0019](../../../docs/adr/0019-panel-of-judges.md),
+> which replaced the `classifier` (`cls_`/`clv_`) with a **panel** (`pnl_`/`pnv_`) of
+> **judges** (`jud_`/`jdv_`) and made `POST /v1/panels/{id}/evaluate` the endpoint. Its
+> architectural findings — ports, the `llm/` gateway, resilience, telemetry, migrations —
+> all still hold; only the domain nouns and the endpoint shape changed. Read ADR-0019
+> alongside it.
+
+
 ## Problem summary
 M0 is the pattern layer: every architectural seam wired and proven through one thin
 end-to-end thread before any feature work, booting from a fresh clone with one command.

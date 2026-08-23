@@ -14,31 +14,56 @@
 - Version prefix `/v1/` from day one. Breaking change = new version, never mutation.
 - Every response is enveloped: success `{ data, request_id }`, failure
   `{ error: { code, message }, request_id }`. Error codes are a closed enum in contracts.
-- All ids are prefixed ULIDs: `cls_`, `clv_` (classifier version), `tr_`, `ann_`,
-  `key_`, `jud_`, `ds_`, `ft_`. Greppable, sortable, self-describing.
+- All ids are prefixed ULIDs: `pnl_` (panel), `pnv_` (panel version), `jud_` (judge),
+  `jdv_` (judge version), `tax_` (failure taxonomy), `tr_`, `ann_`, `key_`, `ds_`, `ft_`.
+  Greppable, sortable, self-describing. (`cls_`/`clv_` were retired by ADR-0019.)
 - **Two identifiers, never conflated** (ADR-0010). `request_id` is the W3C/OTel trace
   id for one HTTP execution: present on EVERY response, success or failure, on every
   endpoint, and the id a customer quotes to support. `trace_id` is a `tr_` ULID naming
-  a stored classification row: it exists only for classify, lives in `data`, is
+  a stored evaluation row: it exists only for panel/judge evaluation, lives in `data`, is
   permanent, and is what the trace explorer and annotation surfaces address. The
   `traces` table carries both — its `tr_` primary key and a `request_id` column — so a
   business record joins to its spans for as long as the tracing backend retains them.
 - All timestamps UTC ISO-8601, column suffix `_at`.
-- Idempotency: mutating endpoints accept `Idempotency-Key`; classify is naturally
+- Idempotency: mutating endpoints accept `Idempotency-Key`; evaluation is naturally
   idempotent per request and always returns its `tr_` `trace_id` in `data` (alongside
   the envelope's `request_id`).
+- **The product surface is a panel of judges (ADR-0019).** A caller sends an artifact to
+  `POST /v1/panels/{panel_id}/evaluate` and receives one verdict per judge, each with its
+  reasoning; `POST /v1/judges/{judge_id}/evaluate` runs a single judge. We never generate
+  the caller's artifact — their agent does — but we ARE the inference path for judge
+  calls, which is what keeps ADR-0001 true.
+- **Reasoning is emitted before the verdict**, always. These models are autoregressive, so
+  a verdict generated first makes its reasoning post-hoc rationalisation. Under structured
+  output this means JSON schema key order is load-bearing, not cosmetic.
 
 ## Keys & auth
 - API keys: `llk_live_` / `llk_test_` prefix + 32 random bytes. SHA-256 hash stored;
   plaintext rendered exactly once at creation. Last-4 shown thereafter.
-- Every key is scoped to one classifier and carries its own rate limit + usage meter.
+- Every key is scoped to one panel and carries its own rate limit + usage meter.
 - Revocation is a status flip, never a row delete (audit trail).
 - Web sessions (OIDC) and API keys are separate auth paths; API keys never grant
   console access. Roles enforced in the API layer, never only in the UI.
 
 ## Data rules
-- Classifier configs are IMMUTABLE versions (`clv_`). Editing creates version n+1.
-  Every trace, annotation, eval score, and dataset row FKs to a `clv_`.
+- Panel and judge configs are IMMUTABLE versions (`pnv_`, `jdv_`). Editing creates
+  version n+1. Every trace, annotation, eval score, and dataset row FKs to a `jdv_`.
+- **One judge per failure category, never one judge doing many things.** A judge asked to
+  assess several criteria at once returns a verdict that cannot be measured, debugged, or
+  attributed. Judges run as independent calls and are never bundled into one
+  multi-criteria prompt (ADR-0019).
+- **Judges carry a type, `code` or `llm`.** A failure mode that reduces to a schema
+  assertion or a regex becomes a deterministic check: near-zero cost and latency, and
+  perfect precision by construction, with nothing to align.
+- **Every judge declares its POLARITY, and it is three-valued.** A verdict is not a pass:
+  judges point in different directions. `is-missing-repro: true` is a failure,
+  `on-brand: true` is a success, and `is-bug: true` is neither — it is a label with no
+  valence. So a judge says whether answering `true` passes, fails, or **does not score at
+  all**. Without this the panel score is uncomputable, because summing raw booleans across
+  judges that mean opposite things is meaningless. Responses therefore carry both the raw
+  `verdict` (what the annotator agrees with or corrects) and the derived `passed` (what
+  the score sums), with `null` for informational judges, which are absent from both the
+  numerator and the denominator.
 - Annotations always carry `annotator_id`. Dataset membership is a versioned join
   table — never a boolean on the annotation.
 - `audit_events` is append-only: the app role has INSERT and SELECT only; no UPDATE
@@ -52,7 +77,7 @@
   own schema as the migrator, never at app runtime.
 - Raw provider payloads stored alongside normalized fields (rerunnable, auditable).
 - Every `traces` row stores the `request_id` of the execution that produced it, so a
-  stored classification links back to its spans (ADR-0010).
+  stored evaluation links back to its spans (ADR-0010).
 
 ## Dependency seams (ports & adapters)
 - Every external effect sits behind a small interface (a "port"): `ModelProvider`,
@@ -70,7 +95,7 @@
 
 ## Quality gates
 - Strict static typing everywhere; no untyped escape hatches without an inline justification comment.
-- Contract tests per endpoint (schema-level) + integration tests on the classify path.
+- Contract tests per endpoint (schema-level) + integration tests on the evaluation path.
 - From M6: eval suite is a required CI check.
 - Conventional commits; every PR names its BUILD_SPINE milestone in the description.
 - **Dependency threshold.** Anything that would be a row in STACK_DECISIONS — a
@@ -84,7 +109,7 @@
 - Every provider call goes through one internal `llm/` module: timeout, retry with
   backoff+jitter, circuit breaker, token/cost accounting emitted as trace span attributes.
   No fetch to a provider anywhere else in the codebase, ever.
-- Prompts live in versioned classifier configs, not in code.
+- Prompts live in versioned judge configs, not in code.
 
 ## Error handling (the pattern, laid down once)
 - **Closed taxonomy** in `packages/contracts`, each code mapping to HTTP status +
@@ -112,7 +137,7 @@
 ## Logging
 - One structured JSON logger (pino) via `hono-pino` middleware: a request-scoped child
   logger on context (`c.var.logger`) carrying `request_id` automatically, with the
-  `tr_` `trace_id` bound once the classify row exists.
+  `tr_` `trace_id` bound once the evaluation row exists.
   `console.log` is banned outside scripts (lint-enforced).
 - **Zero pino transports, ever.** In-process shipping couples API availability to the
   log backend (a slow or unavailable backend blocks the request path, buffers
@@ -122,7 +147,7 @@
   filelog receiver reads container stdout and exports to Loki (M3) — never by
   in-process shipping. Dev pretty-printing is a pipe (`bun run dev | pino-pretty`),
   never in-process.
-- Every line carries `request_id`; lines on the classify path also carry the `tr_`
+- Every line carries `request_id`; lines on the evaluation path also carry the `tr_`
   `trace_id` once the row exists. Provider calls add model, tokens, cost, latency;
   jobs log enqueue/start/finish/fail with attempt counts.
 - Log levels mean things: `error` = alert-worthy, `warn` = degraded-but-serving,

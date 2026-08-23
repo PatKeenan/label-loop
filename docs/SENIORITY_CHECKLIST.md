@@ -9,7 +9,7 @@ interviewer in under five minutes.
 
 ## 1. Core Application
 - [ ] Full-stack app: web console + typed API + relational store — M0/M1 · live URL
-- [ ] Real, eval-able AI feature (classification gateway) — M1 · /docs + demo
+- [ ] Real, eval-able AI feature (judgment gateway) — M1 · /docs + demo
 - [ ] Streaming + structured outputs with confidence — M1 · API contract
 - [ ] Versioned public API with OpenAPI + interactive docs — M1 · /openapi.json, /docs
 
@@ -19,7 +19,7 @@ interviewer in under five minutes.
 - [ ] Axial coding → versioned failure taxonomy — M6 · taxonomy doc
 - [ ] LLM judge validated against human labels; agreement + drift tracked — M6 · dashboard
 - [ ] Eval suite gating CI (regression-blocking PR demo) — M6 · blocked-PR link
-- [ ] Score dashboards over time, pinned to classifier versions — M6 · dashboard
+- [ ] Agreement dashboards over time, pinned to judge versions — M6 · dashboard
 
 ## 3. Fine-Tuning
 - [ ] Dataset curation from annotations (dedup/split/version, reliability-aware) — M7 · dataset card
@@ -42,7 +42,7 @@ interviewer in under five minutes.
 - [ ] OIDC login, sessions, server-enforced RBAC (admin/engineer/annotator) — M4 · demo
 - [ ] Scoped API keys: hashed at rest, shown once, revocable, metered — M1/M4 · console
 - [ ] Guest-expert access: time-boxed, scoped, audited, PII-masked — M8 · PRODUCT 5.1
-- [ ] Stripe metered billing + tier quotas (keys/classifiers/calls) — M8 · invoice demo
+- [ ] Stripe metered billing + tier quotas (keys/panels/calls) — M8 · invoice demo
 
 ## 7. Observability
 - [ ] Distributed traces incl. LLM spans (tokens/cost/latency) — M3 · dashboard
@@ -55,7 +55,7 @@ interviewer in under five minutes.
 - [ ] CI from day one (lint/typecheck/tests/image build, on PRs); walking skeleton
       boots via one command — M0 · Actions + compose
 - [ ] CD to a live URL; automated versioning + generated CHANGELOG — M1 · Releases
-- [ ] Dogfood case study: repo's own issues classified in production — M5 · case study
+- [ ] Dogfood case study: repo's own issues judged in production — M5 · case study
 - [ ] Architecture writeup + demo video of eval + load findings — M8 · links
 
 ## 9. Compliance & AI Governance
@@ -73,7 +73,7 @@ documented, AWS-style). The platform owns only its own surfaces:
 - [ ] Supply-chain hygiene: dependency + secret scanning in CI — M0 · Actions config
 - [ ] OWASP-basics pass on the public surface (headers, CORS, input limits) — M2 · checklist
 - [ ] Per-key budget caps + spend anomaly alert (customer protection, billing-adjacent) — M8 · console
-- [ ] SHOWCASE TENANT: a prompt-injection-detection classifier built on the platform —
+- [ ] SHOWCASE TENANT: a prompt-injection-detection judge built on the platform —
       AI-security fluency demonstrated through the product, adversarial eval set,
       taxonomy of attack patterns, candidate for the M7 fine-tune — M5-M7 · case study
 

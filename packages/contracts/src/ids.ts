@@ -9,7 +9,18 @@ import { z } from '@hono/zod-openapi'
  * encoding with no architectural weight (CONVENTIONS.md "Dependency threshold").
  */
 
-export const ID_PREFIXES = ['cls_', 'clv_', 'tr_', 'ann_', 'key_', 'jud_', 'ds_', 'ft_'] as const
+export const ID_PREFIXES = [
+  'pnl_',
+  'pnv_',
+  'jud_',
+  'jdv_',
+  'tax_',
+  'tr_',
+  'ann_',
+  'key_',
+  'ds_',
+  'ft_',
+] as const
 
 export type IdPrefix = (typeof ID_PREFIXES)[number]
 
@@ -58,7 +69,7 @@ const randomBase32 = (chars: number): string => {
 }
 
 /**
- * A Zod schema for one id prefix. Branded, so a `cls_` id cannot be passed where a
+ * A Zod schema for one id prefix. Branded, so a `pnl_` id cannot be passed where a
  * `tr_` id is expected, and OpenAPI-describable so the published spec shows the shape.
  */
 export const idSchema = <P extends IdPrefix>(prefix: P, description?: string) =>
@@ -73,8 +84,10 @@ export const idSchema = <P extends IdPrefix>(prefix: P, description?: string) =>
 
 export type PrefixedId<P extends IdPrefix> = z.infer<ReturnType<typeof idSchema<P>>>
 
-export type ClassifierId = PrefixedId<'cls_'>
-export type ClassifierVersionId = PrefixedId<'clv_'>
+export type PanelId = PrefixedId<'pnl_'>
+export type PanelVersionId = PrefixedId<'pnv_'>
+export type JudgeVersionId = PrefixedId<'jdv_'>
+export type TaxonomyId = PrefixedId<'tax_'>
 export type TraceId = PrefixedId<'tr_'>
 export type AnnotationId = PrefixedId<'ann_'>
 export type ApiKeyId = PrefixedId<'key_'>

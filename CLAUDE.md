@@ -1,14 +1,16 @@
 # CLAUDE.md — LabelLoop
 
 ## What this project is
-Classification-as-a-service with an eval-to-fine-tune flywheel. Solo-built, public portfolio project proving senior AI-engineering competency end to end. Working title: LabelLoop.
+**Judge-as-a-service with an eval-to-fine-tune flywheel** (ADR-0019). Solo-built, public portfolio project proving senior AI-engineering competency end to end. Working title: LabelLoop.
+
+The domain model, in one paragraph, because everything else follows from it: a customer creates a **panel** (`pnl_`, immutably versioned `pnv_`) containing **judges** (`jud_`/`jdv_`), one per failure category, each a single binary question answered with reasoning *before* the verdict. **Every judge declares a three-valued polarity** — answering `true` passes, fails, or does not score — because `is-missing-repro: true` is a failure, `on-brand: true` is a success, and `is-bug: true` is a label with no valence; without it the panel score is uncomputable. Their agent sends an artifact to the panel — **we never generate the artifact** — and gets back a decision (`passed`, `score`, `threshold`) plus one verdict per judge, so a deterministic step can read the summary while an agent reads the reasoning. We *are* the inference path for the judge calls, which is what makes server-side trace capture and later model-swapping ours. Classification is not a separate mode: a label set is N binary judges. SMEs annotate traces, axial coding turns free-text notes into a versioned **taxonomy** (`tax_`) while triaging each category into a deterministic `code` check or an `llm` judge, and the fine-tune distils expensive frontier judges into one cheap aligned model. `cls_`/`clv_` are retired.
 
 ## Source-of-truth documents (read before any work)
 - `docs/PRODUCT.md` — what we are building (features, scope, non-goals, future directions)
 - `docs/STAKEHOLDER_VALUE.md` — why each feature exists; traceability to the stakeholder's goals. If proposed work doesn't map to a row here, flag it as scope creep.
 - `docs/BUILD_SPINE.md` — THE single ordering authority (milestones M1-M8). Every task names its milestone; anything that fits none goes to docs/PARKING_LOT.md.
 - `docs/CONVENTIONS.md` — non-negotiable backend conventions (repo shape, API envelope, ids, keys, versioning, LLM-call rules).
-- `docs/adr/` — accepted decisions. ADR-0001: traces are captured server-side (we are the gateway). ADR-0002: REST first, thin client SDK at M4. ADR-0003: immutable classifier versions, scoped hashed keys.
+- `docs/adr/` — accepted decisions. **ADR-0019 defines what the product IS — read it first.** ADR-0001: traces are captured server-side (we are the gateway, for judge calls). ADR-0002: REST only, no SDK. ADR-0003: immutable panel/judge versions, scoped hashed keys.
 - `docs/SENIORITY_CHECKLIST.md` — the scoreboard: every competency this project exists to prove, mapped to milestone + public artifact. Check items only when the artifact is live.
 - `docs/STACK_DECISIONS.md` — the technology decision register. STACK CHOICES ARE STAKEHOLDER-OWNED: never introduce a framework, database, queue, or tool for an OPEN row without asking; once decided, record an ADR.
 

@@ -9,7 +9,7 @@ The API exposes two distinct identifiers and never conflates them.
   response, success and failure, on every endpoint. Carried on every log line and every
   span. This is the id a customer quotes to support.
 - **`trace_id`** — a `tr_` ULID naming a row in the `traces` table: one stored
-  classification. Exists only for `/v1/classify`, returned inside `data`, permanent,
+  evaluation. Exists only for panel/judge evaluation, returned inside `data`, permanent,
   and the id the trace explorer, annotation surfaces, eval scores, and dataset rows
   address.
 
@@ -21,10 +21,10 @@ between a business record and its telemetry.
 ## Context
 The word "trace" means two unrelated things in this project. The observability industry
 uses it for a request's timing breakdown; our product uses it for a saved
-classification (PRODUCT.md 5.4, the trace explorer, the object SMEs annotate). The
+evaluation (PRODUCT.md 5.4, the trace explorer, the object SMEs annotate). The
 original envelope spec said `trace_id` without saying which, and the two objects differ
 in every meaningful way: one is created for all traffic and expires with backend
-retention, the other is created only by classify and is kept permanently.
+retention, the other is created only by an evaluation and is kept permanently.
 
 The failure path decides which belongs in the envelope. If the envelope carried the
 `tr_` id, a request that 500s before persisting has no id to return — precisely the
@@ -32,7 +32,7 @@ case where a caller most needs one. The execution id exists from the moment the 
 arrives, so it is the only candidate that survives failure.
 
 ## Consequences
-- Support debugging works uniformly: any response, including errors on non-classify
+- Support debugging works uniformly: any response, including errors on non-evaluation
   endpoints, yields an id that resolves to spans and logs.
 - Product lookups stay stable: `tr_` ids outlive trace retention, so the annotation and
   eval surfaces never depend on an observability backend's TTL.

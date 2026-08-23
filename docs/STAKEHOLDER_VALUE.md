@@ -19,7 +19,7 @@ Corollary goals:
 
 - The eval lifecycle is not bolted on — it **is** the product. Every checklist item in evals becomes a user-facing feature, so nothing feels contrived.
 - Multi-tenancy, scoped tokens, metered billing, and per-tenant adapter serving are the hard, rarely-demonstrated parts of senior platform work. A single-user demo app cannot surface them.
-- Dogfooding (classifying the repo's own issues) makes the public proof self-referential: the portfolio project generates its own real traffic, real annotations, and a real case study.
+- Dogfooding (judging the repo's own issues) makes the public proof self-referential: the portfolio project generates its own real traffic, real annotations, and a real case study.
 - The category exists commercially (OpenPipe, Braintrust, LangSmith adjacency), which signals product judgment: rebuilding a validated category solo, not inventing a toy.
 
 ## 3. Traceability: checklist category → product feature → what it proves
@@ -28,7 +28,7 @@ Corollary goals:
 | Product feature | Why it delivers the goal |
 |---|---|
 | Full-stack app: web console + typed API + relational store | Table-stakes full-stack proof, but in service of a real product, not a todo app. |
-| Structured-output classification API w/ streaming | Shows modern LLM API design: schemas, confidence, trace IDs — the details seniors get right. |
+| Structured-output evaluation API w/ streaming | Shows modern LLM API design: schemas, per-judge verdicts with reasoning, trace IDs — the details seniors get right. |
 
 ### Category 2 — Eval Harness (the differentiator)
 | Product feature | Why it delivers the goal |
@@ -67,8 +67,8 @@ Corollary goals:
 | Product feature | Why it delivers the goal |
 |---|---|
 | OAuth/OIDC + roles (admin/engineer/annotator) | RBAC is motivated by the product (annotators ≠ admins), so it demonstrates real authorization design. |
-| Scoped per-classifier API keys, rotation | Machine-to-machine auth at tenant scale — the part of "auth" that separates seniors from tutorial-followers. |
-| Guest-expert access (time-boxed, classifier-scoped, audited, PII-masked) | Third-party access governance — the hardest slice of a future marketplace, delivered as auth design. A distinctly senior access-control story. |
+| Scoped per-panel API keys, rotation | Machine-to-machine auth at tenant scale — the part of "auth" that separates seniors from tutorial-followers. |
+| Guest-expert access (time-boxed, panel-scoped, audited, PII-masked) | Third-party access governance — the hardest slice of a future marketplace, delivered as auth design. A distinctly senior access-control story. |
 | Stripe metered billing | Revenue infrastructure: webhooks, idempotency, usage metering — a competency gap in nearly all portfolios. |
 
 ### Category 7 — Observability

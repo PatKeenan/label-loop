@@ -32,9 +32,9 @@ milestone demands better.
 
 1. `annotator-session.html` (P0) — one trace at a time, agree/correct, failure note,
    session goal. The product thesis. [PRODUCT.md 5.5]
-2. `console-dashboard.html` (P0) — quality by classifier version, judge-vs-human
+2. `console-dashboard.html` (P0) — quality by judge version, judge-vs-human
    agreement, cost per call frontier vs fine-tune. The receipts. [5.10]
-3. `classifier-create.html` (P1) — wizard: name, labels, prompt/context, model →
+3. `panel-create.html` (P1) — wizard: name, judges, prompt/context, model →
    version 1 + API key reveal (shown once). The interviewer's entry point. [5.2, 5.1]
 
 ## Deferred (unstyled until a milestone demands better)
