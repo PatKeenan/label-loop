@@ -199,7 +199,25 @@ Files: `packages/db/src/schema/{orgs,org-members,classifiers,classifier-versions
 `packages/db/drizzle.config.ts`, `packages/db/sql/0000_roles.sql`,
 `packages/db/migrations/*`, `packages/db/src/{client,migrate}.ts`,
 `scripts/seed.ts`, `apps/api/src/routes/health.ts` (extend with `/readyz`),
-`apps/api/src/auth.ts` (better-auth instance config — mounted at P7).
+`apps/api/src/auth.ts` (better-auth instance config — mounted at P7),
+**`infra/docker-compose.yml` (new — see the prerequisite note below)**.
+
+> **Prerequisite, resolved in advance (noted 2026-08-22, before P3 started).**
+> P3's first verification command is
+> `docker compose -f infra/docker-compose.yml up -d postgres`, but `infra/` does not
+> exist — the compose file is listed under P8's files, not P3's. This is an ordering gap
+> in the plan, not a contradiction, and the resolution is the obvious one: **P3 creates
+> `infra/docker-compose.yml` containing only a `postgres` service, and P8 extends that
+> same file** with api, web, the migrate+seed one-shot, and the telemetry containers —
+> which is what P8's file list already implies by naming the identical path. Do not defer
+> Postgres to a throwaway `docker run`; the compose file is the artifact ADR-0009's
+> one-command claim rests on, and it should start accumulating here.
+> Constraints that already apply to it at P3: the base file stays on the plain 2.x
+> feature set (D-M), it uses a named volume rather than a bind mount, and it pins an
+> explicit Postgres image tag — never `:latest` (ADR-0011's reasoning).
+> Docker on this machine is 29.7.2 / Compose v5.4.0, so nothing is blocked.
+> Recorded here because the previous phase proved the failure mode: a fresh session
+> starting from this file should not have to rediscover it.
 
 - [ ] Tables: `orgs`, `classifiers` (`cls_`), `classifier_versions` (`clv_`, immutable),
       `api_keys` (`key_`, SHA-256 hash + last-4 + status, scoped to one classifier),
