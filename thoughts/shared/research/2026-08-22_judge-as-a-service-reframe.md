@@ -202,9 +202,49 @@ Most of this conversation is deferrable UI and configuration. **Three things are
 the stakeholder's assumption that "the naming is settled" is only half right: the
 *structure* is settled, the *central noun* is not.
 
+### Q0 — the question the others depend on, surfaced last and unresolved
+
+**Does LabelLoop run the model that produces the artifact, or only judge an artifact the
+caller already produced?**
+
+Both answers appeared in the same conversation. *"The person using us in the UI inputs
+which model they want to go to, we capture that because we route them to that model"* is
+LabelLoop on the generation path. *"The developers have to send in the generated object
+and any other additional context"* is the caller generating and LabelLoop only judging.
+PRODUCT.md is unambiguous for the first — "teams create a classification endpoint backed
+by a frontier LLM" — while the 2026-08-22 reframe leans on the second.
+
+This is not a naming question, it is an architecture question, and **the noun follows from
+it**: judge-only makes `gate` right and `classifier` wrong; running the model makes the
+object span classification *and* evaluation.
+
+**claude-code's recommendation: judge-only.** Four reasons.
+1. It matches the positioning the stakeholder reached independently — the smallest
+   possible ask of a developer, one call inside their own loop.
+2. It does not require LabelLoop to be reliable enough to sit on someone's *generation*
+   path. A check that is occasionally slow is survivable; a generation dependency that is
+   occasionally slow is not.
+3. It is **forward-compatible**: judge-only is a strict subset of "both". Generation can be
+   added later; it cannot be removed once callers depend on it.
+4. **The fine-tune story survives and improves.** If LabelLoop does not generate, the
+   fine-tune target moves from the classifier to **the judge** — distilling several
+   expensive frontier judges into one cheap aligned model that reproduces the expert's
+   verdicts. That is a more direct economic argument for the whole loop than "a cheaper
+   classifier", and it makes per-judge alignment metrics load-bearing rather than
+   decorative.
+
+**Caveat, and why this is a stakeholder decision rather than an implementation one:** it
+contradicts PRODUCT.md as written and re-points ADR-0001, whose rationale is that we
+capture traces server-side *because we are the inference path*. Under judge-only we are
+still an inference path — the judges are LLM calls through the same `llm/` gateway — but
+we no longer see the caller's generation, so "which model produced this" becomes
+caller-reported metadata rather than something we control.
+
+### The three that block M0 phases
+
 | # | Question | Blocks | Why it cannot wait |
 |---|---|---|---|
-| **Q1** | **What is the customer-facing endpoint object called?** `classifier` (`cls_`/`clv_`) is weak under this framing — in GitHub triage it does triage, for a marketer it gates an asset. `gate` emerged as the working candidate and survives scrutiny. | **P3** (schema, first migration) and hard-blocks **P4** | P3 writes the first forward-only migration; P4 writes `/v1/classify/{id}` and the trace row. CONVENTIONS: a `/v1` shape change means a **new API version**, not an edit. Renaming before anything consumes the API is nearly free; after M1 ships a live URL it is not. |
+| **Q1** | **What is the customer-facing endpoint object called?** *(follows from Q0)* `classifier` (`cls_`/`clv_`) is weak under this framing — in GitHub triage it does triage, for a marketer it gates an asset. `gate` emerged as the working candidate and survives scrutiny. | **P3** (schema, first migration) and hard-blocks **P4** | P3 writes the first forward-only migration; P4 writes `/v1/classify/{id}` and the trace row. CONVENTIONS: a `/v1` shape change means a **new API version**, not an edit. Renaming before anything consumes the API is nearly free; after M1 ships a live URL it is not. |
 | **Q2** | **Is the taxonomy/category a first-class entity with its own id prefix?** It sits between annotations and judges, and both hang off it. PRODUCT references "taxonomy + rubric" but it has no prefix in CONVENTIONS' list. | **P3** | It is a table with foreign keys in both directions. Adding it later is a migration through data that already exists. |
 | **Q3** | **Does the response contract carry `reasoning` as a first-class field?** Merged P1 contract is `{ label, confidence, trace_id }`. This framing needs verdict + reasoning, per judge. | **P4** | Same `/v1` versioning constraint. Axial coding operates on *why*, so a label-only response starves the loop it exists to feed. |
 
@@ -277,8 +317,13 @@ with real k6 numbers at M2 rather than deciding on intuition now.
 
 ## 7. Next step
 
-The three blocking questions in §4 need stakeholder decisions before P4, and Q1/Q2 before
-P3 writes the migration. P3 can proceed on current names without regret — a table rename
+**Q0 is the one to answer first — Q1 is downstream of it.** The three blocking questions in
+§4 need stakeholder decisions before P4, and Q1/Q2 before P3 writes the migration.
+
+**Decision taken 2026-08-22:** the noun is **deferred** and P3 proceeds on the existing
+`cls_`/`clv_` names. Rationale: renaming a table before anything consumes the API is cheap,
+and a public-contract noun should not be settled at the end of a long conversation. The
+cost is one small migration later; the cost of guessing wrong is an API version. P3 can proceed on current names without regret — a table rename
 before anything consumes the API is cheap — but **P4 is the real gate**.
 
 When decided, the outputs belong in: a PRODUCT.md revision (framing), a CONVENTIONS.md
