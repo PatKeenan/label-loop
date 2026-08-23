@@ -14,7 +14,18 @@ import {
 
 describe('prefixed ULIDs', () => {
   test('the prefix set is exactly the one CONVENTIONS names', () => {
-    expect([...ID_PREFIXES]).toEqual(['cls_', 'clv_', 'tr_', 'ann_', 'key_', 'jud_', 'ds_', 'ft_'])
+    expect([...ID_PREFIXES]).toEqual([
+      'pnl_',
+      'pnv_',
+      'jud_',
+      'jdv_',
+      'tax_',
+      'tr_',
+      'ann_',
+      'key_',
+      'ds_',
+      'ft_',
+    ])
   })
 
   test('the body pattern accepts the Crockford alphabet and nothing else', () => {
@@ -47,13 +58,14 @@ describe('prefixed ULIDs', () => {
   })
 
   test('parseId rejects a wrong prefix, a short body, and a non-string', () => {
-    const clv = newId('clv_')
-    expect(() => parseId('cls_', clv)).toThrow(/expected a cls_ id/)
+    const pnv = newId('pnv_')
+    expect(() => parseId('pnl_', pnv)).toThrow(/expected a pnl_ id/)
     expect(() => parseId('tr_', 'tr_TOOSHORT')).toThrow(/expected a tr_ id/)
     expect(() => parseId('tr_', undefined)).toThrow(/expected a tr_ id/)
-    // cls_ is a prefix of nothing else, but clv_ and cls_ share three characters:
-    // the pattern must not treat one as the other.
-    expect(isId('cls_', clv)).toBe(false)
+    // pnl_ and pnv_ share three characters, as do jud_ and jdv_: the pattern must not
+    // treat one as the other.
+    expect(isId('pnl_', pnv)).toBe(false)
+    expect(isId('jud_', newId('jdv_'))).toBe(false)
   })
 
   test('ids sort lexicographically in timestamp order', () => {
@@ -81,7 +93,7 @@ describe('idSchema', () => {
   test('parses a real id and rejects a foreign one with a readable message', () => {
     const id = newId('tr_')
     expect(schema.parse(id)).toBe(id)
-    const result = schema.safeParse(newId('cls_'))
+    const result = schema.safeParse(newId('pnl_'))
     expect(result.success).toBe(false)
     expect(result.error?.issues[0]?.message).toMatch(/must be a tr_ id/)
   })

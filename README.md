@@ -2,14 +2,18 @@
 
 **Classification-as-a-service with a built-in eval-to-fine-tune flywheel.**
 
-Teams create a classification endpoint backed by a frontier LLM, annotate their own real
-traffic, align an automated judge against human judgement, and graduate to a cheaper
-fine-tuned open-weights model served from the same endpoint — without changing a line of
-integration code.
+Teams create a **panel of judges** that a subject-matter expert's judgement is distilled
+into, call it as one step inside their own agentic workflow, annotate their own real
+traffic, align each judge against that expert, and graduate to a cheaper fine-tuned
+open-weights judge served from the same endpoint — without changing a line of integration
+code.
+
+We are one call inside someone else's loop, never the orchestration layer. Your agent
+generates the artifact; we judge it.
 
 > **Status: early.** The walking skeleton is under construction. The API boots and
 > serves its health, spec and error-taxonomy endpoints (see
-> [Running it locally](#running-it-locally)), but there is no classification endpoint
+> [Running it locally](#running-it-locally)), but there is no evaluation endpoint
 > yet — that lands at M1. The one-command `docker compose up` walkthrough arrives with
 > the end of M0.
 
@@ -17,8 +21,9 @@ integration code.
 
 ## The problem
 
-Teams bolt LLM classification onto internal workflows — bug triage, ticket routing,
-content labeling, moderation — and then have no systematic way to answer three questions:
+Teams bolt LLM judgement onto agentic and automated workflows — bug triage, ticket
+routing, content labeling, brand and quality gates on generated assets — and then have no
+systematic way to answer three questions:
 
 1. **Is it working?** Accuracy is asserted from spot checks, not measured.
 2. **Is it getting better?** Prompt edits ship untracked, so "we improved it" is a feeling.
@@ -27,7 +32,14 @@ content labeling, moderation — and then have no systematic way to answer three
 
 Evaluation, annotation, judge alignment, and fine-tuning each have tooling, but they live
 in separate products and ad-hoc notebooks. Nothing carries a team along the whole path
-from *first classification call* to *owned fine-tuned model* on one continuous data loop.
+from *first judgement call* to *owned fine-tuned judge* on one continuous data loop.
+
+**And the human half is worse than the tooling half.** Aligning a judge takes a
+subject-matter expert, and the industry has no good surface for one. Developers hand-roll
+throwaway annotation UIs, the expert's experience is miserable, and the expertise never
+accumulates into anything reusable. That gap is the wedge: LabelLoop is the one place a
+developer and an expert meet over a shared data model, each getting a surface built for
+them.
 The handoffs are where the effort dies.
 
 **There is also a regulatory tailwind.** UK (UK GDPR, the Data (Use and Access) Act 2025
@@ -39,10 +51,18 @@ LabelLoop get the evidence as a byproduct of the loop rather than as a separate 
 
 ## Who it is for
 
-Small-to-mid engineering teams embedding classification into automated or agentic systems,
+Small-to-mid engineering teams embedding judgement into automated or agentic systems,
 with at least one subject-matter expert willing to review outputs. The shape we design
-against: a platform team classifying inbound GitHub issues as
-`bug / feature / question / needs-human`, consumed by their triage bot.
+against, in two shapes that are the same operation:
+
+- **Triage** — a platform team judging inbound GitHub issues with a panel of
+  `is-bug`, `is-feature`, `is-question`, `needs-human`, consumed by their triage bot.
+- **Taste** — a marketing team gating generated assets on a designer's judgement with
+  `on-brand`, `composition-acceptable`, `colour-balanced`, called from inside their
+  generation agent before an asset ships.
+
+Both send an artifact and receive per-judge verdicts. The only difference is where the
+artifact came from, which is not a property of our system.
 
 ---
 
@@ -50,21 +70,24 @@ against: a platform team classifying inbound GitHub issues as
 
 ```mermaid
 flowchart LR
-    A[Create classifier<br/>labels + prompt = v1] --> B[Scoped API key]
-    B --> C[Serve + trace<br/>100% of calls]
+    A[Create panel<br/>judges + model = v1] --> B[Scoped API key]
+    B --> C[Judge + trace<br/>100% of calls]
     C --> D[SMEs annotate<br/>agree / correct / note]
-    D --> E[Axial coding<br/>failure taxonomy]
-    E --> F[Judge aligned<br/>to human labels]
-    F --> G[Fine-tune unlocked<br/>LoRA on annotations]
+    D --> E[Axial coding<br/>taxonomy + code-vs-judge triage]
+    E --> F[Judges aligned<br/>to human labels]
+    F --> G[Fine-tune unlocked<br/>LoRA distils the judges]
     G --> H[Shadow mode<br/>quality + cost side by side]
     H --> C
 ```
 
-1. **Create a classifier.** Name, description, label set (binary, multi-class, or
-   multi-label), optional label definitions and few-shot examples. This is version 1.
-2. **Get a scoped key** and call one endpoint from your own systems.
-3. **Every call is served and traced** — input, output, label, confidence, latency,
-   tokens, cost, model, classifier version.
+1. **Create a panel.** Name, description, and its judges — each one a single binary
+   question with a definition and optional examples. A label set becomes N judges rather
+   than one multi-class call, because a verdict you can measure is worth more than a
+   verdict you can only read. This is version 1.
+2. **Choose the model** your judges run on, and **get a scoped key**. Your agent calls the
+   panel as one step in its own workflow.
+3. **Every judge runs independently and is traced** — artifact, per-judge verdict and
+   reasoning, latency, tokens, cost, model, judge version.
 4. **SMEs annotate real traffic** in a focused review surface: agree, correct, and leave a
    free-text failure note.
 5. **Failure notes are clustered** into themes and confirmed by a human, producing a
@@ -102,13 +125,13 @@ It also creates an obligation. Being on the request path means we own provider l
 provider failure, so timeouts, retries with backoff and jitter, and circuit breaking are
 load-bearing infrastructure rather than a later hardening pass.
 
-### Classifier configs are immutable versions
+### Panel and judge configs are immutable versions
 
-Editing a prompt, label set, or model does not mutate a classifier — it creates version
+Editing a prompt, a criterion, or a model does not mutate a judge — it creates version
 n+1. Every trace, annotation, eval score, and dataset row references the exact version
 that produced it. ([ADR-0003](docs/adr/0003-versioning-and-keys.md))
 
-This is what makes "the classifier got better" a provable claim instead of an anecdote.
+This is what makes "the judge got better" a provable claim instead of an anecdote.
 Quality is plotted per immutable version, so a score timeline can never silently span a
 prompt change. It is also the foundation of the audit story: any past decision can be
 reconstructed — which model ran, on what input, under which prompt, reviewed by whom.
@@ -120,8 +143,8 @@ separately. ([ADR-0010](docs/adr/0010-request-id-vs-trace-id.md))
 
 - **`request_id`** — the execution id for one HTTP request. Present on every response,
   success or failure, on every endpoint. This is the id you quote to support.
-- **`trace_id`** — a `tr_` identifier naming one *stored classification*. Returned only by
-  the classify endpoint, permanent, and the id that annotation and eval surfaces address.
+- **`trace_id`** — a `tr_` identifier naming one *stored evaluation*. Returned only by the
+  evaluation endpoints, permanent, and the id that annotation and eval surfaces address.
 
 The failure path is what settles the distinction. If the response envelope carried the
 stored-record id, a request that fails before persisting anything would have no id to
@@ -262,7 +285,7 @@ endpoints there only to delete them later would be self-inflicted contract churn
 exist because nothing in the walking skeleton legitimately produces a `429` or a `500`
 yet, and they are **deleted at M2**, when real rate limiting gives the `429` an honest
 source. The other two codes in the required set, `422` and `401`, are demonstrated on
-the real classification endpoint rather than faked — a malformed body proves that
+the real evaluation endpoint rather than faked — a malformed body proves that
 contract validation actually works, whereas a synthetic route would only prove that a
 synthetic route can throw. See [ADR-0015](docs/adr/0015-demo-routes-outside-versioned-surface.md).
 
@@ -290,7 +313,7 @@ thoughts/         research and planning trail behind each decision
 | **M1** | Endpoint spine | A real frontier provider, structured output with confidence, server-side traces on every call, hashed scoped API keys. |
 | **M2** | Resilience | Per-key rate limiting, timeouts, retries, circuit breaking, and a documented breaking point under load. |
 | **M3** | Observability | Distributed traces including LLM spans, cost and latency dashboards, alerting. |
-| **M4** | Console | OIDC login, server-enforced roles, classifier creation, key management, trace explorer. |
+| **M4** | Console | OIDC login, server-enforced roles, panel and judge creation, key management, trace explorer. |
 | **M5** | Annotation loop | The annotator surface, sampling strategies, reliability scoring, and the first dogfood tenant. |
 | **M6** | Eval harness | Failure taxonomy, an aligned judge with tracked agreement, and an eval suite that gates merges on regression. |
 | **M7** | Fine-tune & serving | Dataset curation, LoRA training, held-out comparison, and shadow-mode routing. |
@@ -300,7 +323,7 @@ Ordering is fixed in [`docs/BUILD_SPINE.md`](docs/BUILD_SPINE.md).
 
 ### Dogfooding
 
-This repository is tenant #1. Incoming issues are classified through the production API,
+This repository is tenant #1. Incoming issues are judged by a panel through the production API,
 annotated by the maintainer, and carried through the full loop in public — including the
 parts that go badly. Quality and cost comparisons are published whichever way the numbers
 land; a fine-tune that underperforms is a result, not a failure to hide.
@@ -326,11 +349,11 @@ very first migration: retrofitting attribution onto unattributed data is impossi
 independent eval engineers offering human evals, axial coding, and rubric design as a
 service — matching, reputation tied to verified work quality, payouts through the
 platform. V1 ships only the hardest prerequisite: governed guest-expert access that is
-time-boxed, classifier-scoped, audited, and PII-masked.
+time-boxed, panel-scoped, audited, and PII-masked.
 
 **Expertise as a service.** The synthesis. A subject-matter expert with recognized
 judgement registers, builds reputation through verified annotation quality, and is
-enlisted to seed and steer a classifier. Their judgement is distilled into labeled data,
+enlisted to seed and steer a panel. Their judgement is distilled into labeled data,
 an aligned judge, and eventually a fine-tune running inside a customer's workflow.
 Compensation is usage-based through the same ledger. Reputation, attribution, and metering
 all reuse V1 primitives, which is what keeps this a roadmap rather than a fantasy.

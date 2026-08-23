@@ -1,10 +1,10 @@
 ---
 date: 2026-08-22T03:10:00Z
 author: claude-code
-status: open-questions
+status: resolved
 milestone: M0 (what it blocks) · M5–M6 (what it describes)
 topic: judge-as-a-service-reframe
-related_adrs: [0001, 0003, 0010]
+related_adrs: [0001, 0003, 0010, 0019]
 ---
 
 # Judge-as-a-service — positioning, entity model, and the naming it blocks
@@ -19,10 +19,21 @@ that did not carry over.
 This is **not codebase research**. It is a framing conversation captured because three of
 its consequences land inside M0 and cannot be deferred, while the rest genuinely can.
 
-**Nothing here has been applied to `PRODUCT.md`, `CONVENTIONS.md`, `BUILD_SPINE.md` or any
-ADR.** Those are source-of-truth documents; changing them is a stakeholder act. This doc
-records what was said and what it implies, so the decision can be made deliberately rather
-than absorbed through a table name.
+> **RESOLVED 2026-08-22 → [ADR-0019](../../../docs/adr/0019-panel-of-judges.md).** The
+> stakeholder settled the framing at the end of this conversation and asked for it to be
+> applied across the project. The object is a **panel** (`pnl_`/`pnv_`) of **judges**
+> (`jud_`/`jdv_`); we do not generate the caller's artifact but we *are* the inference path
+> for judge calls; classification is expressed as N binary judges. PRODUCT.md,
+> CONVENTIONS.md, BUILD_SPINE.md, STAKEHOLDER_VALUE.md, SENIORITY_CHECKLIST.md, README.md,
+> ADR-0001, ADR-0003, ADR-0010, ADR-0015, the M0 plan and `packages/contracts` were all
+> updated to match. **This document is now history, not instruction — read ADR-0019 for
+> the decision.** It is kept because the reasoning, including one wrong turn, is the
+> provenance.
+
+The paragraph below described the state before that resolution and is preserved as written:
+
+> Nothing here has been applied to `PRODUCT.md`, `CONVENTIONS.md`, `BUILD_SPINE.md` or any
+> ADR. Those are source-of-truth documents; changing them is a stakeholder act.
 
 ---
 

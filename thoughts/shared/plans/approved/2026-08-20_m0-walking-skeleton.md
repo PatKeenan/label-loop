@@ -15,7 +15,7 @@ related_adrs: [0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011,
 ## Goal
 Instantiate every architectural pattern CONVENTIONS.md names, proven through one thin
 end-to-end thread, so that a fresh clone plus `docker compose up` yields a running
-system whose guts are observable: `POST /v1/classify/{id}` authenticated by a hashed
+system whose guts are observable: `POST /v1/panels/{id}/evaluate` authenticated by a hashed
 scoped key, validated by a contract, served by a deterministic fake provider behind the
 `ModelProvider` port and the single `llm/` gateway (timeout, retry+jitter, breaker),
 persisted as a `tr_` trace row carrying its `request_id`, followed by an idempotent
@@ -104,10 +104,10 @@ gh workflow list && gh run list --limit 5
 ---
 
 ## Phase P1 — `packages/contracts` (the type truth)
-**Slice goal:** the error taxonomy, the envelope, the id prefixes and the classify
+**Slice goal:** the error taxonomy, the envelope, the id prefixes and the evaluation
 schemas exist before anything can be written dishonestly against them.
 
-Files: `packages/contracts/src/{errors,envelope,ids,classify,index}.ts` + co-located
+Files: `packages/contracts/src/{errors,envelope,ids,evaluate,index}.ts` + co-located
 `*.test.ts`.
 - `errors.ts` — the closed `ErrorCode` enum exactly as CONVENTIONS lists it
   (`VALIDATION_ERROR` 422 · `UNAUTHORIZED` 401 · `FORBIDDEN` 403 · `NOT_FOUND` 404 ·
@@ -117,10 +117,11 @@ Files: `packages/contracts/src/{errors,envelope,ids,classify,index}.ts` + co-loc
   code without a map entry fails typecheck.
 - `envelope.ts` — `{ data, request_id }` / `{ error: { code, message }, request_id }`
   Zod schemas (ADR-0010: `request_id`, never `trace_id`).
-- `ids.ts` — prefix constants `cls_ clv_ tr_ ann_ key_ jud_ ds_ ft_`, branded id types,
+- `ids.ts` — prefix constants `pnl_ pnv_ jud_ jdv_ tax_ tr_ ann_ key_ ds_ ft_`, branded id types,
   prefixed-ULID generator + parser.
-- `classify.ts` — request (`input`, optional metadata) and response (`label`,
-  `confidence`, `trace_id`) schemas; `trace_id` lives in `data`.
+- `evaluate.ts` — request (`artifact`, optional `context`) and response (per-judge
+  `verdicts` with reasoning before verdict, `trace_id`) schemas; `trace_id` lives in `data`.
+  *(Renamed from `classify.ts` by ADR-0019 after P1 shipped — see the deviation record.)*
 
 - [x] Enum + status/retryable map with an exhaustiveness test
 - [x] Envelope schemas parse a success and a failure fixture; `request_id` required on both
@@ -162,7 +163,7 @@ outside `/v1`),
 - [x] `/healthz` returns process liveness **plus version + git SHA** (ADR-0011)
 - [x] Two synthetic routes mounted **outside `/v1`** — `/_demo/rate-limited` (429 with
       `Retry-After`) and `/_demo/boom` (500) — because nothing in M0 legitimately
-      produces those codes. 422 and 401 are proven on the real classify endpoint at P4,
+      produces those codes. 422 and 401 are proven on the real evaluation endpoint at P4,
       not faked here (D-I)
 - [x] The 500 path reports to the `ErrorReporter` port with `request_id`; Sentry adapter
       is a no-op when `SENTRY_DSN` is unset (zero-secret boot, ADR-0009)
@@ -192,10 +193,10 @@ for r in rate-limited boom; do curl -si localhost:3000/_demo/$r | head -12; done
 
 ## Phase P3 — `packages/db`: schema, two roles, grants, seed, `/readyz`
 **Slice goal:** the data patterns that are painful to retrofit — forward-only
-migrations, migrator/app role separation, the append-only guarantee, immutable `clv_`
+migrations, migrator/app role separation, the append-only guarantee, immutable `pnv_`/`jdv_`
 versions, hashed keys — land in the first migration and are *proven by tests*.
 
-Files: `packages/db/src/schema/{orgs,org-members,classifiers,classifier-versions,api-keys,traces,audit-events,auth}.ts`,
+Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,judge-versions,api-keys,traces,audit-events,auth}.ts`,
 `packages/db/drizzle.config.ts`, `packages/db/sql/0000_roles.sql`,
 `packages/db/migrations/*`, `packages/db/src/{client,migrate}.ts`,
 `scripts/seed.ts`, `apps/api/src/routes/health.ts` (extend with `/readyz`),
@@ -219,8 +220,9 @@ Files: `packages/db/src/schema/{orgs,org-members,classifiers,classifier-versions
 > Recorded here because the previous phase proved the failure mode: a fresh session
 > starting from this file should not have to rediscover it.
 
-- [ ] Tables: `orgs`, `classifiers` (`cls_`), `classifier_versions` (`clv_`, immutable),
-      `api_keys` (`key_`, SHA-256 hash + last-4 + status, scoped to one classifier),
+- [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable), `judges`
+      (`jud_`, with a `type` column of `code` | `llm`), `judge_versions` (`jdv_`, immutable),
+      `api_keys` (`key_`, SHA-256 hash + last-4 + status, scoped to one panel),
       `traces` (`tr_` PK **and** a `request_id` column — ADR-0010), `audit_events`
 - [ ] better-auth's tables generated into the same forward-only migration stream
 - [ ] `org_members` (`org_id`, `user_id`, `role`) created at M0 — the role column ships
@@ -230,7 +232,7 @@ Files: `packages/db/src/schema/{orgs,org-members,classifiers,classifier-versions
 - [ ] `REVOKE UPDATE, DELETE ON audit_events FROM app` — the single deliberate exception
 - [ ] **Test: Postgres itself rejects the app role's UPDATE and DELETE on `audit_events`**
 - [ ] Forward-only: no `down` migrations exist anywhere; migrate runs as the migrator
-- [ ] Seed script creates org + classifier + immutable `clv_` v1 + a deterministic
+- [ ] Seed script creates org + panel + one judge + immutable `pnv_`/`jdv_` v1 + a deterministic
       `llk_test_` dev key, printing the plaintext **exactly once** (ADR-0003), so the
       README curl works verbatim
 - [ ] `/readyz` checks DB reachable **and** migrations current (queue added at P5)
@@ -245,19 +247,19 @@ bun run db:seed && curl -s localhost:3000/readyz
 **Manual verification**
 - `psql` as the app role: `ALTER TABLE traces ...` and `UPDATE audit_events ...` both fail.
 - Re-running migrate is a no-op; re-running seed is idempotent or refuses cleanly.
-- A `clv_` row has no update path in the schema (no mutable config columns).
+- A `pnv_` or `jdv_` row has no update path in the schema (no mutable config columns).
 
 ---
 
-## Phase P4 — the steel thread: port, fake provider, `llm/` gateway, classify
+## Phase P4 — the steel thread: port, fake provider, `llm/` gateway, evaluate
 **Slice goal:** M0's centre of gravity. The fake provider is a *peer* of the real one
 behind the port, so M1 is an adapter swap.
 
 Files: `apps/api/src/llm/{index,provider.port,fake-provider,retry,breaker,cost}.ts` +
 `apps/api/src/llm/provider.contract-test.ts`,
 `apps/api/src/middleware/api-key-auth.ts`,
-`apps/api/src/routes/public/v1/classify.ts`,
-`apps/api/src/services/classify.ts`, `apps/api/src/repositories/traces.ts`.
+`apps/api/src/routes/public/v1/evaluate.ts`,
+`apps/api/src/services/evaluate.ts`, `apps/api/src/repositories/traces.ts`.
 
 - [ ] `ModelProvider` port + **shared contract test suite** beside it; the fake adapter
       passes it (M1's real adapter will import the same suite)
@@ -271,33 +273,33 @@ Files: `apps/api/src/llm/{index,provider.port,fake-provider,retry,breaker,cost}.
 - [ ] Token/cost accounting computed in `llm/` and returned for span attributes (P6)
 - [ ] `Clock` port injected so retry/breaker tests are deterministic (no sleeps)
 - [ ] API-key middleware: `llk_` prefix, SHA-256 lookup, status check, **scoped to the
-      classifier in the path**; wrong/revoked/foreign key → `UNAUTHORIZED` 401
-- [ ] `POST /v1/classify/{classifier_id}` validates via the contracts schema, accepts
+      panel in the path**; wrong/revoked/foreign key → `UNAUTHORIZED` 401
+- [ ] `POST /v1/panels/{panel_id}/evaluate` validates via the contracts schema, accepts
       `Idempotency-Key`, and returns `{ data: { label, confidence, trace_id }, request_id }`
 - [ ] Trace row persisted on 100% of calls (ADR-0001) with **raw provider payload
-      alongside normalized fields**, FK to `clv_`, and the `request_id` column set
-- [ ] Log lines on the classify path bind the `tr_` `trace_id` once the row exists
-- [ ] **422 proven on the real endpoint**: a malformed body to classify auto-maps to
+      alongside normalized fields**, FK to `jdv_`, and the `request_id` column set
+- [ ] Log lines on the evaluation path bind the `tr_` `trace_id` once the row exists
+- [ ] **422 proven on the real endpoint**: a malformed body to an evaluation auto-maps to
       `VALIDATION_ERROR` with field-level issues — real contract validation, not a fake
       route that only proves a fake route can throw (D-I)
 - [ ] **401 proven on the real endpoint**: missing, malformed, revoked, and
-      wrong-classifier keys each return the `UNAUTHORIZED` envelope
-- [ ] Integration test on the full classify path through `createApp(deps)` with fakes
+      wrong-panel keys each return the `UNAUTHORIZED` envelope
+- [ ] Integration test on the full evaluation path through `createApp(deps)` with fakes
 
 **Automated verification**
 ```bash
 bun test apps/api/src/llm apps/api/src/services apps/api/src/routes && bun run lint
 ```
 ```bash
-curl -s -X POST localhost:3000/v1/classify/cls_XXX -H "Authorization: Bearer llk_test_..." \
-  -H 'content-type: application/json' -d '{"input":"the build is broken"}' | jq
+curl -s -X POST localhost:3000/v1/panels/pnl_XXX/evaluate -H "Authorization: Bearer llk_test_..." \
+  -H 'content-type: application/json' -d '{"artifact":"the build is broken"}' | jq
 ```
 **Manual verification**
 - The same input twice returns the same label and two different `tr_` ids and `request_id`s.
-- No key → 401 envelope; a key for another classifier → 401, not 403 leakage.
+- No key → 401 envelope; a key for another panel → 401, not 403 leakage.
 - Force the fake to fail N times: logs show backoff with jitter, then the breaker opens
   and returns 503 with `Retry-After`.
-- `SELECT` the trace row: raw payload, normalized fields, `clv_` FK, `request_id` present.
+- `SELECT` the trace row: raw payload, normalized fields, `jdv_` FK, `request_id` present.
 
 ---
 
@@ -305,12 +307,12 @@ curl -s -X POST localhost:3000/v1/classify/cls_XXX -H "Authorization: Bearer llk
 **Slice goal:** the queue seam exists, jobs are idempotent, attempts are recorded, and
 shutdown drains.
 
-Files: `apps/api/src/jobs/{index,queue.ts,record-classification.ts}`,
-`apps/api/src/services/classify.ts` (enqueue), `packages/db/src/schema/job-attempts.ts`,
+Files: `apps/api/src/jobs/{index,queue.ts,record-evaluation.ts}`,
+`apps/api/src/services/evaluate.ts` (enqueue), `packages/db/src/schema/job-attempts.ts`,
 `apps/api/src/routes/health.ts` (extend `/readyz`).
 
 - [ ] pg-boss installs **its own schema as the migrator**, never at app runtime
-- [ ] Classify enqueues exactly one job carrying the `tr_` id and `request_id`
+- [ ] Evaluation enqueues exactly one job carrying the `tr_` id and `request_id`
 - [ ] The handler is idempotent (re-delivery is a no-op) and **records its attempts in
       the DB**, proven by a test that delivers the same job twice
 - [ ] Logs cover enqueue / start / finish / fail with attempt counts and `request_id`
@@ -323,14 +325,14 @@ Files: `apps/api/src/jobs/{index,queue.ts,record-classification.ts}`,
 bun test apps/api/src/jobs && curl -s localhost:3000/readyz | jq
 ```
 **Manual verification**
-- Classify once, then watch the job's lifecycle lines in the log with a shared `request_id`.
+- Evaluate once, then watch the job's lifecycle lines in the log with a shared `request_id`.
 - Stop Postgres → `/readyz` goes unhealthy and names the failing check.
 - SIGTERM mid-job: the job completes or is released cleanly, and exit is 0.
 
 ---
 
 ## Phase P6 — telemetry: manual OTel + the Grafana stack containers
-**Slice goal:** one classify call is visible end to end as spans, and `request_id`
+**Slice goal:** one evaluation call is visible end to end as spans, and `request_id`
 becomes the real W3C trace id.
 
 Files: `apps/api/src/otel.ts`, `apps/api/src/middleware/tracing.ts`,
@@ -357,7 +359,7 @@ containers — never `grafana/otel-lgtm`).
 docker compose -f infra/docker-compose.yml up -d && bun test apps/api/src/otel* apps/api/src/middleware
 ```
 **Manual verification**
-- Make one classify call; find its trace in Grafana → Tempo by the `request_id` the API
+- Make one evaluation call; find its trace in Grafana → Tempo by the `request_id` the API
   returned; the provider child span shows tokens and cost; `service.version` is present.
 - Grafana opens with the datasources already there on a fresh volume.
 
@@ -392,7 +394,7 @@ bun run typecheck && bun test apps/web && bun run --cwd apps/web build
 **Manual verification**
 - Log in in a browser, see the trace list; log out, the internal call 401s.
 - Present an API key to an internal route → rejected. Present a session cookie to
-  `/v1/classify` → rejected.
+  `/v1/panels/…/evaluate` → rejected.
 - Temporarily add an error code to contracts: the **web** typecheck breaks.
 
 ---
@@ -588,7 +590,7 @@ noted there rather than assumed here.
 no architectural weight, which CONVENTIONS' dependency threshold leaves to the planner.
 **Resolution:** hand-rolled in `ids.ts`, with the timestamp injectable so id generation
 is deterministic under test (and, later, under the `Clock` port). Ids are Zod-branded
-via `.brand<P>()`, so a `cls_` id is a compile error where a `tr_` id is expected — a
+via `.brand<P>()`, so a `pnl_` id is a compile error where a `tr_` id is expected — a
 constraint that immediately caught two loose test fixtures, which is the evidence it
 works.
 
@@ -649,6 +651,26 @@ rather than one document trying to describe both. **Flagged for the stakeholder:
 stable top-level `/docs` is wanted for marketing links, a redirect is a one-liner, but it
 should be a decision rather than a default. ADR-0002 says only "`/docs`", so this is a
 divergence from its letter.
+
+### P1/P3/P4 — the domain model was renamed mid-plan: classifier → panel of judges
+**Expected:** the plan's entity was a `classifier` (`cls_`/`clv_`) serving classifications,
+with a separate internal `judge` auditing it.
+**Found:** a framing conversation on 2026-08-22 (after P2 merged) established that the
+product is **a panel of judges**, and that the two framings the repo had been carrying —
+we run the model that produces the artifact, versus we judge an artifact the caller
+produced — had never been reconciled. Only the judging is ours. See **ADR-0019** and
+`thoughts/shared/research/2026-08-22_judge-as-a-service-reframe.md`.
+**Resolution:** renamed throughout before P3 wrote the first migration, which is why the
+timing mattered — CONVENTIONS makes a `/v1` shape change a new API version rather than an
+edit, so the deadline was P4 and the cheap moment was now.
+- Ids: `cls_`/`clv_` retired; `pnl_`, `pnv_`, `jdv_` and `tax_` added alongside `jud_`.
+- `packages/contracts/src/classify.ts` → `evaluate.ts`; `{ label, confidence }` became
+  per-judge `verdicts`, each carrying **reasoning declared before verdict**, since schema
+  key order drives generation order under structured output.
+- P3's tables and P4's endpoint and curl updated to match.
+**Cost:** P1 was partly redone one phase after it shipped. Cheap here, and the alternative
+was a schema and a public contract encoding a framing the stakeholder had already moved
+past.
 
 ### P2 — two stale instructions in the plan itself, caught by the stakeholder
 **Expected:** P2's manual-verification list described what to check.
@@ -761,7 +783,7 @@ applications of an existing convention, and are recorded here only.
   them at M2 is self-inflicted contract churn, harmless only because nobody consumes it
   yet, and a poor precedent in a project whose pitch is API discipline. Second, faking
   422 and 401 proves less than the real thing: a synthetic 422 proves a synthetic route
-  can throw, whereas a malformed body to classify proves contract-validation
+  can throw, whereas a malformed body to an evaluation proves contract-validation
   auto-mapping actually works. `/_demo/rate-limited` and `/_demo/boom` remain synthetic
   because nothing in M0 legitimately produces those codes; they are documented in the
   README rather than the OpenAPI spec, and deleted at M2 when real rate limiting lands.
@@ -845,7 +867,7 @@ applications of an existing convention, and are recorded here only.
 - No k6 ramp/spike/soak and no `BREAKING_POINT.md` (M2). Smoke only.
 - No social/OIDC providers, no role **enforcement**, no designed login UI (M4). The
   `role` column ships unenforced; M0's login form is unstyled plumbing.
-- No console UI beyond an unstyled trace list; no classifier-create wizard (M4).
+- No console UI beyond an unstyled trace list; no panel-create wizard (M4).
 - No annotation tables, no judge, no eval harness, no datasets (M5–M6).
 - No emitting of audit events from application code; `audit_events` ships empty with its
   grants proven (M8 populates it, starting with key issuance at M1).
