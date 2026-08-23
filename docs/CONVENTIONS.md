@@ -55,6 +55,15 @@
 - **Judges carry a type, `code` or `llm`.** A failure mode that reduces to a schema
   assertion or a regex becomes a deterministic check: near-zero cost and latency, and
   perfect precision by construction, with nothing to align.
+- **Every judge declares its POLARITY, and it is three-valued.** A verdict is not a pass:
+  judges point in different directions. `is-missing-repro: true` is a failure,
+  `on-brand: true` is a success, and `is-bug: true` is neither — it is a label with no
+  valence. So a judge says whether answering `true` passes, fails, or **does not score at
+  all**. Without this the panel score is uncomputable, because summing raw booleans across
+  judges that mean opposite things is meaningless. Responses therefore carry both the raw
+  `verdict` (what the annotator agrees with or corrects) and the derived `passed` (what
+  the score sums), with `null` for informational judges, which are absent from both the
+  numerator and the denominator.
 - Annotations always carry `annotator_id`. Dataset membership is a versioned join
   table — never a boolean on the annotation.
 - `audit_events` is append-only: the app role has INSERT and SELECT only; no UPDATE

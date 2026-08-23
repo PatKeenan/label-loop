@@ -54,10 +54,14 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 ### 5.2 Panel & judge management
 - CRUD for panels and for the judges inside them. A judge is one binary question; a multi-class label set is modelled as N judges, and the caller applies whatever policy they want across the results.
 - Judge type: `llm` or `code`. Code judges are deterministic checks (schema assertion, regex) with near-zero cost and latency and nothing to align.
+- **Judge polarity, set per judge and three-valued:** answering `true` either passes, fails, or does not score. `is-missing-repro: true` is a failure; `on-brand: true` is a success; `is-bug: true` is a label with no valence and is excluded from the score entirely. A triage panel is mostly informational judges plus a gate or two; a taste panel is mostly scoring ones. Without polarity the panel score is uncomputable.
+- Per-judge weight and the panel's pass threshold, both configured by the customer — we never decide a caller's risk tolerance.
 - Model selection per panel or per judge, and prompt/config versioning (`pnv_`, `jdv_`).
 
 ### 5.3 Evaluation API
-- `POST /v1/panels/{panel_id}/evaluate` — send an artifact plus any context the judges need; receive one verdict per judge, each with its reasoning. Reasoning is generated *before* the verdict, always.
+- `POST /v1/panels/{panel_id}/evaluate` — send an artifact plus any context the judges need; receive a decision at the top (`passed`, `score`, `threshold`) and one verdict per judge underneath, each with its reasoning. Reasoning is generated *before* the verdict, always.
+- **Both halves are deliberate.** A deterministic workflow step reads `passed` and moves on; an agent deciding what to do next reads the per-judge reasoning, because "which judge failed and why" is the part it can act on. Weights and the threshold are panel configuration; each verdict publishes its normalised weight so a caller can recompute the score rather than trust it.
+- A judge's raw `verdict` is not the same as `passed` — `is-missing-repro: true` is a failure, `on-brand: true` is a success — so each judge declares which answer counts as a pass, and both fields are returned.
 - `POST /v1/judges/{judge_id}/evaluate` — call a single judge directly, so a developer can run exactly the check they need at exactly the point they need it. The panel is a convenience over this primitive, not the only door.
 - We never generate the artifact. The caller's agent does that and hands us the result, along with whatever context the judges require.
 - Routing flag per judge: `frontier | finetune | shadow` (shadow runs both, returns the selected one).

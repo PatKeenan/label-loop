@@ -48,6 +48,8 @@ describe('verdict', () => {
     key: 'is-missing-repro',
     reasoning: 'Steps are present but no expected-versus-actual behaviour is stated.',
     verdict: true,
+    passed: false,
+    weight: 0.5,
   }
 
   test('parses a full verdict', () => {
@@ -66,6 +68,34 @@ describe('verdict', () => {
     expect(verdictSchema.safeParse({ ...verdict, verdict: 'maybe' }).success).toBe(false)
   })
 
+  test('verdict and passed are independent — judges do not all point the same way', () => {
+    // is-missing-repro: answering YES means the artifact FAILED that check.
+    expect(verdictSchema.parse(verdict)).toMatchObject({ verdict: true, passed: false })
+    // on-brand: answering YES means it PASSED. Same booleans, opposite meaning.
+    expect(
+      verdictSchema.parse({ ...verdict, key: 'on-brand', verdict: true, passed: true }),
+    ).toMatchObject({ verdict: true, passed: true })
+  })
+
+  test('an informational judge scores nothing — a label is not a grade', () => {
+    // is-bug: answering YES is neither good nor bad. It is a classification, and
+    // folding it into a pass/fail score would be meaningless.
+    const informational = verdictSchema.parse({
+      ...verdict,
+      key: 'is-bug',
+      verdict: true,
+      passed: null,
+      weight: null,
+    })
+    expect(informational.passed).toBeNull()
+    expect(informational.weight).toBeNull()
+  })
+
+  test('weight is a normalised share, so a caller can recompute the score', () => {
+    expect(verdictSchema.safeParse({ ...verdict, weight: 1.4 }).success).toBe(false)
+    expect(verdictSchema.safeParse({ ...verdict, weight: -0.1 }).success).toBe(false)
+  })
+
   test('requires reasoning — a verdict with no why is not reviewable', () => {
     const { reasoning: _dropped, ...withoutReasoning } = verdict
     expect(verdictSchema.safeParse(withoutReasoning).success).toBe(false)
@@ -78,21 +108,104 @@ describe('verdict', () => {
 })
 
 describe('evaluation response', () => {
+  /** Six equally weighted judges, three passing: the worked example from the decision. */
+  const sixJudges = (passing: number) =>
+    Array.from({ length: 6 }, (_unused, index) => ({
+      judge_id: newId('jud_'),
+      key: `judge-${index}`,
+      reasoning: 'Because.',
+      verdict: index < passing,
+      passed: index < passing,
+      weight: 1 / 6,
+    }))
+
   const evaluation = {
-    verdicts: [
-      { judge_id: newId('jud_'), key: 'is-bug', reasoning: 'Describes a defect.', verdict: true },
-      {
-        judge_id: newId('jud_'),
-        key: 'is-p0',
-        reasoning: 'Not customer-blocking.',
-        verdict: false,
-      },
-    ],
+    passed: false,
+    score: 0.5,
+    threshold: 0.7,
+    verdicts: sixJudges(3),
     trace_id: newId('tr_'),
   }
 
-  test('parses many verdicts in one evaluation — a panel is N judges, not one', () => {
-    expect(evaluationSchema.parse(evaluation).verdicts).toHaveLength(2)
+  test('carries the decision, the score, and the bar it was judged against', () => {
+    const parsed = evaluationSchema.parse(evaluation)
+    expect(parsed.passed).toBe(false)
+    expect(parsed.score).toBe(0.5)
+    expect(parsed.threshold).toBe(0.7)
+  })
+
+  test('the score is recomputable from the verdicts alone — 3 of 6 equal weights is 0.5', () => {
+    // The whole point of publishing `weight`: a caller can audit the arithmetic rather
+    // than trusting it, which is what a deterministic gate needs.
+    const parsed = evaluationSchema.parse(evaluation)
+    const recomputed = parsed.verdicts
+      .filter((verdict) => verdict.passed === true)
+      .reduce((total, verdict) => total + (verdict.weight ?? 0), 0)
+    expect(recomputed).toBeCloseTo(parsed.score, 10)
+    expect(parsed.passed).toBe(parsed.score >= parsed.threshold)
+  })
+
+  test('a panel that clears its bar passes', () => {
+    const parsed = evaluationSchema.parse({
+      ...evaluation,
+      passed: true,
+      score: 5 / 6,
+      verdicts: sixJudges(5),
+    })
+    expect(parsed.passed).toBe(true)
+    expect(parsed.score >= parsed.threshold).toBe(true)
+  })
+
+  test('score and threshold are bounded to 0..1', () => {
+    for (const field of ['score', 'threshold'] as const) {
+      expect(evaluationSchema.safeParse({ ...evaluation, [field]: 1.5 }).success).toBe(false)
+      expect(evaluationSchema.safeParse({ ...evaluation, [field]: -0.1 }).success).toBe(false)
+    }
+  })
+
+  test('the summary is required — a caller must never have to derive pass/fail itself', () => {
+    for (const field of ['passed', 'score', 'threshold'] as const) {
+      const { [field]: _dropped, ...without } = evaluation
+      expect(evaluationSchema.safeParse(without).success, field).toBe(false)
+    }
+  })
+
+  test('a mixed panel scores only its scoring judges — triage labels do not dilute a gate', () => {
+    // A triage panel: three labels that carry no valence, plus one real gate. If the
+    // labels were folded into the score, a correctly-labelled bug would drag the gate
+    // down for no reason.
+    const mixed = {
+      passed: true,
+      score: 1,
+      threshold: 1,
+      verdicts: [
+        ...['is-bug', 'is-feature', 'is-question'].map((key) => ({
+          judge_id: newId('jud_'),
+          key,
+          reasoning: 'Classification only.',
+          verdict: key === 'is-bug',
+          passed: null,
+          weight: null,
+        })),
+        {
+          judge_id: newId('jud_'),
+          key: 'needs-human',
+          reasoning: 'Clear enough for the bot to route.',
+          verdict: false,
+          passed: true,
+          weight: 1,
+        },
+      ],
+      trace_id: newId('tr_'),
+    }
+    const parsed = evaluationSchema.parse(mixed)
+    const scoring = parsed.verdicts.filter((verdict) => verdict.weight !== null)
+    expect(scoring).toHaveLength(1)
+    expect(parsed.verdicts).toHaveLength(4)
+    // Weights across the SCORING judges sum to 1; the informational three contribute
+    // nothing to either side of the fraction.
+    expect(scoring.reduce((total, verdict) => total + (verdict.weight ?? 0), 0)).toBe(1)
+    expect(parsed.score).toBe(1)
   })
 
   test('parses the enveloped response', () => {
@@ -108,7 +221,15 @@ describe('evaluation response', () => {
   })
 
   test('an empty panel is representable — nothing forces a minimum judge count', () => {
-    expect(evaluationSchema.safeParse({ verdicts: [], trace_id: newId('tr_') }).success).toBe(true)
+    expect(
+      evaluationSchema.safeParse({
+        passed: true,
+        score: 0,
+        threshold: 0,
+        verdicts: [],
+        trace_id: newId('tr_'),
+      }).success,
+    ).toBe(true)
   })
 })
 

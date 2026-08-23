@@ -6,6 +6,11 @@ import { idSchema } from './ids.ts'
  * The evaluation contract (ADR-0019). A caller sends an artifact to a panel and receives
  * one verdict per judge, each with its reasoning.
  *
+ * A judge's polarity is part of its configuration, not of the artifact: each judge
+ * declares whether answering `true` is a pass, a fail, or neither. Without that, the
+ * panel score is uncomputable, because summing raw booleans across judges that point in
+ * opposite directions is meaningless.
+ *
  * Two endpoints share these shapes:
  *   POST /v1/panels/{panel_id}/evaluate   — run every judge on the panel
  *   POST /v1/judges/{judge_id}/evaluate   — run one judge directly
@@ -14,10 +19,10 @@ import { idSchema } from './ids.ts'
  * (ADR-0019). We *are* the inference path for the judge calls, which is what keeps
  * ADR-0001's server-side trace capture true.
  *
- * NOTE FOR M0-P4: two questions in ADR-0019 are still open and deliberately absent here —
- * whether a panel also returns an overall verdict derived from a caller-configured policy,
- * and how a judge skipped by sampling is represented (it must be distinguishable from a
- * pass). Both add fields; neither changes what is below.
+ * NOTE FOR M0-P4: one question in ADR-0019 is still open and deliberately absent here —
+ * how a judge skipped by sampling is represented, which must be distinguishable from a
+ * pass and must be excluded from the score's denominator. It adds fields; it does not
+ * change what is below.
  */
 
 export const EVALUATE_ARTIFACT_MAX_LENGTH = 32_000
@@ -80,16 +85,79 @@ export const verdictSchema = z
     }),
     verdict: z.boolean().openapi({
       description:
-        'Whether this judge’s condition holds. Binary by design: scale ratings have ' +
-        'poor inter-rater reliability for both humans and models, so magnitude comes ' +
-        'from the proportion of traces failing a judge, not from a dial.',
+        'The judge’s raw answer to its own question. Binary by design: scale ratings ' +
+        'have poor inter-rater reliability for both humans and models, so magnitude ' +
+        'comes from the proportion of traces failing a judge, not from a dial. This is ' +
+        'the field an annotator agrees with or corrects.',
       example: true,
     }),
+    passed: z
+      .boolean()
+      .nullable()
+      .openapi({
+        description:
+          'Whether that answer counts as a PASS for this judge, or `null` if the judge is ' +
+          'informational and does not score. NOT a duplicate of `verdict`: judges point in ' +
+          'different directions. `is-missing-repro: true` is a failure, `on-brand: true` ' +
+          'is a success, and `is-bug: true` is neither — it is a label. Each judge declares ' +
+          'its own polarity, and this is that polarity applied, so the score has something ' +
+          'consistent to sum.',
+        example: false,
+      }),
+    weight: z
+      .number()
+      .min(0)
+      .max(1)
+      .nullable()
+      .openapi({
+        description:
+          'This judge’s normalised share of the panel score, or `null` when it is ' +
+          'informational. Weights across the SCORING judges of a panel sum to 1, so a ' +
+          'caller can recompute `score` themselves and see exactly why it came out where ' +
+          'it did.',
+        example: 0.1667,
+      }),
   })
   .openapi('Verdict')
 
+/**
+ * The whole result: a decision at the top, the reasoning underneath.
+ *
+ * Both halves earn their place. A deterministic step in a workflow reads `passed` and
+ * moves on. An agent deciding what to do next reads the verdicts, because "which judge
+ * failed and why" is what it can act on — regenerate for this reason, escalate for that
+ * one. Returning only the summary would make the second case impossible; returning only
+ * the detail would make every caller reimplement the same policy.
+ */
 export const evaluationSchema = z
   .object({
+    passed: z.boolean().openapi({
+      description:
+        'Whether the panel’s score met its configured threshold. The panel decides this ' +
+        'only because the customer configured the weights and the bar — we never decide ' +
+        'a caller’s risk tolerance on their behalf.',
+      example: false,
+    }),
+    score: z
+      .number()
+      .min(0)
+      .max(1)
+      .openapi({
+        description:
+          'The weighted share of judges that passed, from 0 to 1. Six equally weighted ' +
+          'judges with three passing scores 0.5.',
+        example: 0.5,
+      }),
+    threshold: z
+      .number()
+      .min(0)
+      .max(1)
+      .openapi({
+        description:
+          'The bar this panel version was configured with, echoed so the decision is ' +
+          'auditable from the response alone rather than requiring a config lookup.',
+        example: 0.7,
+      }),
     verdicts: z.array(verdictSchema).openapi({
       description: 'One entry per judge that ran, in panel order.',
     }),

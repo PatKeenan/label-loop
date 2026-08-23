@@ -34,6 +34,43 @@ several expensive frontier judges into one cheap aligned model that reproduces t
 expert's verdicts. The economic claim becomes "your judging costs 10x less and still
 agrees with Sarah," which is more direct than "a cheaper classifier."
 
+### The response carries both a decision and its reasoning
+**Resolved 2026-08-22.** A panel evaluation returns a summary *and* the per-judge detail:
+`passed`, `score` (the weighted share of judges that passed, 0–1), `threshold` (the bar
+this panel version was configured with, echoed so the decision is auditable from the
+response alone), and then one `Verdict` per judge.
+
+Both halves earn their place, and the reason is the caller. A deterministic step in a
+workflow reads `passed` and moves on. An **agent** deciding what to do next reads the
+verdicts, because "which judge failed and why" is the only part it can act on —
+regenerate for this reason, escalate for that one. Returning only the summary makes the
+agent case impossible; returning only the detail makes every caller reimplement the same
+policy, badly and differently.
+
+Weights and the threshold are panel configuration, set by the customer. Each verdict
+publishes its **normalised weight** (weights across a panel sum to 1) so a caller can
+recompute the score rather than trust it — which is what a deterministic gate actually
+needs. Six equally weighted judges with three passing scores 0.5; against a threshold of
+0.7, `passed` is false.
+
+**Judges do not all point the same way, so a verdict is not a pass — and polarity is
+three-valued.** `is-missing-repro: true` is a failure. `on-brand: true` is a success.
+`is-bug: true` is *neither*: it is a label, and folding a label into a pass/fail score is
+meaningless. Summing raw booleans across judges that mean opposite things would be worse
+than useless, because it would look like a number.
+
+Every judge therefore declares its own polarity as part of its configuration: answering
+`true` passes, fails, or **does not score**. Every `Verdict` carries both `verdict` — the
+judge's raw answer, and the field an annotator agrees with or corrects — and `passed`,
+that answer under the judge's polarity, which is what the score sums. Informational judges
+return `passed: null` and `weight: null` and are absent from **both** the numerator and
+the denominator.
+
+The practical consequence is that a panel can mix modes honestly. A triage panel is mostly
+informational judges (`is-bug`, `is-feature`, `is-question`) plus perhaps one real gate
+(`needs-human`); a taste panel is mostly scoring judges. Both are the same object, and
+neither has to pretend to be the other.
+
 ### API shape (proposed; P4 confirms)
 - `POST /v1/panels/{panel_id}/evaluate` — run the panel, return every judge's verdict.
 - `POST /v1/judges/{judge_id}/evaluate` — run one judge directly.
@@ -118,9 +155,6 @@ Rejected alternatives:
 - **Billing when the customer brings their own provider key.** Enterprises will often need
   routing to their own Bedrock or enterprise endpoint, which removes the model route as a
   billable surface and takes the SME surcharge with it. Parked deliberately; revisit at M8.
-- **Whether a panel returns an overall verdict** or only the per-judge set. Leaning
-  per-judge only, with an optional caller-configured policy, so LabelLoop never decides
-  someone else's risk tolerance.
 - **How a skipped judge is represented** once per-judge sampling exists. It must be
   distinguishable from a pass; returning "passed" for a judge that never ran is a lie the
   caller will act on.

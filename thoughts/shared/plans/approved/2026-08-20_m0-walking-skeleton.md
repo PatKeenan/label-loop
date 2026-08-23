@@ -220,10 +220,16 @@ Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,ju
 > Recorded here because the previous phase proved the failure mode: a fresh session
 > starting from this file should not have to rediscover it.
 
-- [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable), `judges`
-      (`jud_`, with a `type` column of `code` | `llm`), `judge_versions` (`jdv_`, immutable),
-      `api_keys` (`key_`, SHA-256 hash + last-4 + status, scoped to one panel),
+- [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable, carrying the
+      pass `threshold`), `judges` (`jud_`), `judge_versions` (`jdv_`, immutable, carrying
+      `type` of `code` | `llm`, `weight`, and **`polarity`**), `api_keys` (`key_`,
+      SHA-256 hash + last-4 + status, scoped to one panel),
       `traces` (`tr_` PK **and** a `request_id` column — ADR-0010), `audit_events`
+- [ ] **`polarity` is three-valued** — answering `true` `passes` | `fails` | `does_not_score`
+      — not a boolean. `is-missing-repro: true` is a failure, `on-brand: true` is a
+      success, `is-bug: true` is a label with no valence. Modelling it as a boolean makes
+      the panel score uncomputable and silently wrong (ADR-0019). A CHECK constraint or a
+      Postgres enum, not application-level validation
 - [ ] better-auth's tables generated into the same forward-only migration stream
 - [ ] `org_members` (`org_id`, `user_id`, `role`) created at M0 — the role column ships
       here, **present but unenforced**, not on the `user` table (D-P)
