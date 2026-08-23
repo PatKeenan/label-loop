@@ -72,6 +72,17 @@ export const evaluateRequestSchema = z
  * the schema's property order determines generation order, so reversing these two fields
  * silently produces a worse judge that still looks correct (CONVENTIONS.md, ADR-0019).
  */
+export const VERDICT_STATUSES = ['evaluated', 'skipped', 'failed'] as const
+
+export const verdictStatusSchema = z.enum(VERDICT_STATUSES).openapi({
+  description:
+    'What happened to this judge on this call. `evaluated` — it ran and answered. ' +
+    '`skipped` — sampling excluded it, so it has no opinion. `failed` — it ran and did ' +
+    'not return a usable answer. Skipped and failed are NOT passes, and a caller must ' +
+    'never treat them as one.',
+  example: 'evaluated',
+})
+
 export const verdictSchema = z
   .object({
     judge_id: idSchema('jud_'),
@@ -79,29 +90,39 @@ export const verdictSchema = z
       description: 'The judge’s stable slug, for callers keying off it in code.',
       example: 'is-missing-repro',
     }),
-    reasoning: z.string().openapi({
-      description: 'Why. Generated BEFORE the verdict — see the note on key order.',
-      example: 'Steps are present but no expected-versus-actual behaviour is stated.',
-    }),
-    verdict: z.boolean().openapi({
-      description:
-        'The judge’s raw answer to its own question. Binary by design: scale ratings ' +
-        'have poor inter-rater reliability for both humans and models, so magnitude ' +
-        'comes from the proportion of traces failing a judge, not from a dial. This is ' +
-        'the field an annotator agrees with or corrects.',
-      example: true,
-    }),
+    status: verdictStatusSchema,
+    reasoning: z
+      .string()
+      .nullable()
+      .openapi({
+        description:
+          'Why. Generated BEFORE the verdict — see the note on key order. Null unless ' +
+          '`status` is `evaluated`.',
+        example: 'Steps are present but no expected-versus-actual behaviour is stated.',
+      }),
+    verdict: z
+      .boolean()
+      .nullable()
+      .openapi({
+        description:
+          'The judge’s raw answer to its own question, or null when it did not answer. ' +
+          'Binary by design: scale ratings have poor inter-rater reliability for both ' +
+          'humans and models, so magnitude comes from the proportion of traces failing a ' +
+          'judge, not from a dial. This is the field an annotator agrees with or corrects.',
+        example: true,
+      }),
     passed: z
       .boolean()
       .nullable()
       .openapi({
         description:
-          'Whether that answer counts as a PASS for this judge, or `null` if the judge is ' +
-          'informational and does not score. NOT a duplicate of `verdict`: judges point in ' +
-          'different directions. `is-missing-repro: true` is a failure, `on-brand: true` ' +
-          'is a success, and `is-bug: true` is neither — it is a label. Each judge declares ' +
-          'its own polarity, and this is that polarity applied, so the score has something ' +
-          'consistent to sum.',
+          'Whether that answer counts as a PASS for this judge. Null in two distinct ' +
+          'cases, which `status` disambiguates: the judge is informational and does not ' +
+          'score (`status: evaluated`), or it never answered (`skipped` / `failed`). ' +
+          'NOT a duplicate of `verdict`: judges point in different directions. ' +
+          '`is-missing-repro: true` is a failure, `on-brand: true` is a success, and ' +
+          '`is-bug: true` is neither — it is a label. Each judge declares its own polarity, ' +
+          'and this is that polarity applied, so the score has something consistent to sum.',
         example: false,
       }),
     weight: z
@@ -111,10 +132,9 @@ export const verdictSchema = z
       .nullable()
       .openapi({
         description:
-          'This judge’s normalised share of the panel score, or `null` when it is ' +
-          'informational. Weights across the SCORING judges of a panel sum to 1, so a ' +
-          'caller can recompute `score` themselves and see exactly why it came out where ' +
-          'it did.',
+          'This judge’s normalised share of the panel score, or null when it did not ' +
+          'contribute — informational, skipped, or failed. Weights across the judges ' +
+          'that DID score sum to 1, so a caller can recompute `score` themselves.',
         example: 0.1667,
       }),
   })
@@ -148,6 +168,15 @@ export const evaluationSchema = z
           'judges with three passing scores 0.5.',
         example: 0.5,
       }),
+    complete: z.boolean().openapi({
+      description:
+        'Whether every scoring judge on the panel actually ran. When false, some judge ' +
+        'was skipped or failed and `score` was computed over a SMALLER denominator — so ' +
+        'the number is real but partial, and a gate reading `passed` alone would be ' +
+        'acting on incomplete information. We return the partial result and say so, ' +
+        'rather than pretending or failing the whole call because one judge did.',
+      example: true,
+    }),
     threshold: z
       .number()
       .min(0)
@@ -187,6 +216,7 @@ export const idempotencyKeyHeaderSchema = z.object({
 export type PanelIdParam = z.infer<typeof panelIdParamSchema>
 export type JudgeIdParam = z.infer<typeof judgeIdParamSchema>
 export type EvaluateRequest = z.infer<typeof evaluateRequestSchema>
+export type VerdictStatus = (typeof VERDICT_STATUSES)[number]
 export type Verdict = z.infer<typeof verdictSchema>
 export type Evaluation = z.infer<typeof evaluationSchema>
 export type EvaluateResponse = z.infer<typeof evaluateResponseSchema>

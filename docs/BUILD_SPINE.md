@@ -81,8 +81,13 @@ set; natural fine-tune target for M7; demonstrates AI-security fluency via produ
 **Not now:** gamification, inter-annotator stats, multi-annotator consensus.
 
 ## M6 — Eval harness (Category 2 complete)
-Axial coding pass over failure notes → versioned taxonomy. LLM judge configured from
-taxonomy + rubric; judge-vs-human agreement tracked; judge-disagreement sampling queue. Judge prompts fence untrusted trace content;
+Axial coding pass over failure notes → versioned taxonomy, with each category triaged
+into a deterministic `code` check or an `llm` judge. Judges configured from taxonomy +
+rubric, one per category. **Alignment sessions**: a discrete, versioned run of one judge
+against a held-out labeled set, ending in accept-or-revise, with the disagreement view as
+its working surface — plus re-alignment when drift alerts fire, since a judge's agreement
+is a claim with a date on it. Judge-vs-human agreement tracked; judge-disagreement
+sampling queue. Judge prompts fence untrusted trace content;
 adversarial eval cases prove injection resistance (the judge is OUR model call).
 Eval suite runs in CI and gates merges on regression. Console dashboard (screen:
 console-dashboard): agreement by judge version + cost per call.

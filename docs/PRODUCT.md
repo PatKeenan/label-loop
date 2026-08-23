@@ -93,6 +93,14 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 - Metrics reported per judge: per-class precision and recall alongside Cohen's kappa, plus the sample size behind them. Accuracy is never the headline — at 3% prevalence a judge that always says "no" scores 97% — and kappa degrades under exactly the class imbalance rare failure modes live in.
 - Online judging of sampled live traffic; judge-vs-human agreement tracked over time with drift alerts.
 
+### 5.7a Alignment sessions
+Alignment is a **discrete, repeatable event with its own surface**, not a background number that quietly improves. A session takes one judge, runs it against a labeled set the judge has not seen, shows where it disagrees with the expert, and ends with a decision: accept this version, or revise the rubric and try again.
+
+- Each session is a versioned record — which `jdv_` was tested, against which labeled set, what agreement it achieved, who ran it, what changed as a result. This is what makes "aligned to Sarah's judgment at κ=0.81" a citable claim rather than a slogan, and it is the evidence a contribution ledger would eventually pay against.
+- **Re-alignment is expected, not exceptional.** Judgment drifts as products, guidelines and taste change, and models change underneath. A judge's agreement is a claim with a date on it. Drift alerts open a re-alignment session rather than silently degrading.
+- The disagreement view is the working surface: the traces where judge and human differ, with the judge's reasoning beside the expert's label, since that is where a rubric gets fixed.
+- Sessions are per judge, because agreement is per judge. A panel is not "aligned"; its judges are, each to its own number, each with its own sample size.
+
 ### 5.8 Fine-tuning
 - Eligibility thresholds (min annotations, min agreement) gate the feature.
 - Dataset curation from annotated traces (dedup, split, versioned).
@@ -110,7 +118,10 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 
 ### 5.11 Billing
 - Stripe integration: metered usage (per judgment), subscription tier for fine-tuning access, invoices, usage caps.
-- *Open, parked (ADR-0019):* enterprises frequently need judge calls routed to their own Bedrock or enterprise endpoint. That removes the model route as a billable surface and takes the SME surcharge with it, so pricing cannot assume a margin on tokens.
+- **Bring-your-own-key is a requirement, not an edge case.** Enterprises will need judge calls routed to their own Bedrock or enterprise endpoint, and refusing that loses the deal. So pricing cannot assume a margin on frontier tokens: for BYOK tenants the frontier phase earns subscription revenue only.
+- **The fine-tune is where the economics actually live.** A fine-tuned judge is an artifact the platform created and hosts — trained on the tenant's annotations and their expert's alignment sessions, served from our inference infrastructure. Metered per input and output token, priced by us, with the SME surcharge riding on top. It is defensible rather than extractive: the tenant gets a judge that is faster and cheaper than the frontier calls it replaces, and pays only for the thing we built and run.
+- **Two consequences to design for, not defer.** (a) This makes the frontier phase a loss-leader for BYOK tenants, so subscription tiers must carry M1–M7. (b) It needs GPU density: one tenant's LoRA on a dedicated GPU costs more than frontier tokens, and only multi-adapter serving (5.9) makes the margin real — the model has a minimum viable tenant count.
+- **Unresolved tension:** 5.9 and the core loop both promise adapter download for graduated tenants, which is incompatible with being the exclusive inference provider for that model. Options include download on a higher tier, download as an exit right that ends the loop, or withdrawing the promise. It is a written commitment today and needs a deliberate answer before M7.
 
 ### 5.12 Governance & audit layer
 - **Immutable audit log** of every consequential event — judgment served, annotation made, judge run, prompt/config change, training job, routing cutover, guest-expert data access — with actor, timestamp, and before/after state.

@@ -46,6 +46,7 @@ describe('verdict', () => {
   const verdict = {
     judge_id: newId('jud_'),
     key: 'is-missing-repro',
+    status: 'evaluated' as const,
     reasoning: 'Steps are present but no expected-versus-actual behaviour is stated.',
     verdict: true,
     passed: false,
@@ -75,6 +76,44 @@ describe('verdict', () => {
     expect(
       verdictSchema.parse({ ...verdict, key: 'on-brand', verdict: true, passed: true }),
     ).toMatchObject({ verdict: true, passed: true })
+  })
+
+  test('a skipped or failed judge answers nothing at all — and is not a pass', () => {
+    for (const status of ['skipped', 'failed'] as const) {
+      const absent = verdictSchema.parse({
+        ...verdict,
+        status,
+        reasoning: null,
+        verdict: null,
+        passed: null,
+        weight: null,
+      })
+      expect(absent.status, status).toBe(status)
+      expect(absent.passed, status).toBeNull()
+      expect(absent.verdict, status).toBeNull()
+    }
+  })
+
+  test('status disambiguates the two reasons passed can be null', () => {
+    // Both have passed: null, and they mean completely different things. Without
+    // `status` a caller cannot tell "this judge is a label" from "this judge never ran".
+    const informational = verdictSchema.parse({ ...verdict, passed: null, weight: null })
+    const skipped = verdictSchema.parse({
+      ...verdict,
+      status: 'skipped',
+      reasoning: null,
+      verdict: null,
+      passed: null,
+      weight: null,
+    })
+    expect(informational.passed).toBe(skipped.passed)
+    expect(informational.status).not.toBe(skipped.status)
+    expect(informational.verdict).not.toBeNull()
+    expect(skipped.verdict).toBeNull()
+  })
+
+  test('an unknown status is rejected — the set is closed', () => {
+    expect(verdictSchema.safeParse({ ...verdict, status: 'pending' }).success).toBe(false)
   })
 
   test('an informational judge scores nothing — a label is not a grade', () => {
@@ -114,6 +153,7 @@ describe('evaluation response', () => {
       judge_id: newId('jud_'),
       key: `judge-${index}`,
       reasoning: 'Because.',
+      status: 'evaluated' as const,
       verdict: index < passing,
       passed: index < passing,
       weight: 1 / 6,
@@ -122,6 +162,7 @@ describe('evaluation response', () => {
   const evaluation = {
     passed: false,
     score: 0.5,
+    complete: true,
     threshold: 0.7,
     verdicts: sixJudges(3),
     trace_id: newId('tr_'),
@@ -164,7 +205,7 @@ describe('evaluation response', () => {
   })
 
   test('the summary is required — a caller must never have to derive pass/fail itself', () => {
-    for (const field of ['passed', 'score', 'threshold'] as const) {
+    for (const field of ['passed', 'score', 'threshold', 'complete'] as const) {
       const { [field]: _dropped, ...without } = evaluation
       expect(evaluationSchema.safeParse(without).success, field).toBe(false)
     }
@@ -177,11 +218,13 @@ describe('evaluation response', () => {
     const mixed = {
       passed: true,
       score: 1,
+      complete: true,
       threshold: 1,
       verdicts: [
         ...['is-bug', 'is-feature', 'is-question'].map((key) => ({
           judge_id: newId('jud_'),
           key,
+          status: 'evaluated' as const,
           reasoning: 'Classification only.',
           verdict: key === 'is-bug',
           passed: null,
@@ -190,6 +233,7 @@ describe('evaluation response', () => {
         {
           judge_id: newId('jud_'),
           key: 'needs-human',
+          status: 'evaluated' as const,
           reasoning: 'Clear enough for the bot to route.',
           verdict: false,
           passed: true,
@@ -206,6 +250,32 @@ describe('evaluation response', () => {
     // nothing to either side of the fraction.
     expect(scoring.reduce((total, verdict) => total + (verdict.weight ?? 0), 0)).toBe(1)
     expect(parsed.score).toBe(1)
+  })
+
+  test('a partial panel is returned and MARKED, not silently scored over fewer judges', () => {
+    // Eight of eleven succeeded. The score is real but computed over a smaller
+    // denominator, so a gate reading `passed` alone would act on incomplete information.
+    // We return it and say so rather than pretending, or failing the whole call.
+    const verdicts = sixJudges(5)
+    const partial = evaluationSchema.parse({
+      ...evaluation,
+      passed: true,
+      score: 1,
+      complete: false,
+      verdicts: [
+        ...verdicts.slice(0, 5),
+        {
+          ...verdicts[5],
+          status: 'failed',
+          reasoning: null,
+          verdict: null,
+          passed: null,
+          weight: null,
+        },
+      ],
+    })
+    expect(partial.complete).toBe(false)
+    expect(partial.verdicts.filter((v) => v.status !== 'evaluated')).toHaveLength(1)
   })
 
   test('parses the enveloped response', () => {
@@ -225,6 +295,7 @@ describe('evaluation response', () => {
       evaluationSchema.safeParse({
         passed: true,
         score: 0,
+        complete: true,
         threshold: 0,
         verdicts: [],
         trace_id: newId('tr_'),

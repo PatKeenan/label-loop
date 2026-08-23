@@ -340,3 +340,28 @@ before anything consumes the API is cheap — but **P4 is the real gate**.
 When decided, the outputs belong in: a PRODUCT.md revision (framing), a CONVENTIONS.md
 edit (id prefix list), and an ADR for the endpoint noun, since it is a public contract
 decision with a versioning cost.
+
+---
+
+## 8. Follow-on decisions, same day (after ADR-0019 landed)
+
+- **The response carries both a decision and its reasoning** — `passed`, `score`,
+  `threshold`, `complete`, then per-judge verdicts. A deterministic step reads the
+  summary; an agent reads the reasoning, because "which judge failed and why" is the only
+  part it can act on.
+- **Judge polarity is three-valued** — answering `true` passes, fails, or does not score.
+  `is-bug: true` is a label with no valence, and folding labels into a pass/fail score is
+  meaningless. This is what lets a triage panel and a taste panel be the same object.
+- **A judge that did not answer says so** — `status: evaluated | skipped | failed`, with
+  a partial panel marked `complete: false` rather than silently scored over a smaller
+  denominator.
+- **Alignment sessions are a first-class product surface** (PRODUCT 5.7a, BUILD_SPINE M6),
+  not a background metric: a discrete versioned run against a held-out set, ending in
+  accept-or-revise, with re-alignment expected as judgment and models drift.
+- **BYOK is a requirement and the fine-tune is where the margin lives.** Enterprises will
+  route judge calls to their own Bedrock; the frontier phase then earns subscription
+  revenue only, and metered inference on the fine-tuned judge we built and host is the
+  durable business. **Unresolved:** PRODUCT still promises adapter download, which is
+  incompatible with being that model's exclusive inference provider.
+- **Durable execution for the fan-out** (Temporal / Inngest) parked to `PARKING_LOT.md`
+  with its failure-mode questions written out.

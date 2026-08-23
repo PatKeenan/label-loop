@@ -71,6 +71,24 @@ informational judges (`is-bug`, `is-feature`, `is-question`) plus perhaps one re
 (`needs-human`); a taste panel is mostly scoring judges. Both are the same object, and
 neither has to pretend to be the other.
 
+### A judge that did not answer says so, and a partial panel is marked
+**Resolved 2026-08-22.** Every `Verdict` carries a closed `status`: `evaluated` (it ran
+and answered), `skipped` (sampling excluded it), or `failed` (it ran and produced nothing
+usable). Skipped and failed are **not** passes, and a caller must never treat them as one
+— returning "passed" for a judge that never ran is a lie the caller will act on. They
+answer nothing, so `reasoning`, `verdict`, `passed` and `weight` are all null.
+
+`status` also disambiguates the two reasons `passed` can be null, which would otherwise be
+indistinguishable: the judge is *informational* and does not score, or it never ran at all.
+
+The panel result carries **`complete`**: true when every scoring judge actually ran. This
+is the answer to "eight of eleven succeeded — do we deliver the partial?" **We deliver it
+and say so.** Failing the whole call because one judge died throws away eight good
+verdicts; returning the partial silently is worse, because `score` would be computed over
+a smaller denominator and look exactly like a confident whole-panel number. Marked partial
+results let a caller decide — proceed, retry, or escalate — which is the same principle as
+not deciding their risk tolerance for them.
+
 ### API shape (proposed; P4 confirms)
 - `POST /v1/panels/{panel_id}/evaluate` — run the panel, return every judge's verdict.
 - `POST /v1/judges/{judge_id}/evaluate` — run one judge directly.
@@ -155,8 +173,5 @@ Rejected alternatives:
 - **Billing when the customer brings their own provider key.** Enterprises will often need
   routing to their own Bedrock or enterprise endpoint, which removes the model route as a
   billable surface and takes the SME surcharge with it. Parked deliberately; revisit at M8.
-- **How a skipped judge is represented** once per-judge sampling exists. It must be
-  distinguishable from a pass; returning "passed" for a judge that never ran is a lie the
-  caller will act on.
 
 Provenance: `thoughts/shared/research/2026-08-22_judge-as-a-service-reframe.md`.

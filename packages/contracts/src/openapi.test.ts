@@ -36,6 +36,7 @@ const generate = async () => {
           data: {
             passed: true,
             score: 1,
+            complete: true,
             threshold: 1,
             verdicts: [],
             trace_id: parseId('tr_', 'tr_01ARZ3NDEKTSV4RRFFQ69G5FAV'),
