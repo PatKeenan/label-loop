@@ -7,9 +7,11 @@ traffic, align an automated judge against human judgement, and graduate to a che
 fine-tuned open-weights model served from the same endpoint — without changing a line of
 integration code.
 
-> **Status: early.** The walking skeleton is under construction and there is nothing to
-> run yet. This README describes what LabelLoop is and why it is built the way it is.
-> Setup instructions will land with the first working milestone.
+> **Status: early.** The walking skeleton is under construction. The API boots and
+> serves its health, spec and error-taxonomy endpoints (see
+> [Running it locally](#running-it-locally)), but there is no classification endpoint
+> yet — that lands at M1. The one-command `docker compose up` walkthrough arrives with
+> the end of M0.
 
 ---
 
@@ -217,6 +219,54 @@ both are generated from one set of schemas.
 
 Rationale for each is in [`docs/STACK_DECISIONS.md`](docs/STACK_DECISIONS.md) and the
 corresponding ADR.
+
+## Running it locally
+
+Nothing here needs a secret, an API key, or a database yet — the API boots on defaults
+(see `.env.example`, which is exhaustive and committed).
+
+```bash
+bun install && bun run --cwd apps/api dev
+```
+
+Pipe through `pino-pretty` if you want the NDJSON readable — pretty-printing is a pipe,
+never an in-process transport:
+
+```bash
+bun run --cwd apps/api dev | bunx pino-pretty
+```
+
+### What is served today
+
+| Endpoint | What it is for |
+|---|---|
+| `GET /healthz` | Liveness, plus the version and git SHA of the running build |
+| `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
+| `GET /v1/docs` | Interactive Scalar reference — the integration surface, since there is no SDK |
+| `GET /_demo/rate-limited` | A synthetic `429` with `Retry-After`, for inspecting the error envelope |
+| `GET /_demo/boom` | A synthetic `500`, showing that an unexpected error leaks nothing |
+
+Every response is enveloped and carries a `request_id`, on success and on failure alike:
+
+```bash
+curl -s localhost:3000/healthz | jq
+curl -si localhost:3000/_demo/rate-limited | head -12
+```
+
+### Why the demo routes are not in the API docs
+
+`/_demo/rate-limited` and `/_demo/boom` are **deliberately absent from
+`/v1/openapi.json` and `/v1/docs`**, and are documented here instead. `/v1` is a
+versioned public contract where a breaking change means a new version, so publishing
+endpoints there only to delete them later would be self-inflicted contract churn. They
+exist because nothing in the walking skeleton legitimately produces a `429` or a `500`
+yet, and they are **deleted at M2**, when real rate limiting gives the `429` an honest
+source. The other two codes in the required set, `422` and `401`, are demonstrated on
+the real classification endpoint rather than faked — a malformed body proves that
+contract validation actually works, whereas a synthetic route would only prove that a
+synthetic route can throw. See [ADR-0015](docs/adr/0015-demo-routes-outside-versioned-surface.md).
+
+---
 
 ## Repo layout
 

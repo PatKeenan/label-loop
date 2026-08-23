@@ -1,0 +1,81 @@
+import { z } from 'zod'
+
+/**
+ * All configuration arrives as environment variables (ADR-0009) and is validated here,
+ * once, at boot. Invalid or missing config crashes the process naming the field — never
+ * a runtime surprise three hours later (CONVENTIONS.md "Config").
+ *
+ * Every value has a working local default, so a fresh clone boots with zero secrets
+ * (ADR-0009). The exceptions are the two build-provenance fields, which are *required in
+ * production only*: shipping an image that cannot say which version it is defeats
+ * ADR-0011's whole chain from release-please to `/healthz` and `service.version`.
+ */
+
+export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
+
+/** The placeholders that mark "nobody told us" — legal in dev, a boot failure in production. */
+export const DEV_VERSION = '0.0.0-dev'
+export const DEV_GIT_SHA = 'unknown'
+
+const configSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    /** 0 is the standard "ask the OS for a free port" value; tests rely on it. */
+    PORT: z.coerce.number().int().min(0).max(65_535).default(3000),
+    LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+    /** Injected as a Docker build arg from the release-please version (ADR-0011). */
+    APP_VERSION: z.string().min(1).default(DEV_VERSION),
+    /** Injected as a Docker build arg from the built commit (ADR-0011). */
+    GIT_SHA: z.string().min(1).default(DEV_GIT_SHA),
+    /** Unset is a supported state: the reporter becomes a no-op (ADR-0009). */
+    SENTRY_DSN: z.url().optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.NODE_ENV !== 'production') return
+    const placeholders = [
+      ['APP_VERSION', config.APP_VERSION, DEV_VERSION],
+      ['GIT_SHA', config.GIT_SHA, DEV_GIT_SHA],
+    ] as const
+    for (const [field, value, placeholder] of placeholders) {
+      if (value !== placeholder) continue
+      ctx.addIssue({
+        code: 'custom',
+        path: [field],
+        message: `must be set in production — it is a container build arg (ADR-0011)`,
+      })
+    }
+  })
+
+export type Config = z.infer<typeof configSchema>
+
+/** Thrown only at boot. Its message names every offending field, one per line. */
+export class ConfigError extends Error {
+  override readonly name = 'ConfigError'
+  readonly fields: readonly string[]
+
+  constructor(message: string, fields: readonly string[]) {
+    super(message)
+    this.fields = fields
+  }
+}
+
+const describe = (issue: z.core.$ZodIssue): string => {
+  const field = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+  return `  - ${field}: ${issue.message}`
+}
+
+/**
+ * Parse and validate configuration. Takes the environment as a parameter rather than
+ * reaching for `process.env`, so tests exercise the real parser against real fixtures.
+ */
+export const loadConfig = (env: Record<string, string | undefined> = process.env): Config => {
+  const result = configSchema.safeParse(env)
+  if (result.success) return result.data
+
+  const issues = result.error.issues
+  const fields = issues.map((issue) => issue.path.join('.')).filter((field) => field.length > 0)
+  throw new ConfigError(
+    `Invalid configuration — the process cannot start:\n${issues.map(describe).join('\n')}`,
+    fields,
+  )
+}
