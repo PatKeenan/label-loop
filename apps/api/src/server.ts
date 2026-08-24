@@ -1,3 +1,4 @@
+import { createDatabase } from '@labelloop/db'
 import { createErrorReporter } from './adapters/sentry-error-reporter.ts'
 import { systemClock } from './adapters/system-clock.ts'
 import { createApp } from './app.ts'
@@ -27,11 +28,14 @@ const config = (() => {
 
 const logger = createRootLogger(config)
 const errorReporter = await createErrorReporter(config)
-const app = createApp({ config, clock: systemClock, errorReporter })
+// The APP role's pool — DML only. The API cannot migrate itself even if asked to: the
+// credential it holds has no DDL, and its config schema cannot express one that does.
+const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_MAX })
+const app = createApp({ config, clock: systemClock, errorReporter, db })
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })
 
-installSignalHandlers({ server, errorReporter, logger })
+installSignalHandlers({ server, errorReporter, logger, db })
 
 logger.info(
   { port: server.port, url: `http://localhost:${server.port}`, pid: process.pid },

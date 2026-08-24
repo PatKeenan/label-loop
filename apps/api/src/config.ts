@@ -29,6 +29,26 @@ const configSchema = z
     GIT_SHA: z.string().min(1).default(DEV_GIT_SHA),
     /** Unset is a supported state: the reporter becomes a no-op (ADR-0009). */
     SENTRY_DSN: z.url().optional(),
+    /**
+     * The APP role's connection (CONVENTIONS.md "Data rules") — DML only, never DDL.
+     *
+     * The first genuinely required variable, and deliberately without a default. A
+     * localhost fallback would mean a production deploy that forgot to set this boots
+     * successfully and quietly talks to nothing, which is precisely the runtime surprise
+     * boot-time validation exists to prevent. `.env.example` carries a working local value.
+     *
+     * The migrator and superuser connections are absent from this schema on purpose: the
+     * API never migrates and never creates roles, so it should not be *able* to express
+     * those credentials. They are read by the scripts that need them.
+     */
+    DATABASE_URL: z
+      .url()
+      .refine(
+        (url) => url.startsWith('postgres://') || url.startsWith('postgresql://'),
+        'must be a postgres:// or postgresql:// connection string',
+      ),
+    /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return

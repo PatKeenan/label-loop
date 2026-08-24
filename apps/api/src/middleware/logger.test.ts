@@ -18,7 +18,12 @@ const PII_BODY = { input: 'my name is Ada Lovelace and my email is ada@example.c
 /** Capture the NDJSON the logger actually writes, rather than trusting configuration. */
 const capture = () => {
   const lines: string[] = []
-  const config = loadConfig({ LOG_LEVEL: 'info', APP_VERSION: '1.2.3', GIT_SHA: 'cafe123' })
+  const config = loadConfig({
+    LOG_LEVEL: 'info',
+    APP_VERSION: '1.2.3',
+    GIT_SHA: 'cafe123',
+    DATABASE_URL: 'postgres://labelloop_app:localdev@localhost:5433/labelloop',
+  })
   const logger = createRootLogger(config, {
     write: (line: string) => {
       lines.push(line)

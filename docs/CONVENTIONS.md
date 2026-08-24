@@ -14,9 +14,12 @@
 - Version prefix `/v1/` from day one. Breaking change = new version, never mutation.
 - Every response is enveloped: success `{ data, request_id }`, failure
   `{ error: { code, message }, request_id }`. Error codes are a closed enum in contracts.
-- All ids are prefixed ULIDs: `pnl_` (panel), `pnv_` (panel version), `jud_` (judge),
-  `jdv_` (judge version), `tax_` (failure taxonomy), `tr_`, `ann_`, `key_`, `ds_`, `ft_`.
-  Greppable, sortable, self-describing. (`cls_`/`clv_` were retired by ADR-0019.)
+- All ids are prefixed ULIDs: `org_` (organisation), `pnl_` (panel), `pnv_` (panel
+  version), `jud_` (judge), `jdv_` (judge version), `tax_` (failure taxonomy), `tr_`,
+  `ann_`, `key_`, `ds_`, `ft_`, `aud_` (audit event). Greppable, sortable,
+  self-describing. (`cls_`/`clv_` were retired by ADR-0019.) The one exception is
+  better-auth's own tables, whose ids it mints itself (ADR-0008) — `org_members.user_id`
+  therefore holds a better-auth id, not a prefixed one.
 - **Two identifiers, never conflated** (ADR-0010). `request_id` is the W3C/OTel trace
   id for one HTTP execution: present on EVERY response, success or failure, on every
   endpoint, and the id a customer quotes to support. `trace_id` is a `tr_` ULID naming

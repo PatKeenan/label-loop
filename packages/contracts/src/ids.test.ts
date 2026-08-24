@@ -15,6 +15,7 @@ import {
 describe('prefixed ULIDs', () => {
   test('the prefix set is exactly the one CONVENTIONS names', () => {
     expect([...ID_PREFIXES]).toEqual([
+      'org_',
       'pnl_',
       'pnv_',
       'jud_',
@@ -25,6 +26,7 @@ describe('prefixed ULIDs', () => {
       'key_',
       'ds_',
       'ft_',
+      'aud_',
     ])
   })
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Classification-as-a-service with an eval-to-fine-tune flywheel.",
+  "description": "Judge-as-a-service with an eval-to-fine-tune flywheel.",
   "license": "MIT",
   "workspaces": [
     "apps/*",
@@ -13,18 +13,26 @@
     "bun": "1.4.0"
   },
   "scripts": {
-    "prepare": "bun run setup",
-    "setup": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || echo 'setup: no git dir (tarball or image build) — skipping hook install'",
+    "db:bootstrap": "bun run scripts/db-bootstrap.ts",
+    "db:generate": "bun run --cwd packages/db generate",
+    "db:migrate": "bun run scripts/db-migrate.ts",
+    "db:seed": "bun run scripts/seed.ts",
+    "db:setup": "bun run db:bootstrap && bun run db:migrate && bun run db:seed",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d --wait postgres",
+    "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "typecheck": "bun run --filter '*' --if-present typecheck",
-    "test": "bun test --pass-with-no-tests"
+    "prepare": "bun run setup",
+    "setup": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || echo 'setup: no git dir (tarball or image build) \u2014 skipping hook install'",
+    "test": "bun test --pass-with-no-tests",
+    "typecheck": "bun run --filter '*' --if-present typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
+    "@labelloop/contracts": "workspace:*",
+    "@labelloop/db": "workspace:*",
     "@types/bun": "^1.4.0",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2"
