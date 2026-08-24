@@ -38,7 +38,11 @@ const generate = async () => {
             score: 1,
             complete: true,
             threshold: 1,
-            verdicts: [],
+            aggregation: {
+              policy: 'weighted_threshold' as const,
+              panel_version: parseId('pnv_', 'pnv_01ARZ3NDEKTSV4RRFFQ69G5FAV'),
+            },
+            judges: {},
             trace_id: parseId('tr_', 'tr_01ARZ3NDEKTSV4RRFFQ69G5FAV'),
           },
           request_id: '4bf92f3577b34da6a3ce929d0e0e4736',
