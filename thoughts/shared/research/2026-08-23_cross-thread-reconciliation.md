@@ -84,15 +84,18 @@ Short-circuit has a real trade-off their doc names honestly: returning as soon a
 verdict is determined loses the sampling data from judges that never ran. Per-panel
 choice, not a default.
 
-### 2.4 Product name: "Panel" vs "LabelLoop"
+### 2.4 Product name: "Panel" vs "LabelLoop" — RESOLVED
 The source document calls the **product** Panel. This repo is LabelLoop throughout —
 `labelloop`, `@labelloop/contracts`, `@labelloop/api`, and 14 doc mentions.
 
-The collision is worse than a rename: **`panel` is now the entity name here** (ADR-0019).
-"A panel in Panel," "your Panel panels," and an ambiguous `pnl_` all follow. One of the two
-has to give. The entity name is load-bearing and excellent; a product name is neither, so
-the cheaper move is to keep `panel` as the entity and name the product separately — but it
-is a stakeholder call and it gets more expensive with every package published.
+The collision was worse than a rename: **`panel` is the entity name here** (ADR-0019).
+"A panel in Panel," "your Panel panels," and an ambiguous `pnl_` all follow.
+
+**DECIDED 2026-08-23: `panel` stays the entity; the product is not called Panel.**
+The stakeholder's reasoning is that Panel is too broad as a product name, and the entity
+name is the one carrying real weight — it appears in ids, tables, the public path and the
+response body, and it is the word a developer types. LabelLoop remains the working title.
+No rename follows; this conflict is closed.
 
 ### 2.5 Adapter export — the source document resolves an open gate
 This repo flagged the contradiction on 2026-08-22 (PRODUCT promises adapter download while
@@ -293,6 +296,6 @@ answering **once**, before two features assume it independently.
 | 1 | Response contract changes (§2.1, §2.2) | The open panel PR — a closing window |
 | 2 | Aggregation policy set (§2.3) | **P3** `panel_versions` schema |
 | 3 | `api_keys.name` column (§4) | **P3** |
-| 4 | Product name (§2.4) | Nothing immediately; cost rises over time |
+| 4 | ~~Product name (§2.4)~~ | **Resolved** — `panel` stays the entity, the product is not called Panel |
 
 Everything else is M5 or later.
