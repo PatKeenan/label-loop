@@ -65,3 +65,39 @@ M6–M7 scale.
 Genuinely senior-engineering territory, and worth building deliberately rather than
 discovering under load — which is an argument for scheduling it, not for pre-adopting a
 framework.
+
+## From the 2026-08-23 cross-thread reconciliation
+Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.md`.
+
+- **Cross-org grants — PINNED, not rejected.** A consuming org seeing subscribed external
+  panels inside its own tool list, alongside its own. Parked because the B2B beachhead does
+  not need it: an external client needs a key, a meter and an invoice, not an identity in
+  our system. The use case is nonetheless real — a marketing agency with its own panels
+  also wanting to consume someone else's — so this is a "not yet" with the case recorded.
+- **Panel-as-sensor alerting.** Per-panel versioned alert rules over the verdict stream:
+  sliding-window fail rates, taxonomy-code spikes (diagnostic, not merely alarming),
+  per-judge latency/error/attempt thresholds, drift and staleness nags. Signed webhooks
+  (HMAC, retry with backoff, dead-letter) — which is M2's resilience work pointed outbound,
+  not new machinery — with an **alert-to-annotation loop** so an incident becomes data
+  collection.
+- **Anti-distillation.** Per-call pricing, a ToS no-training clause, rate and quota limits,
+  and anomaly detection over the verdict stream (volume spikes, coverage-sweeping input
+  distributions, near-duplicate perturbations) → suspend key. Parked while panels are
+  private; **stops being parkable once external paying consumers exist**. The honest
+  position is that the real moat is continuous alignment: a clone is a frozen snapshot that
+  goes stale with no realignment loop and no named experts.
+- **MCP distribution.** One platform-level remote server with dynamic per-user tool lists,
+  each accessible panel auto-described from its label set — never per-panel servers. A thin
+  adapter over the same `/v1` gateway.
+- **API surface split**, with a dashboard-first promotion rule: read-only analytics as MCP
+  tools, audit as the M8 compliance export, management CRUD parked until enterprise pull.
+  Nothing is built public-first; queries earn the public API by proving themselves in the
+  dashboard.
+- **Marketplace surface.** Expert bios backed by platform-generated provenance, cohorts as
+  the human mirror of a panel, and the GitHub work-graph analogy — panel versions as
+  releases, alignment history as commit log, "git blame for judgment" — with two deliberate
+  breaks from GitHub: weight by quality rather than volume, and contributions pay.
+- **Multi-task warm-start** for data-poor judges, **auto-suggested adapter pinning**,
+  **BERT-class encoders** as a rung below small generative fine-tunes, **trajectory-level
+  evaluation**, and **white-label/custom domains** — all named in the source session as
+  parked, and parked here too.
