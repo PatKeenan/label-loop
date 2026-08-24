@@ -118,6 +118,8 @@ Alignment is a **discrete, repeatable event with its own surface**, not a backgr
 ### 5.10 Dashboards
 - Quality over time: per-judge agreement with the expert, per-taxonomy failure rates, and the sample size behind every number.
 - Cost comparison: frontier vs fine-tuned judges, per-call and projected monthly, in dollars.
+- **Org-level financial view, with drill-down.** Every service shows spend; this one is two-sided, because an org both consumes and sells. One org-wide screen covering all panels — token usage, spend, revenue from external subscribers, and SME payouts owed — then drill down org → panel → judge → key. Judge-level matters because each judge has its own model and graduates independently, so cost moves per judge rather than per panel; key-level matters because two external clients on the same panel are two separate bills.
+- **Three flows, not one.** *Outgoing to us:* judge inference and subscription. *Incoming:* what external consumers pay for this org's panels, net of platform rev-share. *Outgoing to people:* contribution-ledger payouts to the org's own SMEs. A dashboard that shows only the first is the wrong shape for a platform where orgs sell.
 
 ### 5.11 Billing
 - Stripe integration: metered usage (per judgment), subscription tier for fine-tuning access, invoices, usage caps.
