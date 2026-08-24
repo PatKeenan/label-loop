@@ -221,7 +221,9 @@ Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,ju
 > starting from this file should not have to rediscover it.
 
 - [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable, carrying the
-      pass `threshold`), `judges` (`jud_`), `judge_versions` (`jdv_`, immutable, carrying
+      pass `threshold` and an aggregation `policy` — only `weighted_threshold` exists,
+      but the column keeps the decision explicit rather than implied), `judges` (`jud_`),
+      `judge_versions` (`jdv_`, immutable, carrying
       `type` of `code` | `llm`, `weight`, `required`, and **`polarity`**), `api_keys` (`key_`,
       SHA-256 hash + last-4 + status + **`name`**, scoped to one panel),
       `traces` (`tr_` PK, a `request_id` column — ADR-0010, **and the `key_` that

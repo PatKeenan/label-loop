@@ -89,6 +89,52 @@ a smaller denominator and look exactly like a confident whole-panel number. Mark
 results let a caller decide — proceed, retry, or escalate — which is the same principle as
 not deciding their risk tolerance for them.
 
+### The judge's own output, and where key order actually matters
+**Revised 2026-08-23.** A judge is asked for four fields, in this order: `rationale` (one
+line, capped, for a human), `reasons` (taxonomy codes), `verdict` (binary), `confidence`
+(0–1). Think, categorise, decide, then assess how sure you are.
+
+This is the **only** schema whose property order is load-bearing, and the distinction was
+wrong in the first draft of this ADR. The response `Verdict` wraps the judge's output in
+metadata *we* compute, so its key order drives nothing; the **structured-output schema for
+the judge call** is what determines generation order. `judgeOutputSchema` is therefore a
+separate exported schema, with a test on its ordering.
+
+`reasons` as taxonomy codes is the field an agent branches on: prose cannot be acted upon,
+a code can be mapped to a remediation. The axial-coded failure taxonomy becomes the
+remediation vocabulary, which is what makes a propose→judge→revise loop directed rather
+than random.
+
+`confidence` is not a softened verdict — the verdict stays binary. It exists because
+PRODUCT 5.5 promises **low-confidence sampling** as an annotation queue, and you cannot
+sample by a confidence you do not return.
+
+### Aggregation is one mechanism with presets
+**Decided 2026-08-23.** The only policy is `weighted_threshold`, because it already
+expresses the named policies people ask for: *unanimous* is a threshold of 1, *quorum(n)*
+is equal weights with the threshold set accordingly, and *veto* is a `required` judge that
+fails the panel outright whatever the score. Four policies would be four code paths and
+four sets of edge cases for one behaviour. The console offers named presets over the single
+mechanism.
+
+Short-circuit evaluation is deliberately absent: returning as soon as the verdict is
+determined saves latency but loses the sampling data from judges that never ran. Revisit
+when M2's load numbers justify the trade, not before.
+
+Every evaluation echoes `aggregation { policy, panel_version }`, pinning the immutable
+panel version that produced the decision so a score timeline can never silently span a
+configuration change.
+
+### Judges are keyed by slug, not listed
+**Decided 2026-08-23.** `judges["is-p0"]`, because the common case is an agent asking about
+one specific judge and the slug is the name a developer writes in their code. Ordering and
+duplicate judges are not things a panel needs.
+
+Each verdict also carries `served_by` (`frontier:sonnet`, `finetune:acme-tone-v3`), which
+puts the graduation story in every payload, plus `latency_ms` — judges fan out in parallel,
+so the panel's total is the slowest one, and this is what tells a caller which seat shapes
+their p99 — and `attempts`, which surfaces retry flakiness a bare success would hide.
+
 ### API shape (proposed; P4 confirms)
 - `POST /v1/panels/{panel_id}/evaluate` — run the panel, return every judge's verdict.
 - `POST /v1/judges/{judge_id}/evaluate` — run one judge directly.
