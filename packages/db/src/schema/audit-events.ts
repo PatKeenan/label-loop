@@ -23,7 +23,7 @@ import { orgs } from './orgs.ts'
 export const auditEvents = pgTable(
   'audit_events',
   {
-    id: id().primaryKey(),
+    id: id('aud_').primaryKey(),
     /** Nullable: platform-level events belong to no tenant. */
     orgId: text('org_id').references(() => orgs.id, { onDelete: 'set null' }),
     /** `user` | `api_key` | `system` — free text, because M8 defines the vocabulary. */

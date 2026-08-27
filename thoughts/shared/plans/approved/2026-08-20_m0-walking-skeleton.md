@@ -777,6 +777,29 @@ requires — metering decomposable at judge granularity "from the first migratio
 each judge has its own model and graduates independently, so cost moves per judge — and
 what an SME annotation attaches to at M5. An aggregate cannot be decomposed after the fact.
 
+### P3 — primary keys are generated at insert, and stay prefixed ULIDs
+**Expected:** the plan said nothing; the first implementation had every caller pass
+`newId('pnl_')` explicitly.
+**Found:** raised by the stakeholder as an open question — should ids default at insert,
+and should they be UUIDs while we are at it. The two halves have different answers.
+**Resolution:** `$defaultFn(() => newId(prefix))` on the eight tables with prefixed primary
+keys, and prefixed ULIDs retained. Full rationale in the decisions log (2026-08-24T03:10Z);
+the short version is that automatic generation costs nothing (`drizzle-kit generate`
+confirms it emits no SQL and needs no migration) while UUIDs would cost the public contract,
+the self-describing prefix the branded types key off, and the time-ordering that keeps
+`traces` appending to its index rather than scattering page splits under load.
+
+`$defaultFn` was chosen over a database-side default because a database default cannot be
+known until the INSERT returns, and an evaluation wants its `tr_` id at the *start* so the
+logger can bind it before the row exists. A default that is only a default keeps both doors
+open, and `generated-ids.test.ts` asserts an explicit id is still accepted alongside the
+generated case.
+
+Two costs recorded rather than left to be discovered: raw SQL bypasses the default entirely
+(the seed does, deliberately, since D-L needs fixed ids), so the per-table prefix CHECK
+constraint stays the real guarantee; and `newId()` falls back to `Date.now()` rather than
+the injected `Clock` (D-H), accepted because nothing asserts on an id's timestamp.
+
 ### P3 — foreign keys were declared, Drizzle `relations()` were not
 **Expected:** the schema was complete once every FK was declared with `.references()`.
 **Found:** caught in review by the stakeholder. `.references()` and `relations()` are

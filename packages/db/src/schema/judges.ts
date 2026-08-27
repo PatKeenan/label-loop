@@ -13,7 +13,7 @@ import { panels } from './panels.ts'
 export const judges = pgTable(
   'judges',
   {
-    id: id().primaryKey(),
+    id: id('jud_').primaryKey(),
     panelId: text('panel_id')
       .notNull()
       .references(() => panels.id, { onDelete: 'cascade' }),

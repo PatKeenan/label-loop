@@ -11,7 +11,7 @@ import { judges } from './judges.ts'
 export const judgeVersions = pgTable(
   'judge_versions',
   {
-    id: id().primaryKey(),
+    id: id('jdv_').primaryKey(),
     judgeId: text('judge_id')
       .notNull()
       .references(() => judges.id, { onDelete: 'cascade' }),

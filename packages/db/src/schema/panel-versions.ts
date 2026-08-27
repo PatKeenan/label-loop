@@ -22,7 +22,7 @@ import { panels } from './panels.ts'
 export const panelVersions = pgTable(
   'panel_versions',
   {
-    id: id().primaryKey(),
+    id: id('pnv_').primaryKey(),
     panelId: text('panel_id')
       .notNull()
       .references(() => panels.id, { onDelete: 'cascade' }),

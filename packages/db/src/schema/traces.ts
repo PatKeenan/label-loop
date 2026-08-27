@@ -14,7 +14,7 @@ import { panels } from './panels.ts'
 export const traces = pgTable(
   'traces',
   {
-    id: id().primaryKey(),
+    id: id('tr_').primaryKey(),
     orgId: text('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),

@@ -12,7 +12,7 @@ import { createdAt, id, idCheck, updatedAt } from './columns.ts'
 export const orgs = pgTable(
   'orgs',
   {
-    id: id().primaryKey(),
+    id: id('org_').primaryKey(),
     /** URL-safe handle. Stable, and the thing a console route is keyed by. */
     slug: text('slug').notNull(),
     name: text('name').notNull(),

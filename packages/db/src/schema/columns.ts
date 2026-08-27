@@ -1,5 +1,5 @@
 import type { IdPrefix } from '@labelloop/contracts'
-import { ULID_CHARS } from '@labelloop/contracts'
+import { newId, ULID_CHARS } from '@labelloop/contracts'
 import { sql } from 'drizzle-orm'
 import { check, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
 
@@ -9,11 +9,26 @@ import { check, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-co
  */
 
 /**
- * An id column. Ids are prefixed ULIDs minted by the application (`@labelloop/contracts`
- * `newId`), never by a database default: they have to exist before the row does, because
- * the API returns one in the response envelope and logs it on the way.
+ * A primary-key column holding a prefixed ULID.
+ *
+ * The id is minted in the APPLICATION rather than by a database default, and that is a
+ * decision rather than an omission. A `gen_random_uuid()` default cannot be known until
+ * the INSERT returns, but an evaluation wants its `tr_` id at the *start* — bound to the
+ * request logger so every judge-call line carries it, before the row exists. Generating it
+ * here keeps both doors open: `$defaultFn` fills it in when nothing supplies one, and an
+ * explicit id is still accepted whenever the caller needs it early.
+ *
+ * The prefix stays a prefixed ULID rather than becoming a UUID because it is public
+ * contract (it appears in `/v1` paths and every response body), because the prefix is what
+ * makes an id self-describing in a log line and a support ticket, and because ULIDs sort
+ * by time — which on `traces`, the highest-volume insert table here, is the difference
+ * between appending to a B-tree and scattering page splits across it.
+ *
+ * NOTE: this default belongs to the query builder. Raw SQL — the seed, any future backfill
+ * — bypasses it entirely, which is why `idCheck` below is the actual guarantee.
  */
-export const id = (name = 'id') => text(name)
+export const id = <P extends IdPrefix>(prefix: P, name = 'id') =>
+  text(name).$defaultFn(() => newId(prefix))
 
 /**
  * The prefix check for a primary key. Applied to primary keys only — a foreign key

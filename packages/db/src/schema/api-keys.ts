@@ -11,7 +11,7 @@ import { panels } from './panels.ts'
 export const apiKeys = pgTable(
   'api_keys',
   {
-    id: id().primaryKey(),
+    id: id('key_').primaryKey(),
     orgId: text('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
