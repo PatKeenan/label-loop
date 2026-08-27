@@ -68,6 +68,10 @@ jobs:
         run: bun run db:bootstrap
       - name: Migrate
         run: bun run db:migrate
+      - name: Seed
+        # The relation-graph test traverses the seeded fixtures, and seeding here also puts
+        # the seed itself under test — it is what the README's walkthrough depends on.
+        run: bun run db:seed
       - name: Test
         run: bun run test
 

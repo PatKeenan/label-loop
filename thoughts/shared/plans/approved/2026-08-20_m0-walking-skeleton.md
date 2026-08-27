@@ -777,6 +777,36 @@ requires — metering decomposable at judge granularity "from the first migratio
 each judge has its own model and graduates independently, so cost moves per judge — and
 what an SME annotation attaches to at M5. An aggregate cannot be decomposed after the fact.
 
+### P3 — foreign keys were declared, Drizzle `relations()` were not
+**Expected:** the schema was complete once every FK was declared with `.references()`.
+**Found:** caught in review by the stakeholder. `.references()` and `relations()` are
+different things and only the first had been done. The constraints were real and enforced
+— that half was right — but Drizzle's relational query API was left in a trap: passing
+`schema` to `drizzle()` makes `db.query.<table>` exist and a plain `findMany()` work, so
+the API looks configured, and the first `with:` fails at RUNTIME with
+`undefined is not an object (evaluating 'relation.referencedTable')`. TypeScript does not
+catch it, so the discovery point would have been P4's first repository.
+**Resolution:** `schema/relations.ts` declares every edge, including better-auth's tables
+so the graph has no hole for P7 to trip over. One file rather than co-located, because the
+graph is circular — orgs reference panels and panels reference orgs — and co-locating would
+mean a module cycle per edge.
+
+`schema/relations.test.ts` then *traverses* every edge against a real database rather than
+asserting the relation objects exist, since "the object exists" was already true while this
+was broken. The most valuable of those traversals is the pinned judge set: a `pnv_` loads
+its judges through `panel_version_judges`, not through `panels.judges`, which is a
+different and much less useful question.
+
+No migration changed — relations are a TypeScript-level declaration and emit no SQL,
+confirmed by a `drizzle-kit generate` reporting "nothing to migrate". CI gained a seed step,
+because the traversal test reads the seeded fixtures and seeding in CI also puts the seed
+itself under test.
+
+**Worth keeping:** this is the second bug in this phase whose defining property was that it
+looked fine. The first was a CHECK constraint that passed on NULL. Both were found by
+asking the system to *do* the thing rather than by reading the declaration, which is an
+argument about where the tests in this repo should aim.
+
 ### P3 — two id prefixes were missing, and CONVENTIONS was amended
 **Expected:** the prefix list in CONVENTIONS covers every table.
 **Found:** `orgs` and `audit_events` both need a primary key and neither had a prefix.
