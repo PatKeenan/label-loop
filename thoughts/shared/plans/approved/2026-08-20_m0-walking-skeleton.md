@@ -1364,6 +1364,18 @@ so "spans are not exported" is a stated fact rather than something to infer.
   own; requiring a login would mean either a credential in the repo or a manual step, and
   both break the zero-secret one-command boot (ADR-0009).
 
+  **This one has an unresolved edge, and it was raised at the phase boundary rather than
+  buried.** D-M and ADR-0013 say the base compose file is what production runs and what an
+  ECS translation would be read against — so taken literally, a translation of this file
+  ships an open Grafana. Three ways out were put to the stakeholder: accept it and carry the
+  debt, split the telemetry containers into their own compose file, or amend ADR-0018 to say
+  the observability stack is explicitly outside the "base file is production" claim.
+  **Decided 2026-08-28: accept and carry**, on the grounds that nothing is published beyond
+  localhost today and M3 owns the real observability deployment anyway. Recorded in the
+  carry-forward list at the end of this plan so it reaches M1's CD planning rather than
+  evaporating between milestones. The collector's published 4317/4318 has the same shape and
+  needs no separate decision — Postgres's published 5433 set that precedent at P3.
+
 Nothing here is a `depends_on` of the API, and `/readyz` deliberately does not check any of
 it: a collector that is down loses spans and must never take the API out of rotation.
 
@@ -1558,7 +1570,14 @@ applications of an existing convention, and are recorded here only.
 - Phase count → **nine kept**, since phase boundaries are where CLAUDE.md's "end the
   session and start fresh from artifacts" reset happens.
 
-Two things carry forward out of this plan rather than into it:
+Three things carry forward out of this plan rather than into it:
 - **ADR-0009 needs an amendment** for D-Q before or during `/approve_plan`.
 - **Backup/restore for the self-hosted Postgres belongs to M1's CD planning** — named
   here so it is not lost between milestones.
+- **The telemetry stack's auth belongs to M1's CD planning too** (added at P6, 2026-08-28).
+  Grafana runs with anonymous admin and the collector publishes its OTLP ports, both correct
+  for a localhost-only development stack and both wrong for anything reachable. The base
+  compose file is what ADR-0013 says production runs, so the first environment with a real
+  URL has to either put auth on these or move them out of that file. Not M0 work — M0's
+  volumes are throwaway and nothing binds beyond localhost — but it must not evaporate, for
+  the same reason backup/restore must not.
