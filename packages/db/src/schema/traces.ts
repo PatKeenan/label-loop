@@ -1,6 +1,6 @@
-import { boolean, index, jsonb, pgTable, real, text } from 'drizzle-orm/pg-core'
+import { boolean, index, pgTable, real, text } from 'drizzle-orm/pg-core'
 import { apiKeys } from './api-keys.ts'
-import { createdAt, id, idCheck } from './columns.ts'
+import { createdAt, id, idCheck, jsonbColumn } from './columns.ts'
 import { orgs } from './orgs.ts'
 import { panelVersions } from './panel-versions.ts'
 import { panels } from './panels.ts'
@@ -46,7 +46,7 @@ export const traces = pgTable(
     /** The caller's artifact. We never generated it — their agent did (ADR-0019). */
     artifact: text('artifact').notNull(),
     /** Caller-supplied context. Their metadata, opaque to us. */
-    context: jsonb('context'),
+    context: jsonbColumn<Record<string, string>>('context'),
     /** The panel decision, denormalised so the common read needs no fan-in. */
     passed: boolean('passed').notNull(),
     score: real('score').notNull(),

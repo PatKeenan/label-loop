@@ -2,12 +2,12 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import type { ErrorIssue } from '@labelloop/contracts'
 import type { AppEnv } from '../../../app-env.ts'
 import { AppError } from '../../../errors.ts'
+import { createEvaluateRoutes } from './evaluate.ts'
 
 /**
- * The public, versioned surface (CONVENTIONS.md "API rules"). Empty of endpoints at P2 —
- * classify arrives at P4 — but mounted now so that the spec, the security scheme and the
- * validation behaviour are all in place before the first endpoint can be written without
- * them.
+ * The public, versioned surface (CONVENTIONS.md "API rules"). It was mounted empty at P2
+ * so that the spec, the security scheme and the validation behaviour were all in place
+ * before the first endpoint could be written without them; P4 adds that endpoint.
  */
 
 /** Flatten a Zod failure into the envelope's `issues[]`. */
@@ -38,9 +38,16 @@ export const validationHook = (
   })
 }
 
-export const createV1Routes = () =>
-  new OpenAPIHono<AppEnv>({
+export const createV1Routes = () => {
+  const v1 = new OpenAPIHono<AppEnv>({
     // Cast: @hono/zod-openapi types the hook against its own generic result shape; ours
     // is structurally the subset we actually read (success flag + Zod issues).
     defaultHook: validationHook as never,
   })
+
+  // Mounted through `route`, not defined here, so each endpoint owns its own file and the
+  // OpenAPI registry is merged rather than centralised.
+  v1.route('/', createEvaluateRoutes())
+
+  return v1
+}

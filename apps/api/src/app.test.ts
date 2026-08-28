@@ -6,6 +6,7 @@ import { createRecordingErrorReporter } from './adapters/noop-error-reporter.ts'
 import { createApp } from './app.ts'
 import { type Config, loadConfig } from './config.ts'
 import { AppError } from './errors.ts'
+import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
 import { validationHook } from './routes/public/v1/index.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
@@ -22,6 +23,14 @@ const config: Config = loadConfig({
   DATABASE_URL: 'postgres://app:localdev@localhost:5433/labelloop',
 })
 
+/**
+ * None of the tests in this file evaluate anything — they are about routing, the envelope
+ * and the logger — so the gateway here exists only to satisfy the composition root. The
+ * evaluation path has its own integration test, against a real database.
+ */
+const testGateway = () =>
+  createModelGateway({ provider: createFakeProvider(), clock: createFixedClock() })
+
 let reporter: ReturnType<typeof createRecordingErrorReporter>
 let app: ReturnType<typeof createApp>
 
@@ -32,6 +41,7 @@ beforeEach(() => {
     clock: createFixedClock(),
     errorReporter: reporter,
     db: fakeDatabase(),
+    modelGateway: testGateway(),
   })
 })
 
@@ -172,6 +182,7 @@ describe('contract-validation auto-mapping', () => {
       clock: createFixedClock(),
       errorReporter: reporter,
       db: fakeDatabase(),
+      modelGateway: testGateway(),
     })
     host.route('/probe-host', probe)
     return host
@@ -229,6 +240,7 @@ describe('/readyz', () => {
       clock: createFixedClock(),
       errorReporter: reporter,
       db: fakeDatabase(options),
+      modelGateway: testGateway(),
     })
 
   test('reports ready when the database answers and migrations are current', async () => {

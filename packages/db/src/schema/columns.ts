@@ -1,7 +1,7 @@
 import type { IdPrefix } from '@labelloop/contracts'
 import { newId, ULID_CHARS } from '@labelloop/contracts'
 import { sql } from 'drizzle-orm'
-import { check, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
+import { check, customType, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
 
 /**
  * The column shapes every table shares, in one place so a new table cannot quietly
@@ -46,6 +46,33 @@ export const idCheck = (table: string, column: PgColumn, prefix: IdPrefix) =>
     `${table}_id_prefix`,
     sql`${column} ~ ${sql.raw(`'^${prefix}[0-9A-HJKMNP-TV-Z]{${ULID_CHARS}}$'`)}`,
   )
+
+/**
+ * A `jsonb` column that stores JSON, rather than a string that happens to contain JSON.
+ *
+ * Drizzle's own `jsonb()` calls `JSON.stringify` on the way to the driver, which is right
+ * for a driver that wants text — and wrong for Bun's, which serializes objects to JSON
+ * itself. The two compose into a double encoding: the object becomes a string, and the
+ * string is then stored as a jsonb *string*. Every jsonb column in this schema was
+ * affected, and the failure is close to invisible, because Drizzle parses the value back
+ * on read and hands you the object you expected.
+ *
+ * What it silently breaks is everything that is not Drizzle. `raw_response->>'model'`
+ * returns nothing, `jsonb_typeof` says `string`, a GIN index has one opaque scalar to
+ * index, and the dataset exports M6 builds out of these payloads get a wall of escaped
+ * quotes. For columns whose whole purpose is to be queried later — the raw provider
+ * payload, the taxonomy codes on a verdict — that is the difference between an auditable
+ * record and a blob.
+ *
+ * Identity in both directions, therefore: the driver is left to do the encoding it is
+ * already doing correctly. `jsonb-encoding.test.ts` asserts what Postgres actually holds.
+ */
+export const jsonbColumn = <TData>(name: string) =>
+  customType<{ data: TData; driverData: TData }>({
+    dataType: () => 'jsonb',
+    toDriver: (value) => value,
+    fromDriver: (value) => value,
+  })(name)
 
 /**
  * Timestamps are `timestamptz` and named with an `_at` suffix (CONVENTIONS.md "API

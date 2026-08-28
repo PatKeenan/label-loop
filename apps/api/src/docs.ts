@@ -15,8 +15,8 @@ export const mountDocs = (v1: OpenAPIHono<AppEnv>, config: Config): void => {
     type: 'http',
     scheme: 'bearer',
     description:
-      'A per-classifier API key, `llk_live_…` or `llk_test_…`, sent as ' +
-      '`Authorization: Bearer <key>`. Keys are scoped to one classifier (ADR-0003).',
+      'A per-panel API key, `llk_live_…` or `llk_test_…`, sent as ' +
+      '`Authorization: Bearer <key>`. Every key is scoped to exactly one panel (ADR-0003).',
   })
 
   v1.doc('/openapi.json', {
@@ -25,8 +25,10 @@ export const mountDocs = (v1: OpenAPIHono<AppEnv>, config: Config): void => {
       title: 'LabelLoop API',
       version: config.APP_VERSION,
       description:
-        'Classification-as-a-service. Every response is enveloped: `{ data, request_id }` ' +
-        'on success, `{ error: { code, message }, request_id }` on failure.',
+        'Judge-as-a-service: send an artifact to a panel of judges and get back a ' +
+        'decision plus one verdict per judge, each with its reasoning (ADR-0019). Every ' +
+        'response is enveloped: `{ data, request_id }` on success, ' +
+        '`{ error: { code, message }, request_id }` on failure.',
     },
     servers: [{ url: '/v1', description: 'Version 1' }],
   })

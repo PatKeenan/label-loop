@@ -1,6 +1,8 @@
 import type { Database } from '@labelloop/db'
 import type { PinoLogger } from 'hono-pino'
 import type { Config } from './config.ts'
+import type { ModelGateway } from './llm/index.ts'
+import type { AuthenticatedKey } from './middleware/api-key-auth.ts'
 import type { Clock } from './ports/clock.ts'
 import type { ErrorReporter } from './ports/error-reporter.ts'
 
@@ -9,7 +11,7 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  * (`createApp(deps)`) and never imported ad hoc. No DI container: the seam is the value,
  * not the framework (CONVENTIONS.md "Dependency seams").
  *
- * P4 adds `modelProvider`. The list growing is the point — each addition is a thing tests
+ * P4 adds `modelGateway`. The list growing is the point — each addition is a thing tests
  * can substitute rather than monkey-patch.
  */
 export type AppDeps = {
@@ -18,6 +20,13 @@ export type AppDeps = {
   errorReporter: ErrorReporter
   /** The APP role's handle: DML only. Nothing here can migrate or alter schema (P3). */
   db: Database
+  /**
+   * The provider gateway, composed around a `ModelProvider` in `server.ts`. The GATEWAY is
+   * injected rather than the raw port because it is stateful — its circuit breakers
+   * remember what happened on the last request, and a breaker rebuilt per request would
+   * never open. M1 swaps the adapter underneath it and nothing here changes.
+   */
+  modelGateway: ModelGateway
 }
 
 /** The Hono environment: what lives on `c.var` for every request. */
@@ -26,5 +35,10 @@ export type AppEnv = {
     deps: AppDeps
     requestId: string
     logger: PinoLogger
+    /**
+     * The key that authorised this request. Set by `apiKeyAuth`, so it is present only on
+     * routes behind that middleware — which is every route that reads it.
+     */
+    apiKey: AuthenticatedKey
   }
 }

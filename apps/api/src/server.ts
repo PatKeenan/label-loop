@@ -4,6 +4,7 @@ import { systemClock } from './adapters/system-clock.ts'
 import { createApp } from './app.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { installSignalHandlers } from './lifecycle.ts'
+import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { createRootLogger } from './middleware/logger.ts'
 
 /**
@@ -31,7 +32,11 @@ const errorReporter = await createErrorReporter(config)
 // The APP role's pool — DML only. The API cannot migrate itself even if asked to: the
 // credential it holds has no DDL, and its config schema cannot express one that does.
 const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_MAX })
-const app = createApp({ config, clock: systemClock, errorReporter, db })
+// The only provider M0 has, and it is deterministic and offline — which is what keeps
+// zero-secret boot true (ADR-0009). M1 replaces this one line with a real adapter behind
+// the same port; nothing downstream of the gateway knows the difference.
+const modelGateway = createModelGateway({ provider: createFakeProvider(), clock: systemClock })
+const app = createApp({ config, clock: systemClock, errorReporter, db, modelGateway })
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })
 

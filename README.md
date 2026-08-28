@@ -290,6 +290,7 @@ bun run --cwd apps/api dev | bunx pino-pretty
 
 | Endpoint | What it is for |
 |---|---|
+| `POST /v1/panels/{panel_id}/evaluate` | The product: run a panel of judges over one artifact. Authenticated by a panel-scoped API key |
 | `GET /healthz` | Liveness, plus the version and git SHA of the running build. Touches no dependency, deliberately |
 | `GET /readyz` | Readiness: is Postgres reachable, and are migrations current. `503` naming the failing check when not |
 | `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
@@ -331,7 +332,37 @@ question without passing or failing anything, so they score nothing and sit outs
 the numerator and the denominator. `needs-human` is the one real gate — answering `true`
 *fails*, and it is `required`, so it vetoes the panel whatever the score says.
 
-There is no evaluation endpoint to point the key at yet; that lands at P4.
+Point the key at the panel and it answers:
+
+```bash
+curl -s -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate \
+  -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" \
+  -H 'content-type: application/json' \
+  -d '{"artifact":"the build is broken"}' | jq
+```
+
+The reply carries a decision and the reasoning behind it: `passed`, `score` and
+`threshold` for a deterministic step in a workflow, and one verdict per judge — keyed by
+slug, reasoning first — for an agent deciding what to do next. Every call writes a `tr_`
+trace row server-side, because the judge call flows through us (ADR-0001); the same
+request twice returns the same verdicts and two different trace ids.
+
+**The judge behind it is a fake.** M0 ships a deterministic offline provider that derives
+its verdict from a hash of the call rather than by reading anything, so the whole path can
+be exercised with no key, no network and no bill. It is a *peer* of the real adapter, not
+a stub of it: both implement the same `ModelProvider` port and pass the same contract
+suite, which is what makes M1 an adapter swap rather than a rewrite. Its rationale says
+so in every response, on purpose.
+
+Three artifact prefixes drive the fake into a specific failure, so the resilience path can
+be watched by hand rather than only in a test. They belong to the fake and disappear with
+it at M1:
+
+| Artifact begins with | What happens |
+|---|---|
+| `__unavailable__` | The call fails. Watch the jittered backoff in the logs, then the circuit open, then a `503` with `Retry-After` |
+| `__invalid__` | The call completes with an unusable answer: `status: failed`, not retried, and the circuit stays closed — a bad rubric is not a sick provider |
+| `__slow__` | The call never returns, and the gateway's timeout ends it as `PROVIDER_TIMEOUT` |
 
 ### Why the demo routes are not in the API docs
 
