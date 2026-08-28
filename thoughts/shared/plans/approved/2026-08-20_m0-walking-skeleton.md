@@ -286,30 +286,30 @@ Files: `apps/api/src/llm/{index,provider.port,fake-provider,retry,breaker,cost}.
 `apps/api/src/routes/public/v1/evaluate.ts`,
 `apps/api/src/services/evaluate.ts`, `apps/api/src/repositories/traces.ts`.
 
-- [ ] `ModelProvider` port + **shared contract test suite** beside it; the fake adapter
+- [x] `ModelProvider` port + **shared contract test suite** beside it; the fake adapter
       passes it (M1's real adapter will import the same suite)
-- [ ] Deterministic fake: same input → same label/confidence/tokens, no network, no key
-- [ ] `llm/` is the ONLY module that may call a provider — enforced by a lint rule or an
+- [x] Deterministic fake: same input → same label/confidence/tokens, no network, no key
+- [x] `llm/` is the ONLY module that may call a provider — enforced by a lint rule or an
       architecture test asserting no `fetch` to a provider outside `src/llm/`
-- [ ] Timeout, retry with exponential backoff **+ jitter**, and circuit breaker wired
+- [x] Timeout, retry with exponential backoff **+ jitter**, and circuit breaker wired
       around the fake; provider failures translated to the taxonomy inside `llm/`
       (`PROVIDER_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `CIRCUIT_OPEN`), raw errors never
       cross the wire
-- [ ] Token/cost accounting computed in `llm/` and returned for span attributes (P6)
-- [ ] `Clock` port injected so retry/breaker tests are deterministic (no sleeps)
-- [ ] API-key middleware: `llk_` prefix, SHA-256 lookup, status check, **scoped to the
+- [x] Token/cost accounting computed in `llm/` and returned for span attributes (P6)
+- [x] `Clock` port injected so retry/breaker tests are deterministic (no sleeps)
+- [x] API-key middleware: `llk_` prefix, SHA-256 lookup, status check, **scoped to the
       panel in the path**; wrong/revoked/foreign key → `UNAUTHORIZED` 401
-- [ ] `POST /v1/panels/{panel_id}/evaluate` validates via the contracts schema, accepts
+- [x] `POST /v1/panels/{panel_id}/evaluate` validates via the contracts schema, accepts
       `Idempotency-Key`, and returns `{ data: { label, confidence, trace_id }, request_id }`
-- [ ] Trace row persisted on 100% of calls (ADR-0001) with **raw provider payload
+- [x] Trace row persisted on 100% of calls (ADR-0001) with **raw provider payload
       alongside normalized fields**, FK to `jdv_`, and the `request_id` column set
-- [ ] Log lines on the evaluation path bind the `tr_` `trace_id` once the row exists
-- [ ] **422 proven on the real endpoint**: a malformed body to an evaluation auto-maps to
+- [x] Log lines on the evaluation path bind the `tr_` `trace_id` once the row exists
+- [x] **422 proven on the real endpoint**: a malformed body to an evaluation auto-maps to
       `VALIDATION_ERROR` with field-level issues — real contract validation, not a fake
       route that only proves a fake route can throw (D-I)
-- [ ] **401 proven on the real endpoint**: missing, malformed, revoked, and
+- [x] **401 proven on the real endpoint**: missing, malformed, revoked, and
       wrong-panel keys each return the `UNAUTHORIZED` envelope
-- [ ] Integration test on the full evaluation path through `createApp(deps)` with fakes
+- [x] Integration test on the full evaluation path through `createApp(deps)` with fakes
 
 **Automated verification**
 ```bash
@@ -1014,6 +1014,117 @@ root `.env` sat two directories up.
 at the root, as CONVENTIONS' exhaustive-`.env.example` rule implies, rather than a copy
 per workspace to drift. A missing file is tolerated by Bun, which is what keeps the
 container taking its configuration from compose instead.
+
+### P4 — the `ModelProvider` port lives in `llm/`, not beside the other two ports
+**Expected:** the plan's file list put it at `apps/api/src/llm/provider.port.ts`, while P2
+had established `src/ports/` (Clock, ErrorReporter) with adapters in `src/adapters/`.
+**Found:** the two conventions genuinely conflict, and the plan's placement is the right
+one for a reason the plan did not spell out.
+**Resolution:** the port and its adapters stay inside `src/llm/`, and the file says why:
+the "only `llm/` may call a provider" rule is machine-enforced (ADR-0016) by asserting
+that no provider call exists outside that directory. A real adapter in `src/adapters/`
+would be the first entry on an exception list, and an exception list is how a boundary
+stops being one. `Clock` and `ErrorReporter` stay in `src/ports/` — neither is fenced.
+
+### P4 — the gateway is injected, not the raw port
+**Expected:** app-env's P2 comment said "P4 adds `modelProvider`".
+**Found:** the gateway holds circuit-breaker state that must survive between requests. If
+`createApp` built it per request the breaker could never open, and if `createApp` built it
+once then the retry and breaker policies would be unreachable from a test.
+**Resolution:** `AppDeps.modelGateway` carries the composed gateway; `server.ts` builds it
+around `createFakeProvider()` beside the database pool. `ModelProvider` is still the port
+and still the seam M1 swaps — it is composed one level further out than the plan assumed.
+
+### P4 — the breaker sits INSIDE the retry loop
+**Expected:** unstated; the plan named "timeout, retry with backoff+jitter, and circuit
+breaker" without fixing their order.
+**Found:** the order is load-bearing. With the breaker outside, it counts whole judge
+calls, so opening takes `threshold x maxAttempts` provider calls and a request that trips
+the circuit still spends its remaining attempts on a dependency we have just concluded is
+down.
+**Resolution:** `retry(() => breaker.run(() => provider.evaluate(...)))`, with
+`CircuitOpenError` explicitly non-retryable. The attempt that trips the circuit
+short-circuits the rest of its own call, which is also what makes the plan's manual
+verification — backoff, then the breaker, then a 503 with `Retry-After` — a single
+observable sequence rather than three separate requests.
+
+### P4 — the gateway returns outcomes rather than throwing
+**Expected:** unstated. CONVENTIONS says provider failures are translated to the taxonomy
+inside `llm/`, which reads as "throw an `AppError`".
+**Found:** a panel fans out across judges and the published contract says one judge
+failing does not fail the evaluation — so a throwing gateway would put the same try/catch
+and the same mapping in every caller.
+**Resolution:** `judge()` returns a discriminated union already shaped like the contract's
+`verdict.status` (`evaluated` / `failed` / `error` + code). The translation exists once,
+raw provider errors still never leave `llm/`, and the service's job stays total.
+
+### P4 — an evaluation with nothing to divide by fails the request
+**Expected:** the contract's partial-result language ("we return the partial result and
+say so, rather than failing the whole call because one judge did").
+**Found:** that language presupposes a non-empty denominator. When no scoring judge
+answered, `score: 0, complete: false, passed: false` is not a partial result — it is a
+gate blocking a perfectly good artifact because our provider was down.
+**Resolution:** a partial result whenever SOME scoring judge answered; a retryable failure
+(`CIRCUIT_OPEN` where one exists, so the response can say when to come back) when an
+infrastructure failure left nothing to divide by. Judges that merely returned unusable
+answers do NOT trigger this — that is a rubric problem, not an outage, and there is no
+code in the taxonomy that would honestly describe it.
+
+### P4 — the `tr_` id is bound to the logger before the row exists
+**Expected:** the plan and CONVENTIONS both say log lines bind the `tr_` id "once the row
+exists".
+**Found:** the row cannot exist yet. `traces.passed`, `.score` and `.complete` are NOT
+NULL and are not known until every judge has answered, so binding after the insert would
+leave every judge-call, backoff and breaker line without the id.
+**Resolution:** the id is minted at the start of the service call and bound immediately —
+which is exactly what P3's application-side id generation was for, and what its comment in
+`columns.ts` already described. A strictly stronger version of the same intent, and the
+manual verification shows it: every provider line for one evaluation carries both
+`request_id` and `trace_id`.
+
+### P4 — `code` judges have no executor, and say so
+**Expected:** unstated. The schema has carried a `code` judge type since P3.
+**Found:** nothing runs a deterministic check until the taxonomy triage at M5, and the
+seed creates no `code` judge — but the column is representable, so the path needed an
+answer that is not a crash and not a silent pass.
+**Resolution:** a `code` judge returns `status: failed` with a message saying so. It is the
+honest status of the four: nothing usable came back, and retrying will not change that.
+
+### P4 — three repositories, where the plan named one
+**Expected:** `apps/api/src/repositories/traces.ts`.
+**Found:** the endpoint also has to look a key up by hash on every request, and load the
+live panel version with its pinned judge set.
+**Resolution:** `api-keys.ts` and `panels.ts` join it. Same reasoning as the plan's own:
+routes and middleware stay about HTTP and authorisation, and the queries live where
+someone would think to look when one of them needs an index. `apps/api` now declares
+`drizzle-orm` directly, which it was already using through the injected handle.
+
+### P4 — every `jsonb` column was storing a string, and only psql could see it
+**Expected:** CONVENTIONS' "raw provider payloads stored alongside normalized fields
+(rerunnable, auditable)" — satisfied by P3's schema, and asserted by P4's integration test.
+**Found:** `jsonb_typeof(raw_response)` was `string`. Drizzle's `jsonb()` calls
+`JSON.stringify` on the way to the driver and Bun's SQL driver serializes objects itself,
+so every value was encoded twice and stored as a jsonb *string*. Drizzle parses it back on
+read, so the round-trip assertions passed and the application saw exactly what it wrote.
+`raw_response->>'model'` returned nothing; a GIN index would have had one opaque scalar to
+index; M6's dataset exports would have been a wall of escaped quotes.
+**Resolution:** `jsonbColumn()` in `packages/db/src/schema/columns.ts` — identity in both
+directions, leaving the encoding to the driver that was already doing it correctly —
+applied to `traces.context`, `trace_verdicts.reasons`, `trace_verdicts.raw_response` and
+`audit_events.data`. **No migration:** the column type is unchanged, only the client-side
+codec, and `db:generate` confirms no diff. `jsonb-encoding.test.ts` asserts `jsonb_typeof`
+and `->>` addressability in SQL, because the ORM demonstrably cannot see this class of bug.
+A P3 defect, found by P4's first real write, and fixed before any data depended on it.
+
+### P4 — a pre-existing flake in P3's id-ordering test
+**Expected:** a green suite.
+**Found:** `packages/db/src/schema/generated-ids.test.ts`, "two inserts get different ids,
+and they sort in insertion order", fails intermittently: two inserts inside the same
+millisecond share a ULID timestamp prefix, and the random suffixes then sort arbitrarily.
+Observed failing once in a full run and passing on re-run.
+**Resolution:** NOT fixed here — it belongs to P3's test and to a separate change, and
+silently editing another phase's assertion is not a P4 decision. Raised with the
+stakeholder at the phase boundary.
 
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**

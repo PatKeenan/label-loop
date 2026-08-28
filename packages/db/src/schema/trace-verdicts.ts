@@ -1,14 +1,5 @@
-import {
-  boolean,
-  index,
-  integer,
-  jsonb,
-  pgTable,
-  primaryKey,
-  real,
-  text,
-} from 'drizzle-orm/pg-core'
-import { createdAt, verdictStatus } from './columns.ts'
+import { boolean, index, integer, pgTable, primaryKey, real, text } from 'drizzle-orm/pg-core'
+import { createdAt, jsonbColumn, verdictStatus } from './columns.ts'
 import { judgeVersions } from './judge-versions.ts'
 import { traces } from './traces.ts'
 
@@ -56,7 +47,7 @@ export const traceVerdicts = pgTable(
      * code can be mapped to a remediation. This is what makes a propose→judge→revise loop
      * directed rather than random.
      */
-    reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+    reasons: jsonbColumn<string[]>('reasons').notNull().default([]),
     /** Not a softened verdict — the verdict stays binary. This is what M5 samples on. */
     confidence: real('confidence'),
     /** The normalised weight actually applied, pinned so the score is recomputable. */
@@ -72,7 +63,7 @@ export const traceVerdicts = pgTable(
      * (CONVENTIONS.md "Data rules") so an evaluation is rerunnable and auditable rather
      * than only as good as today's parser.
      */
-    rawResponse: jsonb('raw_response'),
+    rawResponse: jsonbColumn<unknown>('raw_response'),
     createdAt: createdAt(),
   },
   (table) => [

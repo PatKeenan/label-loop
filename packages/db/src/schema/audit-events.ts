@@ -1,5 +1,5 @@
-import { index, jsonb, pgTable, text } from 'drizzle-orm/pg-core'
-import { createdAt, id, idCheck } from './columns.ts'
+import { index, pgTable, text } from 'drizzle-orm/pg-core'
+import { createdAt, id, idCheck, jsonbColumn } from './columns.ts'
 import { orgs } from './orgs.ts'
 
 /**
@@ -34,7 +34,7 @@ export const auditEvents = pgTable(
     subjectType: text('subject_type'),
     subjectId: text('subject_id'),
     /** Before/after detail. Shape is per-action and deliberately not constrained yet. */
-    data: jsonb('data'),
+    data: jsonbColumn<Record<string, unknown>>('data'),
     /** Ties the event to the execution that caused it, and so to its spans (ADR-0010). */
     requestId: text('request_id'),
     createdAt: createdAt(),

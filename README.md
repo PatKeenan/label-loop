@@ -290,6 +290,7 @@ bun run --cwd apps/api dev | bunx pino-pretty
 
 | Endpoint | What it is for |
 |---|---|
+| `POST /v1/panels/{panel_id}/evaluate` | The product: run a panel of judges over one artifact. Authenticated by a panel-scoped API key |
 | `GET /healthz` | Liveness, plus the version and git SHA of the running build. Touches no dependency, deliberately |
 | `GET /readyz` | Readiness: is Postgres reachable, and are migrations current. `503` naming the failing check when not |
 | `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
@@ -331,7 +332,83 @@ question without passing or failing anything, so they score nothing and sit outs
 the numerator and the denominator. `needs-human` is the one real gate — answering `true`
 *fails*, and it is `required`, so it vetoes the panel whatever the score says.
 
-There is no evaluation endpoint to point the key at yet; that lands at P4.
+Point the key at the panel and it answers:
+
+```bash
+curl -s -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate \
+  -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" \
+  -H 'content-type: application/json' \
+  -d '{"artifact":"the build is broken"}' | jq
+```
+
+The reply carries a decision and the reasoning behind it: `passed`, `score` and
+`threshold` for a deterministic step in a workflow, and one verdict per judge — keyed by
+slug, reasoning first — for an agent deciding what to do next. Every call writes a `tr_`
+trace row server-side, because the judge call flows through us (ADR-0001); the same
+request twice returns the same verdicts and two different trace ids.
+
+**The judge behind it is a fake.** M0 ships a deterministic offline provider that derives
+its verdict from a hash of the call rather than by reading anything, so the whole path can
+be exercised with no key, no network and no bill. It is a *peer* of the real adapter, not
+a stub of it: both implement the same `ModelProvider` port and pass the same contract
+suite, which is what makes M1 an adapter swap rather than a rewrite. Its rationale says
+so in every response, on purpose.
+
+Three artifact prefixes drive the fake into a specific failure, so the resilience path can
+be watched by hand rather than only in a test. They belong to the fake and disappear with
+it at M1.
+
+**Run them in this order, and only this order.** The panel's four judges all sit on one
+model, so they share one circuit breaker — and once it opens it stays open for 30 seconds,
+refusing everything before it reaches the provider. Send `__unavailable__` first and the
+next two requests come back `CIRCUIT_OPEN` no matter what you put in them, which looks
+exactly like nothing working:
+
+```bash
+PANEL=pnl_000000000000000000SEEDPANE
+KEY="llk_test_$(printf '0%.0s' {1..64})"
+send () { curl -s -i -X POST "localhost:3000/v1/panels/$PANEL/evaluate" \
+  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d "{\"artifact\":\"$1\"}"; }
+
+send 'the build is broken'   # 200 — every judge evaluated, complete: true
+send '__invalid__ x'         # 200 — every judge failed, complete: false
+send '__unavailable__ x'     # 503 — CIRCUIT_OPEN, Retry-After: 30
+```
+
+`__invalid__` goes second because it is the one sentinel that leaves the circuit closed.
+For `__slow__`, restart the API or wait out the 30 seconds first.
+
+| Prefix | What you get back |
+|---|---|
+| `__invalid__` | **`200`.** Every judge `status: "failed"`, `complete: false`, circuit untouched |
+| `__unavailable__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`, immediately |
+| `__slow__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`, after about 20 seconds |
+
+The last two are indistinguishable from the response, and that is honest rather than
+sloppy: by the time the panel gives up, the true fact about both is that the circuit is
+open. What separates them is the latency and the logs — `kind: "timeout"` against
+`kind: "unavailable"`, with the jittered backoff visible before the circuit opens:
+
+```bash
+grep -o '"kind":"[^"]*"' <the api log> | sort | uniq -c
+```
+
+Two things here are worth a sentence, because neither is the obvious answer.
+
+**Neither failure reports `PROVIDER_TIMEOUT`.** Four judges retrying past a threshold of
+five consecutive failures trip the shared breaker partway through the fan-out, and when a
+panel cannot decide, the failure reported is the one that can say *when to come back*. The
+`504` is what a single judge sees, not what this panel returns.
+
+**`__invalid__` is not an error response.** An answer that came back unusable is a rubric
+problem, not an outage: retrying is pointless, no code in the closed taxonomy honestly
+describes it, and a `500` would page somebody for a badly written judge. So the call
+succeeds and says exactly what happened per judge — which is why `complete` exists, and
+why a gate should read it rather than `passed` alone.
+
+The number in these responses is the HTTP status; the body carries the taxonomy `code` as
+a string, never a number. `curl -i` shows both.
 
 ### Why the demo routes are not in the API docs
 
