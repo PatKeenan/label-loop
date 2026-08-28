@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { check, integer, pgTable, real, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { createdBy } from './authored.ts'
 import { aggregationPolicy, createdAt, id, idCheck } from './columns.ts'
 import { panels } from './panels.ts'
 
@@ -37,6 +38,8 @@ export const panelVersions = pgTable(
     aggregationPolicy: aggregationPolicy('aggregation_policy')
       .notNull()
       .default('weighted_threshold'),
+    /** Who authored this row. See `authored.ts` for why it is `user`. */
+    createdBy: createdBy(),
     createdAt: createdAt(),
   },
   (table) => [

@@ -11,6 +11,7 @@
 export * from './api-keys.ts'
 export * from './audit-events.ts'
 export * from './auth.ts'
+export * from './authored.ts'
 export * from './columns.ts'
 export * from './judge-versions.ts'
 export * from './judges.ts'

@@ -1,4 +1,5 @@
 import { pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { createdBy } from './authored.ts'
 import { createdAt, id, idCheck, updatedAt } from './columns.ts'
 import { panels } from './panels.ts'
 
@@ -24,6 +25,8 @@ export const judges = pgTable(
      */
     slug: text('slug').notNull(),
     name: text('name').notNull(),
+    /** Who authored this row. See `authored.ts` for why it is `user`. */
+    createdBy: createdBy(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

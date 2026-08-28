@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { boolean, check, integer, pgTable, real, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { createdBy } from './authored.ts'
 import { createdAt, id, idCheck, judgePolarity, judgeType } from './columns.ts'
 import { judges } from './judges.ts'
 
@@ -51,6 +52,8 @@ export const judgeVersions = pgTable(
     question: text('question').notNull(),
     /** Which model answers it. Null for `code` judges, which call nothing. */
     model: text('model'),
+    /** Who authored this row. See `authored.ts` for why it is `user`. */
+    createdBy: createdBy(),
     createdAt: createdAt(),
   },
   (table) => [

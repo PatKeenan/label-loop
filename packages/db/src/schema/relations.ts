@@ -44,6 +44,7 @@ export const orgMembersRelations = relations(orgMembers, ({ one }) => ({
 
 export const panelsRelations = relations(panels, ({ one, many }) => ({
   org: one(orgs, { fields: [panels.orgId], references: [orgs.id] }),
+  author: one(user, { fields: [panels.createdBy], references: [user.id] }),
   judges: many(judges),
   versions: many(panelVersions),
   apiKeys: many(apiKeys),
@@ -52,6 +53,7 @@ export const panelsRelations = relations(panels, ({ one, many }) => ({
 
 export const panelVersionsRelations = relations(panelVersions, ({ one, many }) => ({
   panel: one(panels, { fields: [panelVersions.panelId], references: [panels.id] }),
+  author: one(user, { fields: [panelVersions.createdBy], references: [user.id] }),
   /** The pinned judge set. Traversed through the join table, never inferred from `judges`. */
   judgeVersions: many(panelVersionJudges),
   traces: many(traces),
@@ -59,11 +61,13 @@ export const panelVersionsRelations = relations(panelVersions, ({ one, many }) =
 
 export const judgesRelations = relations(judges, ({ one, many }) => ({
   panel: one(panels, { fields: [judges.panelId], references: [panels.id] }),
+  author: one(user, { fields: [judges.createdBy], references: [user.id] }),
   versions: many(judgeVersions),
 }))
 
 export const judgeVersionsRelations = relations(judgeVersions, ({ one, many }) => ({
   judge: one(judges, { fields: [judgeVersions.judgeId], references: [judges.id] }),
+  author: one(user, { fields: [judgeVersions.createdBy], references: [user.id] }),
   panelVersions: many(panelVersionJudges),
   verdicts: many(traceVerdicts),
 }))
@@ -81,6 +85,7 @@ export const panelVersionJudgesRelations = relations(panelVersionJudges, ({ one 
 
 export const apiKeysRelations = relations(apiKeys, ({ one, many }) => ({
   org: one(orgs, { fields: [apiKeys.orgId], references: [orgs.id] }),
+  issuedBy: one(user, { fields: [apiKeys.createdBy], references: [user.id] }),
   panel: one(panels, { fields: [apiKeys.panelId], references: [panels.id] }),
   /** What this key has been used for — the per-key usage meter's join (ADR-0003). */
   traces: many(traces),
@@ -119,6 +124,16 @@ export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   memberships: many(orgMembers),
+  /**
+   * What this person authored. These survive them leaving an org, which is the point:
+   * a contributor keeps earning from a judge still in use after they leave, so the
+   * authored rows are evidence the contribution ledger pays against.
+   */
+  authoredPanels: many(panels),
+  authoredPanelVersions: many(panelVersions),
+  authoredJudges: many(judges),
+  authoredJudgeVersions: many(judgeVersions),
+  issuedKeys: many(apiKeys),
 }))
 
 export const sessionRelations = relations(session, ({ one }) => ({

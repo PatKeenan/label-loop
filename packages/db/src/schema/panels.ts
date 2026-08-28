@@ -1,4 +1,5 @@
 import { pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { createdBy } from './authored.ts'
 import { createdAt, id, idCheck, updatedAt } from './columns.ts'
 import { orgs } from './orgs.ts'
 
@@ -18,6 +19,8 @@ export const panels = pgTable(
     /** Stable handle, unique within the org. Survives renames; `name` does not. */
     slug: text('slug').notNull(),
     name: text('name').notNull(),
+    /** Who authored this row. See `authored.ts` for why it is `user`. */
+    createdBy: createdBy(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

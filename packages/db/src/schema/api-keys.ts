@@ -1,4 +1,5 @@
 import { pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { createdBy } from './authored.ts'
 import { apiKeyStatus, createdAt, id, idCheck, timestampAt, updatedAt } from './columns.ts'
 import { orgs } from './orgs.ts'
 import { panels } from './panels.ts'
@@ -38,6 +39,8 @@ export const apiKeys = pgTable(
     /** Revocation is a status flip, never a delete — the audit trail has to survive it. */
     status: apiKeyStatus('status').notNull().default('active'),
     revokedAt: timestampAt('revoked_at'),
+    /** Who authored this row. See `authored.ts` for why it is `user`. */
+    createdBy: createdBy(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

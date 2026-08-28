@@ -220,8 +220,10 @@ describe('a panel version pins its threshold, and the threshold is a share', () 
   test('a panel version has no mutable configuration column to update', async () => {
     /**
      * Immutability at M0 is structural rather than granted: there is nothing on the row to
-     * change. If a future migration adds a mutable column here, this test is the thing
-     * that should make someone stop and decide deliberately.
+     * change. Every column here is written once at insert — `created_by` included, since
+     * authorship is a historical fact rather than a setting. If a future migration adds a
+     * genuinely mutable column, this test is what should make someone stop and decide
+     * deliberately rather than discover it later.
      */
     const rows = (await db`
       SELECT column_name FROM information_schema.columns
@@ -230,6 +232,7 @@ describe('a panel version pins its threshold, and the threshold is a share', () 
     expect(rows.map((row) => row.column_name)).toEqual([
       'aggregation_policy',
       'created_at',
+      'created_by',
       'id',
       'panel_id',
       'threshold',

@@ -777,6 +777,38 @@ requires — metering decomposable at judge granularity "from the first migratio
 each judge has its own model and graduates independently, so cost moves per judge — and
 what an SME annotation attaches to at M5. An aggregate cannot be decomposed after the fact.
 
+### P3 — `created_by` was missing entirely, and it is ledger evidence
+**Expected:** the plan's table list; nothing in it mentions authorship.
+**Found:** raised by the stakeholder — nothing in the schema recorded who created a panel,
+a judge, a version or a key. `audit_events` has `actor_type`/`actor_id`, but it ships empty
+with M8 populating it, so anything created before then would have unrecoverable authorship.
+**Resolution:** `created_by` on `panels`, `panel_versions`, `judges`, `judge_versions` and
+`api_keys` (migration `0003_authorship`), referencing `user` with `ON DELETE RESTRICT`.
+
+The reference target was the real question, and the cascade rules settle it: `org_members`
+cascades from both `orgs` and `user`, so authorship pointed at membership would vanish the
+moment someone leaves the org. `RESTRICT` rather than `SET NULL` follows from the product
+decision the same conversation produced — a contributor keeps earning from a judge still in
+use after they leave, so authorship is evidence the contribution ledger pays against, and
+`SET NULL` would destroy a payout claim through a cascade rule rather than through a
+decision. The policy RESTRICT forces is anonymise-don't-delete, which is also what erasure
+actually requires. Full rationale in the decisions log (2026-08-24T04:05Z, both entries);
+PRODUCT.md's parked open question on royalties after departure is now resolved there.
+
+A "judge ownership group" was proposed and rejected — not as a bad instinct, but as the
+wrong shape: attribution is already specified as mechanical (a share of the
+reliability-weighted annotations in a shipped training set), so the set of people a judge
+owes is derivable from an event log rather than declared, and a declared roster cannot
+express proportional shares without becoming a hand-maintained copy of what the log
+computes. The test applied was this project's usual one — what would it store today that
+cannot be reconstructed later — and the answer for a group is nothing.
+
+**Worth keeping:** the question exposed that `created_by` and "who gets paid" are different
+things, and that fusing them into one ownership concept is what made the group look
+necessary. Contribution is permanent and per person; stewardship — who maintains a judge
+now and gets its drift alert — transfers when someone leaves and is M4+ work that does not
+exist yet.
+
 ### P3 — primary keys are generated at insert, and stay prefixed ULIDs
 **Expected:** the plan said nothing; the first implementation had every caller pass
 `newId('pnl_')` explicitly.
