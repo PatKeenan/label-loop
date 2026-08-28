@@ -3,8 +3,13 @@
 # (ADR-0018). The developer inner loop lives in `docker-compose.dev.yml` and never touches
 # this one.
 #
-# At M0-P3 it contains only Postgres. P8 extends this same file with the API, the web app,
-# the migrate+seed one-shot and the telemetry containers.
+# At M0-P6 it contains Postgres and the telemetry stack. P8 extends this same file with the
+# API, the web app and the migrate+seed one-shot.
+#
+# The telemetry stack is FOUR DISCRETE CONTAINERS — collector, Tempo, Prometheus, Grafana —
+# and never the bundled `grafana/otel-lgtm` image. The topology is part of what M0 exists to
+# demonstrate, an all-in-one image hides the wiring an operator has to understand, and it is
+# not what anyone runs in production.
 
 name: labelloop
 
@@ -47,5 +52,79 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------------
+  # Telemetry (ADR-0007). Nothing below is a dependency of the API: a collector that is
+  # down loses spans and must never take the API out of rotation, which is why `/readyz`
+  # checks the database and the queue and deliberately does not check any of this.
+  # ---------------------------------------------------------------------------------
+
+  otel-collector:
+    # The contrib distribution rather than core. Core would serve M0 — an OTLP receiver and
+    # an OTLP exporter are both in it — but M3's log pipeline needs the filelog receiver,
+    # which is contrib-only, and swapping the image later is a worse moment to discover a
+    # config incompatibility than choosing it now.
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    command: ['--config=/etc/otel-collector/config.yaml']
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    ports:
+      # Published so the API can export while it still runs on the HOST. From P8 the API is
+      # a container and reaches the collector over the compose network, at which point
+      # these mappings are a developer convenience in the same way Postgres's 5433 is.
+      - '${OTLP_GRPC_PORT:-4317}:4317'
+      - '${OTLP_HTTP_PORT:-4318}:4318'
+    depends_on:
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.10.8
+    command: ['-config.file=/etc/tempo/tempo.yaml']
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    # No published ports on purpose. Tempo is reached by the collector (writes) and by
+    # Grafana (reads), both over the compose network. Nothing on the host needs it, and a
+    # trace store with an open port is a trace store someone will point something at.
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.1.4
+    environment:
+      # Anonymous admin access. This is a local development stack with a throwaway volume
+      # and no data of its own, and requiring a login would either mean a credential in the
+      # repo or a manual step — both of which break the zero-secret one-command boot
+      # (ADR-0009). A hosted Grafana would set none of these.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      # Datasources come from the provisioning directory below, never from the UI. A
+      # datasource configured by clicking exists only in one person's volume.
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 3001, not Grafana's default 3000: that is the API's port, and a developer running
+      # both would collide. Same reasoning as Postgres's 5433.
+      - '${GRAFANA_PORT:-3001}:3000'
+    depends_on:
+      - tempo
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  tempo-data:
+  prometheus-data:
+  grafana-data:

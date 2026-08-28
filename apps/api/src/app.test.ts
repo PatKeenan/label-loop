@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { errorEnvelopeSchema, requestIdSchema } from '@labelloop/contracts'
+import { trace } from '@opentelemetry/api'
 import { createFixedClock } from './adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from './adapters/noop-error-reporter.ts'
 import { createApp } from './app.ts'
@@ -29,8 +30,20 @@ const config: Config = loadConfig({
  * and the logger — so the gateway here exists only to satisfy the composition root. The
  * evaluation path has its own integration test, against a real database.
  */
+/**
+ * OTel's global tracer with no provider registered: a real object with a no-op
+ * implementation. Passing it is what these tests want to say — this file is about routing,
+ * the envelope and the logger, and it deliberately proves the app still works when nothing
+ * is tracing. `otel.test.ts` and `middleware/tracing.test.ts` own the spans.
+ */
+const noopTracer = trace.getTracer('test')
+
 const testGateway = () =>
-  createModelGateway({ provider: createFakeProvider(), clock: createFixedClock() })
+  createModelGateway({
+    provider: createFakeProvider(),
+    clock: createFixedClock(),
+    tracer: noopTracer,
+  })
 
 let reporter: ReturnType<typeof createRecordingErrorReporter>
 let app: ReturnType<typeof createApp>
@@ -44,6 +57,7 @@ beforeEach(() => {
     db: fakeDatabase(),
     modelGateway: testGateway(),
     jobs: fakeQueue(),
+    tracer: noopTracer,
   })
 })
 
@@ -186,6 +200,7 @@ describe('contract-validation auto-mapping', () => {
       db: fakeDatabase(),
       modelGateway: testGateway(),
       jobs: fakeQueue(),
+      tracer: noopTracer,
     })
     host.route('/probe-host', probe)
     return host
@@ -248,6 +263,7 @@ describe('/readyz', () => {
       db: fakeDatabase(options),
       modelGateway: testGateway(),
       jobs: fakeQueue(queue),
+      tracer: noopTracer,
     })
 
   const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) => withDependencies(options)

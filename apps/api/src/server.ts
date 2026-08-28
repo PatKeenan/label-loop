@@ -7,6 +7,7 @@ import { createPgBossQueue, registerJobHandlers } from './jobs/index.ts'
 import { installSignalHandlers } from './lifecycle.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { createRootLogger } from './middleware/logger.ts'
+import { startTelemetry } from './otel.ts'
 
 /**
  * The entrypoint, and the only file that touches the real world: it reads the real
@@ -29,6 +30,23 @@ const config = (() => {
 })()
 
 const logger = createRootLogger(config)
+
+// Telemetry FIRST, before anything that might want to trace and — more importantly —
+// before the Sentry SDK loads. Sentry's own OpenTelemetry setup is disabled
+// (`initWithoutDefaultIntegrations`, ADR-0007), and the order here makes that belt-and-
+// braces rather than load-bearing: our provider is already the global one by the time the
+// second SDK exists. Verified rather than assumed — see `otel.test.ts`.
+const telemetry = startTelemetry(config, logger)
+logger.info(
+  {
+    exporting: telemetry.exporting,
+    endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
+  },
+  telemetry.exporting
+    ? 'tracing enabled, exporting spans'
+    : 'tracing enabled, spans are NOT exported (OTEL_EXPORTER_OTLP_ENDPOINT is unset)',
+)
+
 const errorReporter = await createErrorReporter(config)
 // The APP role's pool — DML only. The API cannot migrate itself even if asked to: the
 // credential it holds has no DDL, and its config schema cannot express one that does.
@@ -36,7 +54,11 @@ const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_
 // The only provider M0 has, and it is deterministic and offline — which is what keeps
 // zero-secret boot true (ADR-0009). M1 replaces this one line with a real adapter behind
 // the same port; nothing downstream of the gateway knows the difference.
-const modelGateway = createModelGateway({ provider: createFakeProvider(), clock: systemClock })
+const modelGateway = createModelGateway({
+  provider: createFakeProvider(),
+  clock: systemClock,
+  tracer: telemetry.tracer,
+})
 
 // The queue's own pool, on the app role's credential — which cannot install the schema it
 // connects to. `bun run db:migrate` did that as the migrator, and `start()` below REFUSES
@@ -60,11 +82,19 @@ const jobs = createPgBossQueue({
 await jobs.start()
 await registerJobHandlers(jobs, { db, clock: systemClock, errorReporter, logger })
 
-const app = createApp({ config, clock: systemClock, errorReporter, db, modelGateway, jobs })
+const app = createApp({
+  config,
+  clock: systemClock,
+  errorReporter,
+  db,
+  modelGateway,
+  jobs,
+  tracer: telemetry.tracer,
+})
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })
 
-installSignalHandlers({ server, errorReporter, logger, db, jobs })
+installSignalHandlers({ server, errorReporter, logger, db, jobs, telemetry })
 
 logger.info(
   { port: server.port, url: `http://localhost:${server.port}`, pid: process.pid },

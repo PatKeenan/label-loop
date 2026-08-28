@@ -370,17 +370,20 @@ Files: `apps/api/src/otel.ts`, `apps/api/src/middleware/tracing.ts`,
 `infra/docker-compose.yml` (collector, tempo, prometheus, grafana as **discrete**
 containers — never `grafana/otel-lgtm`).
 
-- [ ] Manual OTel SDK init with `service.name` and **`service.version` from config on
+- [x] Manual OTel SDK init with `service.name` and **`service.version` from config on
       every span** (ADR-0011); OTLP export with a bounded, drop-on-full batch processor
-- [ ] Span per HTTP request from Hono middleware; span per provider call from `llm/`
+- [x] Span per HTTP request from Hono middleware; span per provider call from `llm/`
       carrying model, tokens, cost, latency attributes
-- [ ] `request-context.ts` now sources `request_id` from the active span's trace id;
+- [x] `request-context.ts` now sources `request_id` from the active span's trace id;
       logs, envelope, and spans all agree — verified by one assertion
-- [ ] Collector → Tempo (traces) and Prometheus scrape wired; Grafana datasources
+- [x] Collector → Tempo (traces) and Prometheus scrape wired; Grafana datasources
       **provisioned as code** in `infra/`, no click-ops
-- [ ] `SENTRY_DSN` unset is a silent no-op; set, an intentional 500 appears in Sentry
-      with its `request_id`
-- [ ] No auto-instrumentation is enabled anywhere (ADR-0007)
+- [x] `SENTRY_DSN` unset is a silent no-op (asserted in `adapters/error-reporter.test.ts`
+      since P2, and P6 adds a subprocess test proving Sentry does not take the tracer
+      provider). **The second half — an intentional 500 appearing in Sentry with its
+      `request_id` — needs a real DSN and is left for the stakeholder**, since a Sentry
+      account is not something this phase can create
+- [x] No auto-instrumentation is enabled anywhere (ADR-0007)
 
 **Automated verification**
 ```bash
@@ -1229,6 +1232,182 @@ propagates and what reaches the error reporter. Asserted with a handle whose `up
 only for `traces`, so the job's work fails while the ledger still works — which is the case
 that has to be recordable.
 
+### P6 — the third Bun-risk seam did NOT bite, and that is worth recording too
+**Expected:** D-A front-loaded OTel as one of three named Bun-sensitive seams; P5's
+pg-boss failure had already made one of the three real.
+**Found:** it works. A spike before any code was written checked the three things that
+would have been expensive to discover later, and all three passed on Bun 1.4.0:
+`AsyncLocalStorageContextManager` propagates the active span across an `await` (so
+`getActiveSpan()` is usable, which is the whole basis of sourcing `request_id` from it),
+the OTLP/HTTP exporter posts and is accepted, and `BatchSpanProcessor` drops rather than
+grows when its queue is full (8 of 52 spans exported at `maxQueueSize: 4`).
+**Resolution:** no adaptation needed. Recorded because "we checked and it was fine" is a
+result, and because the sequencing decision that bought the check is the same one that
+caught pg-boss. The gRPC exporter was never a candidate — OTLP/HTTP needs no gRPC runtime
+under Bun — so the collector accepts both protocols and we use one.
+
+### P6 — the Sentry/OTel watch item from P2 is closed, by a subprocess test
+**Expected:** P2 left this open: `@sentry/bun` depends on `@sentry/node` and therefore on
+`@opentelemetry/*`, and Sentry's SDK can register its own tracer provider. The stated
+fallback was dropping the SDK for a direct envelope POST.
+**Found:** no collision. `initWithoutDefaultIntegrations` leaves `trace.getTracerProvider()`
+untouched, and a span taken after Sentry initialises is still ours and still recording.
+**Resolution:** the fallback is not needed and the watch item is closed with an assertion
+rather than a note — `testing/sentry-tracer-probe.ts`, run as a SUBPROCESS by `otel.test.ts`
+in the same order `server.ts` uses. A subprocess because both SDKs write to per-process
+globals that may be set once: asking the question in-process would leave `@sentry/bun`
+loaded and a global tracer provider registered for every test file that ran afterwards, so
+the answer would be trustworthy and the suite around it would not. A `bun update` that
+changes Sentry's defaults now fails here rather than in Grafana.
+
+### P6 — the public edge does NOT adopt an inbound `traceparent`
+**Expected:** unstated. The conventional move when installing OTel on an HTTP server is to
+extract the W3C context from the request so a caller's trace continues through us.
+**Found:** ADR-0010 gives `request_id` two jobs that an untrusted caller would break. It
+names ONE execution — a client replaying one `traceparent` across a thousand calls would
+collapse a thousand executions onto one id, and `traces.request_id` would stop joining to
+anything — and it is "the id a customer quotes to support", which has to be an id we
+minted and can find. `/v1` is a public edge; the callers are other people's agents.
+**Resolution:** every request starts a new trace. The W3C propagator IS registered, for
+OUTBOUND propagation, so when a first-party caller exists whose context is worth
+continuing, extraction is one line gated on trust rather than a redesign. Written into
+`middleware/tracing.ts` rather than left as a gap, because the absence of a line of code is
+not self-explaining.
+
+### P6 — the tracer is an injected dependency, not OTel's global
+**Expected:** unstated; the idiomatic OTel usage is `trace.getTracer()` at each call site.
+**Found:** the global tracer provider may be set exactly once per process. A test that
+registered one would silently change every test file that ran after it, and the assertions
+worth making here — that a refused attempt produces no child span, that a `failed` verdict
+is not an ERROR span — need a real provider with a real exporter.
+**Resolution:** `AppDeps.tracer` and `createModelGateway({ tracer })`, wired in `server.ts`
+from the started SDK and in tests from `testing/recording-spans.ts`, which registers
+nothing. The global is still set in `startTelemetry` so any library reaching for it sees
+our provider rather than standing up a second, invisible one. Consistent with every other
+external effect in this codebase, and it is what let the span assertions be written against
+a real `BasicTracerProvider` rather than a hand-written fake that answers what it was told.
+
+### P6 — a down collector was completely silent, and `diag` was not the fix
+**Trigger:** unplugging the collector on a running system to see what an operator would see.
+**Found:** nothing. No log line, no warning, no change — "the collector is down" was
+indistinguishable from "there is no traffic", which is the most misleading state this stack
+can be in. The first implementation bridged OpenTelemetry's `diag` channel onto pino, which
+is the obvious fix and is not the right one: **OTel has two unrelated failure channels**,
+and a span processor reports EXPORT failures to the global ERROR HANDLER
+(`setGlobalErrorHandler` in `@opentelemetry/core`), not through `diag`. Bridging `diag`
+alone leaves the single most likely failure in the whole telemetry path unreported.
+**Resolution:** both channels bridged, both at `warn` — degraded but serving, which is what
+the level means (CONVENTIONS "Logging"). Verified live: with the collector stopped, the API
+keeps answering and logs `span export failed — traces are being dropped` once OTLP's retry
+window closes, about 30 seconds in. That delay is a feature rather than a defect — a
+collector restart should not warn instantly — but it is the reason the *test* uses a
+collector that answers `400`: OTLP treats a refused connection as retryable and spends its
+whole export timeout on it, while a `400` is final and reaches the same handler in
+milliseconds.
+**Worth keeping:** the bug was invisible from the code and obvious from the running system,
+which is the third time in this plan that has been the finding. It was also invisible from
+the first test written for it, because that test called `forceFlush()` — which reports
+through its own rejected promise and therefore proves nothing about whether a BACKGROUND
+failure reaches a human. The test now fills a batch and lets the processor export on its
+own, which is what a server under load does.
+
+### P6 — the judge span carries `cost_priced`, because zero is ambiguous
+**Expected:** the plan's checkbox says the provider span carries "model, tokens, cost,
+latency".
+**Found:** writing the assertion for it. M0's fake model is priced at zero and `costOf`
+also returns zero for a model with no price on file, distinguishing them only through a
+`priced` boolean that the span was dropping. Two different claims were about to be summed
+as if they were the same one, and M2's metering is where that would have surfaced — as an
+invoice that is confidently wrong.
+**Resolution:** `labelloop.cost_priced` alongside `labelloop.cost_usd`. Found by a test
+asserting `cost_usd > 0` and being right to fail.
+
+### P6 — two levels of span per judge call, where the plan implied one
+**Expected:** "span per provider call from `llm/` carrying model, tokens, cost, latency".
+**Found:** `judge()` and "a provider call" are not the same unit once retries exist. The
+judge call is what has a cost and a verdict; the provider call is what has a latency and a
+failure kind, and there can be several of them.
+**Resolution:** a `judge <slug>` span (INTERNAL) with a `provider call <model>` span
+(CLIENT) per attempt beneath it, plus a `backoff` event on the parent per retry. An attempt
+the breaker refuses produces NO child span, because nobody was called — so a trace showing
+one child and `attempts: 3` is not a contradiction, it is the breaker working. This is what
+makes the plan's own P4 manual verification — backoff, then the breaker, then a 503 — one
+readable picture instead of three log greps.
+
+### P6 — exporting is optional, and `OTEL_EXPORTER_OTLP_ENDPOINT` has no code default
+**Expected:** unstated.
+**Found:** two constraints pulling against each other. `request_id` IS the active span's
+trace id, so the tracer provider must run whether or not a collector exists — otherwise an
+unconfigured deployment would put thirty-two zeroes on every response, which is worse than
+a random id because it looks valid. But a code default of `localhost:4318` would repeat the
+mistake `DATABASE_URL` was written to avoid: a production deploy that forgot the variable
+boots happily and exports into a void.
+**Resolution:** the provider always runs; only the exporter is conditional. The variable is
+optional with **no default in `config.ts`**, and `.env.example` carries the working local
+value uncommented — exactly the shape `DATABASE_URL` has, except that a missing collector
+is survivable and a missing database is not. `server.ts` logs which mode it is in at boot,
+so "spans are not exported" is a stated fact rather than something to infer.
+
+### P6 — the compose stack gained four containers, none of which the API depends on
+**Expected:** collector, Tempo, Prometheus and Grafana as discrete containers, never
+`grafana/otel-lgtm`.
+**Found, and decided rather than defaulted:** three things the plan did not name.
+- **The contrib collector distribution**, not core. Core serves M0 — an OTLP receiver and
+  an OTLP exporter are both in it — but M3's log pipeline needs the filelog receiver, which
+  is contrib-only. Choosing now is cheaper than discovering a config incompatibility during
+  an image swap later.
+- **Grafana publishes on 3001**, not its own 3000, which is the API's port. Same reasoning
+  and same precedent as Postgres's 5433. Tempo and Prometheus publish nothing at all: both
+  are reached over the compose network, and a trace store with an open port is a trace store
+  somebody will point something at.
+- **Anonymous admin on Grafana.** A local stack with a throwaway volume and no data of its
+  own; requiring a login would mean either a credential in the repo or a manual step, and
+  both break the zero-secret one-command boot (ADR-0009).
+
+  **This one has an unresolved edge, and it was raised at the phase boundary rather than
+  buried.** D-M and ADR-0013 say the base compose file is what production runs and what an
+  ECS translation would be read against — so taken literally, a translation of this file
+  ships an open Grafana. Three ways out were put to the stakeholder: accept it and carry the
+  debt, split the telemetry containers into their own compose file, or amend ADR-0018 to say
+  the observability stack is explicitly outside the "base file is production" claim.
+  **Decided 2026-08-28: accept and carry**, on the grounds that nothing is published beyond
+  localhost today and M3 owns the real observability deployment anyway. Recorded in the
+  carry-forward list at the end of this plan so it reaches M1's CD planning rather than
+  evaporating between milestones. The collector's published 4317/4318 has the same shape and
+  needs no separate decision — Postgres's published 5433 set that precedent at P3.
+
+Nothing here is a `depends_on` of the API, and `/readyz` deliberately does not check any of
+it: a collector that is down loses spans and must never take the API out of rotation.
+
+Two things were fixed by reading the containers' own boot logs rather than trusting the
+config. The collector warned that the bare `otlp` exporter alias is deprecated in 0.159
+(`otlp_grpc` now), and a config that warns on boot trains people to skip boot logs. And the
+metric names in `prometheus.yml`'s comment were wrong — 0.159 publishes
+`otelcol_receiver_accepted_spans` without the `_total` suffix that older examples use — so
+they were corrected against a running collector.
+
+### P6 — the README's status banner had been stale since P4
+**Expected:** unrelated to this phase.
+**Found:** while adding the "Seeing the trace" section. The banner still said "There is no
+evaluation endpoint yet — that is the next phase", written at P2 and untrue since P4, and it
+promised the queue and the console in the wrong order.
+**Resolution:** corrected in the same commit, since P2 already established that a stale
+README is a defect rather than a cosmetic issue and that the fix belongs with the work that
+noticed it. **Worth keeping as a pattern:** the banner is the one part of the README that
+goes stale every phase and that no test reads. P8's README pass should either delete it or
+give it something that fails when it lies.
+
+### P6 — `.env.example`'s exhaustiveness guard was missing `QUEUE_POOL_MAX`
+**Expected:** `config.test.ts` asserts `.env.example` documents every field `config.ts`
+parses, so the guard is complete.
+**Found:** it is a hand-maintained LIST of field names, not a reflection of the schema, and
+P5 added `QUEUE_POOL_MAX` to both the schema and `.env.example` without adding it to the
+list. The guard would not have noticed the documentation going missing.
+**Resolution:** both `QUEUE_POOL_MAX` and `OTEL_EXPORTER_OTLP_ENDPOINT` added to the list,
+with a comment saying a new field goes there in the same commit. The deeper fix — deriving
+the list from the Zod schema's own keys so it cannot drift — is real and is not P6 work;
+noted here so it is not lost.
+
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**
 (which amends ADR-0009), **D-P → ADR-0014**, **D-I → ADR-0015**, **D-G → ADR-0016**,
@@ -1391,7 +1570,14 @@ applications of an existing convention, and are recorded here only.
 - Phase count → **nine kept**, since phase boundaries are where CLAUDE.md's "end the
   session and start fresh from artifacts" reset happens.
 
-Two things carry forward out of this plan rather than into it:
+Three things carry forward out of this plan rather than into it:
 - **ADR-0009 needs an amendment** for D-Q before or during `/approve_plan`.
 - **Backup/restore for the self-hosted Postgres belongs to M1's CD planning** — named
   here so it is not lost between milestones.
+- **The telemetry stack's auth belongs to M1's CD planning too** (added at P6, 2026-08-28).
+  Grafana runs with anonymous admin and the collector publishes its OTLP ports, both correct
+  for a localhost-only development stack and both wrong for anything reachable. The base
+  compose file is what ADR-0013 says production runs, so the first environment with a real
+  URL has to either put auth on these or move them out of that file. Not M0 work — M0's
+  volumes are throwaway and nothing binds beyond localhost — but it must not evaporate, for
+  the same reason backup/restore must not.

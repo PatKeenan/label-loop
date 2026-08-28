@@ -5,10 +5,15 @@ import { Glob } from 'bun'
 /**
  * Architectural rules that are enforced rather than remembered (ADR-0016).
  *
- * The rule under test is CONVENTIONS.md's "no fetch to a provider anywhere else in the
+ * The first rule is CONVENTIONS.md's "no fetch to a provider anywhere else in the
  * codebase, ever" — the one most likely to erode under M7's multi-provider routing, when
  * one shortcut around the gateway will look harmless and will quietly cost the codebase
  * its timeout, its retry budget, its breaker and its cost accounting all at once.
+ *
+ * The second is ADR-0007's ban on OpenTelemetry auto-instrumentation, added at P6 for the
+ * same reason: it erodes by ACCRETION rather than by decision. Nobody argues for it; a
+ * package gets added because it makes one thing easier, and the codebase quietly stops
+ * being one where every span was chosen.
  *
  * It is a test rather than a lint rule because the rule is about the shape of the
  * repository, not the shape of a file, and because a failure should read as a sentence
@@ -78,5 +83,42 @@ describe('only src/llm may reach a model provider (ADR-0016)', () => {
       (file) => file.path.startsWith('apps/api/src/') && !file.path.endsWith('.test.ts'),
     )
     expect(offences(apiProductionCode, /(?<![.\w])fetch\s*\(/)).toEqual([])
+  })
+})
+
+describe('no OpenTelemetry auto-instrumentation, anywhere (ADR-0007)', () => {
+  test('no auto-instrumentation package is imported', () => {
+    // The whole `@opentelemetry/instrumentation*` family, plus the two meta-packages that
+    // pull it in transitively and the module-patching machinery underneath it. Matched by
+    // shape rather than by an allow-list of packages that exist today, so the one added in
+    // two years is caught as well.
+    const autoInstrumentation =
+      /from\s+['"](?:@opentelemetry\/(?:instrumentation|auto-instrumentations)[\w-]*|@opentelemetry\/sdk-node|import-in-the-middle|require-in-the-middle)/i
+    expect(offences(FILES, autoInstrumentation)).toEqual([])
+  })
+
+  test('no package.json declares one either', async () => {
+    // The import scan is necessary and not sufficient: a package that patches modules on
+    // load does its damage by being installed and preloaded, without any file importing it.
+    const manifests = new Glob('{apps,packages}/*/package.json')
+    const offending: string[] = []
+    for await (const path of manifests.scan({ cwd: REPO_ROOT, absolute: true })) {
+      const manifest = (await Bun.file(path).json()) as {
+        dependencies?: Record<string, string>
+        devDependencies?: Record<string, string>
+      }
+      const named = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+      offending.push(
+        ...named
+          .filter(
+            (name) =>
+              name.startsWith('@opentelemetry/instrumentation') ||
+              name.startsWith('@opentelemetry/auto-instrumentations') ||
+              name === '@opentelemetry/sdk-node',
+          )
+          .map((name) => `${relative(REPO_ROOT, path)} — ${name}`),
+      )
+    }
+    expect(offending).toEqual([])
   })
 })

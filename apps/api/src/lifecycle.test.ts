@@ -29,7 +29,20 @@ const harness = () => {
       order.push('jobs drained')
     },
   }
-  return { order, server, jobs, errorReporter, logger: silentLogger, stopArg: () => stopArg }
+  const telemetry = {
+    shutdown: async () => {
+      order.push('spans flushed')
+    },
+  }
+  return {
+    order,
+    server,
+    jobs,
+    errorReporter,
+    telemetry,
+    logger: silentLogger,
+    stopArg: () => stopArg,
+  }
 }
 
 describe('gracefulShutdown', () => {
@@ -42,7 +55,27 @@ describe('gracefulShutdown', () => {
      */
     const h = harness()
     await gracefulShutdown('SIGTERM', h)
-    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed', 'spans flushed'])
+  })
+
+  test('flushes spans even when the collector is unreachable, and still exits cleanly', async () => {
+    // The failure mode this guards: a batch processor holds the last few seconds of spans,
+    // its collector is down, and a shutdown that treated that as fatal would turn a clean
+    // exit into a non-zero one — which an orchestrator reads as a crash loop. The spans are
+    // what is lost; losing them louder does not bring them back.
+    const h = harness()
+    const broken = {
+      ...h,
+      telemetry: { shutdown: () => Promise.reject(new Error('collector unreachable')) },
+    }
+    await gracefulShutdown('SIGTERM', broken)
+    expect(broken.order).toEqual(['drained', 'jobs drained', 'flushed'])
+  })
+
+  test('a process with no telemetry still shuts down cleanly', async () => {
+    const { telemetry: _unused, ...withoutTelemetry } = harness()
+    await gracefulShutdown('SIGTERM', withoutTelemetry)
+    expect(withoutTelemetry.order).toEqual(['drained', 'jobs drained', 'flushed'])
   })
 
   test('a process with no queue still shuts down cleanly', async () => {
@@ -50,7 +83,7 @@ describe('gracefulShutdown', () => {
     // future process that only serves HTTP is not forced to invent one.
     const { jobs: _unused, ...withoutJobs } = harness()
     await gracefulShutdown('SIGTERM', withoutJobs)
-    expect(withoutJobs.order).toEqual(['drained', 'flushed'])
+    expect(withoutJobs.order).toEqual(['drained', 'flushed', 'spans flushed'])
   })
 
   test('asks the server to drain, not to sever connections', async () => {
@@ -69,7 +102,7 @@ describe('installSignalHandlers', () => {
     process.emit('SIGTERM')
     await Bun.sleep(60)
     dispose()
-    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed', 'spans flushed'])
     expect(codes).toEqual([0])
   })
 
@@ -82,7 +115,7 @@ describe('installSignalHandlers', () => {
     process.emit('SIGTERM')
     await Bun.sleep(60)
     dispose()
-    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed', 'spans flushed'])
     expect(codes).toEqual([0])
   })
 

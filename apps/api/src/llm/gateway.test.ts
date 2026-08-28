@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { trace } from '@opentelemetry/api'
 import { createFixedClock } from '../adapters/fixed-clock.ts'
 import { createFakeProvider, FAKE_MODEL, FAKE_SENTINELS } from './fake-provider.ts'
 import { createModelGateway, type ModelGatewayOptions } from './index.ts'
@@ -21,12 +22,20 @@ const DOWN = { ...CALL, artifact: `${FAKE_SENTINELS.unavailable} down` }
 
 type GatewayOverrides = Partial<Omit<ModelGatewayOptions, 'provider' | 'clock'>>
 
+/**
+ * OTel's global tracer with no provider registered — real object, no-op spans. These tests
+ * are about the taxonomy translation, not the telemetry; `spans.test.ts` beside this file
+ * asserts on the spans against a provider it owns.
+ */
+const noopTracer = trace.getTracer('test')
+
 /** The provider is passed in rather than returned, so a test can keep its own handle on it. */
 const gatewayFor = (provider: ModelProvider, overrides: GatewayOverrides = {}) => {
   const clock = createFixedClock()
   const gateway = createModelGateway({
     provider,
     clock,
+    tracer: noopTracer,
     retryPolicy: { maxAttempts: 3, baseDelayMs: 100, maxDelayMs: 800, timeoutMs: 50 },
     breakerPolicy: { failureThreshold: 3, openMs: 1_000 },
     random: () => 1,

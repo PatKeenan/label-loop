@@ -4,7 +4,8 @@ import type { AppDeps, AppEnv } from './app-env.ts'
 import { mountDocs } from './docs.ts'
 import { AppError, toAppError } from './errors.ts'
 import { createRootLogger, httpLogger, type RootLogger } from './middleware/logger.ts'
-import { generateRequestId, REQUEST_ID_KEY, requestContext } from './middleware/request-context.ts'
+import { currentRequestId, REQUEST_ID_KEY, requestContext } from './middleware/request-context.ts'
+import { tracing } from './middleware/tracing.ts'
 import { createDemoErrorRoutes } from './routes/demo-errors.ts'
 import { createHealthRoutes } from './routes/health.ts'
 import { createV1Routes } from './routes/public/v1/index.ts'
@@ -29,7 +30,7 @@ const renderError = (
   const { appError, unexpected } = toAppError(error)
   // The middleware that sets these runs first, but an error thrown *by* it would arrive
   // here before they exist — so the handler that must never fail does not assume they do.
-  const requestId = (c.get(REQUEST_ID_KEY) as string | undefined) ?? generateRequestId()
+  const requestId = (c.get(REQUEST_ID_KEY) as string | undefined) ?? currentRequestId()
   const lines = c.get('logger') ?? rootLogger
 
   if (unexpected) {
@@ -66,8 +67,12 @@ export const createApp = (deps: AppDeps) => {
 
   const app = new Hono<AppEnv>()
 
-  // Order matters: deps first so everything downstream can read them, then the request
-  // id so the logger has one to bind, then logging so it observes the whole request.
+  // Order matters, and P6 added a step at the front. Tracing is outermost so its span
+  // covers the entire execution INCLUDING the error handler; then deps, so everything
+  // downstream can read them; then the request id, which is now READ from the span
+  // tracing just started, so the logger and the envelope quote the trace id itself; then
+  // logging, so it observes the whole request.
+  app.use('*', tracing(deps.tracer))
   app.use('*', async (c, next) => {
     c.set('deps', deps)
     await next()

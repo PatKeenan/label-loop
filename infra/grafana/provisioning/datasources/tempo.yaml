@@ -1,0 +1,20 @@
+# Datasources as code (ADR-0007: "dashboards-as-code live in infra/ and deploy with
+# compose"). Grafana reads this at start-up, so a fresh volume opens with the datasources
+# already present — no click-ops, and nothing to re-do after `docker compose down -v`.
+
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    # The default, so pasting a `request_id` into Explore lands in the right place — which
+    # is the whole point of `request_id` being the W3C trace id (ADR-0010).
+    isDefault: true
+    jsonData:
+      # Which datasource a "see the metrics for this span" jump would use. Wired now so the
+      # link exists; the metrics it points at arrive with M3's dashboards.
+      tracesToMetrics:
+        datasourceUid: prometheus

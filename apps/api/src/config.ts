@@ -13,6 +13,14 @@ import { z } from 'zod'
 
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
 
+/**
+ * What this process calls itself, in both signals it emits: pino's `service` field and
+ * OTel's `service.name` resource attribute. One constant so a log line and a span can
+ * never disagree about which service they came from — the join between them is a string
+ * match in Grafana, and a rename in one place would break it silently.
+ */
+export const SERVICE_NAME = 'labelloop-api'
+
 /** The placeholders that mark "nobody told us" — legal in dev, a boot failure in production. */
 export const DEV_VERSION = '0.0.0-dev'
 export const DEV_GIT_SHA = 'unknown'
@@ -47,6 +55,29 @@ const configSchema = z
         (url) => url.startsWith('postgres://') || url.startsWith('postgresql://'),
         'must be a postgres:// or postgresql:// connection string',
       ),
+    /**
+     * Where spans go (ADR-0007) — the OTel Collector's OTLP/HTTP base URL, without the
+     * `/v1/traces` suffix, which the exporter appends. The standard OTel variable name, so
+     * the value is the one an operator already knows how to set.
+     *
+     * Optional, and unset is a first-class state rather than a degraded one: the tracer
+     * provider still runs, so `request_id` is still a real W3C trace id, and the spans are
+     * simply not sent anywhere. That is what keeps `bun run dev` against nothing but
+     * Postgres a working configuration.
+     *
+     * No default, for the same reason `DATABASE_URL` has none: a baked-in `localhost`
+     * would let a production deploy that forgot this variable boot happily and export its
+     * traces into a void, which is indistinguishable from having no traffic.
+     */
+    OTEL_EXPORTER_OTLP_ENDPOINT: z
+      .url()
+      .refine(
+        (url) => url.startsWith('http://') || url.startsWith('https://'),
+        'must be an http:// or https:// OTLP endpoint',
+      )
+      // A trailing slash would produce `…//v1/traces`, which some collectors 404 on.
+      .transform((url) => url.replace(/\/+$/, ''))
+      .optional(),
     /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
     /**

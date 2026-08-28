@@ -17,6 +17,9 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  *    rather than a deadline.
  * 4. **Flush telemetry** — an error that caused the shutdown, or a job that failed while
  *    draining, is exactly the one you need reported, and it is still sitting in a buffer.
+ *    Both buffers: the error reporter's, and the span batch processor's. A shutdown is
+ *    when the last five seconds of spans are most worth having and most easily lost,
+ *    because a batch processor's whole job is to not send yet.
  * 5. **Close the database pool** — after draining, never before: a request in flight at
  *    step 2 and a job in flight at step 3 both need their connections, and closing early
  *    would fail the very work the drain exists to protect.
@@ -37,13 +40,19 @@ export type ShutdownDeps = {
    * lifecycle tests — which are about ordering, not about Postgres — stay free of one.
    */
   db?: { close: () => Promise<void> }
+  /**
+   * Structurally the part of the OTel SDK shutdown needs — `shutdown()` force-flushes the
+   * batch processor and then stops it. Optional for the same reason `db` and `jobs` are:
+   * the lifecycle tests are about ordering, not about OpenTelemetry.
+   */
+  telemetry?: { shutdown: () => Promise<void> }
   /** How long telemetry gets to flush before we stop waiting for it. */
   flushTimeoutMs?: number
 }
 
 export const gracefulShutdown = async (
   signal: string,
-  { server, errorReporter, logger, db, jobs, flushTimeoutMs = 2_000 }: ShutdownDeps,
+  { server, errorReporter, logger, db, jobs, telemetry, flushTimeoutMs = 2_000 }: ShutdownDeps,
 ): Promise<void> => {
   logger.info({ signal }, 'shutdown started')
   await server.stop(false)
@@ -53,6 +62,15 @@ export const gracefulShutdown = async (
     logger.info({ signal }, 'in-flight jobs drained')
   }
   await errorReporter.flush(flushTimeoutMs)
+  if (telemetry !== undefined) {
+    // Deliberately not fatal. A collector that is down must not turn a clean shutdown into
+    // a non-zero exit, which an orchestrator reads as a crash loop — the spans are the
+    // thing being lost, and losing them louder does not bring them back.
+    await telemetry.shutdown().catch((error: unknown) => {
+      logger.warn({ signal, err: error }, 'telemetry shutdown failed')
+    })
+    logger.info({ signal }, 'telemetry flushed')
+  }
   if (db !== undefined) {
     await db.close()
     logger.info({ signal }, 'database pool closed')

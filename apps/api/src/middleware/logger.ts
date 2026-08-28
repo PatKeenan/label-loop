@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import { pinoLogger } from 'hono-pino'
 import { type DestinationStream, type LoggerOptions, pino } from 'pino'
-import type { Config } from '../config.ts'
+import { type Config, SERVICE_NAME } from '../config.ts'
 import { REQUEST_ID_KEY } from './request-context.ts'
 
 /**
@@ -24,7 +24,9 @@ export const createRootLogger = (config: Config, destination?: DestinationStream
     // bindings, which sidesteps the duplication entirely.
     base: null,
     mixin: () => ({
-      service: 'labelloop-api',
+      // The same constant OTel's `service.name` resource attribute uses, so a log line and
+      // a span name the same service and the Grafana join between them holds.
+      service: SERVICE_NAME,
       // On every line, so "which build logged this" is never a guess (ADR-0011).
       version: config.APP_VERSION,
       git_sha: config.GIT_SHA,

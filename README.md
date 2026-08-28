@@ -12,11 +12,12 @@ We are one call inside someone else's loop, never the orchestration layer. Your 
 generates the artifact; we judge it.
 
 > **Status: early.** The walking skeleton is under construction. The API boots against a
-> real Postgres, with the schema, the two-role privilege split and the append-only audit
-> guarantee in place, and serves its health, readiness, spec and error-taxonomy endpoints
-> (see [Running it locally](#running-it-locally)). There is no evaluation endpoint yet —
-> that is the next phase. The one-command `docker compose up` walkthrough arrives with the
-> end of M0.
+> real Postgres — schema, two-role privilege split, append-only audit guarantee — runs a
+> panel of judges through `POST /v1/panels/{panel_id}/evaluate` on a deterministic **fake**
+> provider, records every call as a `tr_` trace, follows it with an idempotent queue job,
+> and emits a span per request and per judge call into a self-hosted Grafana stack (see
+> [Running it locally](#running-it-locally)). Still to come at M0: the console, and the
+> one-command `docker compose up` walkthrough that boots all of it together.
 
 ---
 
@@ -409,6 +410,59 @@ why a gate should read it rather than `passed` alone.
 
 The number in these responses is the HTTP status; the body carries the taxonomy `code` as
 a string, never a number. `curl -i` shows both.
+
+### Seeing the trace
+
+`request_id` is not *like* a trace id — it **is** the W3C trace id of the span that served
+the request (ADR-0010), so the string in the response body is the string Tempo is indexed
+by. Paste it in and the call is there.
+
+The telemetry stack is four discrete containers — OTel Collector, Tempo, Prometheus,
+Grafana — and never the bundled all-in-one image, because the topology is the part worth
+demonstrating. `bun run db:up` starts Postgres alone; this starts everything:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
+
+Then open Grafana at **http://localhost:3001** (3001, not 3000 — that is the API's port),
+go to **Explore → Tempo**, and search by the `request_id` from any response. Both
+datasources are already there: they are provisioned from `infra/grafana/provisioning/`, so
+a fresh volume needs no clicking.
+
+One evaluation of the seeded panel is nine spans:
+
+```
+POST /v1/panels/:panel_id/evaluate        SERVER   http.route, url.path, status
+  judge is-bug                            INTERNAL model, tokens, cost, jdv_, outcome
+    provider call fake:deterministic      CLIENT   one span per attempt that reached the provider
+  judge is-feature   …
+  judge is-question  …
+  judge needs-human  …
+```
+
+The nesting is the point. A flat span says a judge took four seconds; this says it was
+called three times with backoff between — a `backoff` event marks each gap — and an attempt
+the circuit breaker refused produces no child span at all, because nobody was called. Send
+`__unavailable__` and look at the `judge` span: `labelloop.failure_kind: circuit_open`,
+`labelloop.attempts: 0`.
+
+What is deliberately **not** on a span: the question, the artifact, the context, the query
+string, or any header. Telemetry is metadata, not content — the payloads live in the
+access-controlled `traces` table.
+
+Exporting is optional and unset is a supported state. Without
+`OTEL_EXPORTER_OTLP_ENDPOINT` the tracer still runs and `request_id` is still a real trace
+id; the spans are simply not sent. When the endpoint is set and the collector is
+unreachable, the API says so on its own log stream (`span export failed — traces are being
+dropped`) rather than failing silently, and keeps serving: a collector that is down loses
+spans and must never take the API out of rotation, which is why `/readyz` checks Postgres
+and the queue and deliberately checks none of this.
+
+Prometheus (no published port; reached through Grafana) scrapes the collector rather than
+the application, because the API emits no metrics yet — application metrics and dashboards
+are M3. `otelcol_receiver_accepted_spans` against `otelcol_exporter_sent_spans` is how you
+tell whether spans are being lost between here and Tempo.
 
 ### Why the demo routes are not in the API docs
 

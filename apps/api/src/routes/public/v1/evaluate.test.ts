@@ -6,6 +6,7 @@ import {
   newId,
 } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
+import { trace } from '@opentelemetry/api'
 import { eq } from 'drizzle-orm'
 import { createFixedClock } from '../../../adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from '../../../adapters/noop-error-reporter.ts'
@@ -167,6 +168,14 @@ let reporter: ReturnType<typeof createRecordingErrorReporter>
  */
 let queue: ReturnType<typeof fakeQueue>
 
+/**
+ * OTel's global tracer with no provider registered — real object, no-op spans. The spans
+ * this path emits are asserted in `middleware/tracing.test.ts` and `llm/spans.test.ts`;
+ * here the no-op is the point, because it proves the steel thread does not depend on
+ * telemetry being configured to work.
+ */
+const noopTracer = trace.getTracer('test')
+
 /** The real app, with the real database, and the provider swapped through the same seam. */
 const appWith = (provider = createFakeProvider()) =>
   createApp({
@@ -174,8 +183,14 @@ const appWith = (provider = createFakeProvider()) =>
     clock: createFixedClock(),
     errorReporter: reporter,
     db,
-    modelGateway: createModelGateway({ provider, clock: createFixedClock(), random: () => 1 }),
+    modelGateway: createModelGateway({
+      provider,
+      clock: createFixedClock(),
+      tracer: noopTracer,
+      random: () => 1,
+    }),
     jobs: queue,
+    tracer: noopTracer,
   })
 
 const evaluateRequest = (
