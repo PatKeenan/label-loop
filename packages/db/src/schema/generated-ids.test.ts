@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { idPattern, isId } from '@labelloop/contracts'
+import { idPattern, isId, newId } from '@labelloop/contracts'
 import { eq } from 'drizzle-orm'
 import { createDatabase } from '../client.ts'
 import { orgs } from './orgs.ts'
@@ -74,13 +74,32 @@ describe('primary keys are generated at insert', () => {
     expect(row?.id).toBe(chosen)
   })
 
-  test('two inserts get different ids, and they sort in insertion order', async () => {
-    // ULIDs are time-ordered, which is what keeps `traces` appending to its index rather
-    // than scattering page splits across it.
+  /**
+   * What a ULID actually orders by, and what it does not.
+   *
+   * The first 10 characters are a millisecond timestamp and the remaining 16 are random.
+   * So ids sort by TIME at millisecond granularity — and within a single millisecond the
+   * random suffix decides, which is a coin flip, because `newId` draws a fresh suffix per
+   * call rather than incrementing the previous one (the ULID spec's optional monotonic
+   * mode, which this project does not use).
+   *
+   * The original version of this test asserted `a < b` for two back-to-back inserts and
+   * was therefore a 50/50 gamble on whether two round-trips straddled a millisecond
+   * boundary. It passed on a developer machine and failed on a faster CI runner.
+   *
+   * Splitting it in two is not a weakening. The property the design rests on — `traces`
+   * appending to its index rather than scattering page splits across it, per the comment
+   * on `id()` in `columns.ts` — is about a stream of inserts over time, and is untouched
+   * by how two ids minted in the same tick happen to compare.
+   */
+  test('ids sort in insertion order across time — the property the index relies on', async () => {
     const first = await db
       .insert(orgs)
       .values({ slug: `sort-a-${Date.now()}`, name: 'First' })
       .returning()
+    // Cross the millisecond boundary deliberately, because that is the granularity the
+    // guarantee is stated at. Without this the assertion below is a coin toss.
+    await Bun.sleep(2)
     const second = await db
       .insert(orgs)
       .values({ slug: `sort-b-${Date.now()}`, name: 'Second' })
@@ -91,5 +110,16 @@ describe('primary keys are generated at insert', () => {
     created.push(a, b)
     expect(a).not.toBe(b)
     expect(a < b).toBe(true)
+  })
+
+  test('two ids minted in the SAME millisecond are distinct, and are not ordered', async () => {
+    // Uniqueness is the guarantee here, and it comes from the 16 random characters — 80
+    // bits — not from the clock. Ordering is explicitly NOT claimed: asserting it is what
+    // made this file fail intermittently in CI.
+    const now = Date.now()
+    const a = newId('org_', now)
+    const b = newId('org_', now)
+    expect(a).not.toBe(b)
+    expect(a.slice(0, 'org_'.length + 10)).toBe(b.slice(0, 'org_'.length + 10))
   })
 })

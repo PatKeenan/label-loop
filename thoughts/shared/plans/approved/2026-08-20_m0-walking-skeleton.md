@@ -1561,6 +1561,33 @@ asserting is the session boundary, and that is asserted end to end against a rea
 better-auth and a real Postgres in `apps/api/src/routes/internal/index.test.ts`. A DOM
 runner becomes worth its weight at M4, with designed screens and real interaction.
 
+### P7 — P3's id-ordering test was not flaky, it was wrong, and CI proved it
+**Expected:** the pre-existing intermittent failure recorded at P4 ("observed failing once
+in a full run and passing on re-run") would keep being a nuisance until someone looked at it.
+**Found:** it is not intermittent in the usual sense. `packages/db/src/schema/generated-ids.test.ts`
+asserted `a < b` for two back-to-back inserts, and a ULID orders by its 10-character
+millisecond timestamp with 16 RANDOM characters after it — `newId` draws a fresh suffix per
+call rather than incrementing the previous one, since this project does not use the ULID
+spec's optional monotonic mode. So for two ids minted inside the same millisecond the
+comparison is a coin flip: **measured at 49.9% wrong over 10,000 pairs.** The test passed
+locally only because two Drizzle round-trips usually straddle a millisecond boundary; a CI
+runner is faster, and it failed there on the first push of the P7 branch.
+**Why it matters:** the P4 note understated it as a rare flake, which is what let it sit.
+Re-running CI would have gone green on a second coin flip and laundered a false assertion
+into a "known flaky test" — the failure mode where a suite slowly stops meaning anything.
+**Resolution:** split into two tests. One crosses the millisecond boundary deliberately and
+asserts ordering, which is the granularity the guarantee is actually stated at; the other
+mints two ids in the SAME millisecond and asserts they are distinct and share a timestamp
+prefix, explicitly NOT that they are ordered. Verified by running it 25 times.
+**Not a weakening.** The property the design rests on — `traces` appending to its index
+rather than scattering page splits across it, per the comment on `id()` in `columns.ts` —
+is about a stream of inserts over time and is untouched by how two ids minted in the same
+tick compare. That comment needed no change.
+**Fixed on the P7 branch rather than its own**, at the stakeholder's direction, because it
+was blocking PR #17. Editing another phase's assertion is normally out of scope — which is
+exactly why P4 declined to do it silently — so the decision was put to the stakeholder with
+the measurement rather than taken unilaterally a second time.
+
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**
 (which amends ADR-0009), **D-P → ADR-0014**, **D-I → ADR-0015**, **D-G → ADR-0016**,
