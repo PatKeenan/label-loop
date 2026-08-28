@@ -1,4 +1,5 @@
 import type { Database } from '@labelloop/db'
+import type { Tracer } from '@opentelemetry/api'
 import type { PinoLogger } from 'hono-pino'
 import type { Config } from './config.ts'
 import type { JobQueue } from './jobs/index.ts'
@@ -12,8 +13,8 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  * (`createApp(deps)`) and never imported ad hoc. No DI container: the seam is the value,
  * not the framework (CONVENTIONS.md "Dependency seams").
  *
- * P4 adds `modelGateway`; P5 adds `jobs`. The list growing is the point — each addition is
- * a thing tests can substitute rather than monkey-patch.
+ * P4 adds `modelGateway`; P5 adds `jobs`; P6 adds `tracer`. The list growing is the point
+ * — each addition is a thing tests can substitute rather than monkey-patch.
  */
 export type AppDeps = {
   config: Config
@@ -34,6 +35,14 @@ export type AppDeps = {
    * wants neither passes something that has neither.
    */
   jobs: JobQueue
+  /**
+   * Where spans come from (ADR-0007). Injected rather than taken from OTel's global,
+   * which is a process-wide singleton that may only be set once — so a test asserting on
+   * real spans would otherwise have to mutate global state and leak it into every test
+   * file that ran afterwards. `server.ts` passes the started SDK's tracer; a test passes
+   * one from a provider it owns, or the API's no-op default when it does not care.
+   */
+  tracer: Tracer
 }
 
 /** The Hono environment: what lives on `c.var` for every request. */

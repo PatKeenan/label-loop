@@ -1,0 +1,33 @@
+# Prometheus. At M0 it scrapes the observability stack ITSELF rather than the application:
+# the API emits no metrics yet (ADR-0007 amendment puts application metrics and dashboards
+# at M3), and the question worth answering today is "is the telemetry pipeline healthy",
+# which is a question about the collector.
+#
+# It is here at M0 because the plan's topology is the deliverable: the datasource exists,
+# provisioned as code, so M3 adds targets rather than a service.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets: ['otel-collector:8888']
+    # The series that say whether spans are being lost between the API and Tempo:
+    # `otelcol_receiver_accepted_spans` against `otelcol_exporter_sent_spans` is the
+    # end-to-end count, and `otelcol_receiver_refused_spans` /
+    # `otelcol_exporter_send_failed_spans` are where the difference goes. Verified against
+    # a running collector rather than copied from documentation — 0.159 publishes these
+    # without the `_total` suffix older examples use.
+
+  - job_name: tempo
+    static_configs:
+      - targets: ['tempo:3200']
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+# No alerting rules and no recording rules. M3 (BUILD_SPINE) owns those, together with the
+# dashboards; shipping empty rule files now would be scaffolding, not topology.

@@ -27,6 +27,10 @@ describe('.env.example', () => {
       'SENTRY_DSN',
       'DATABASE_URL',
       'DATABASE_POOL_MAX',
+      // Added at P5 and P6. The list is hand-maintained, which is its weakness — it is a
+      // reminder, not a proof — so a new field goes here in the same commit that adds it.
+      'QUEUE_POOL_MAX',
+      'OTEL_EXPORTER_OTLP_ENDPOINT',
     ]) {
       expect(documented.has(field), `${field} is missing from .env.example`).toBe(true)
     }
@@ -151,5 +155,37 @@ describe('config', () => {
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'development' })).not.toThrow()
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'test' })).not.toThrow()
     })
+  })
+})
+
+describe('OTEL_EXPORTER_OTLP_ENDPOINT (ADR-0007)', () => {
+  test('is optional — unset means spans are recorded and not exported', () => {
+    const config = loadConfig({ DATABASE_URL })
+    // Unset is a supported state, not a degraded one: the tracer still runs, so
+    // `request_id` is still a real trace id (ADR-0010) with or without a collector.
+    expect(config.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined()
+  })
+
+  test('strips a trailing slash, because the exporter appends /v1/traces', () => {
+    const config = loadConfig({
+      DATABASE_URL,
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318/',
+    })
+    expect(config.OTEL_EXPORTER_OTLP_ENDPOINT).toBe('http://otel-collector:4318')
+  })
+
+  test('rejects a non-HTTP endpoint by name', () => {
+    // The gRPC port is the easy mistake — 4317 with an `otlp://` or bare host — and the
+    // exporter this codebase uses speaks OTLP over HTTP.
+    const error = (() => {
+      try {
+        loadConfig({ DATABASE_URL, OTEL_EXPORTER_OTLP_ENDPOINT: 'grpc://otel-collector:4317' })
+        return undefined
+      } catch (caught) {
+        return caught as ConfigError
+      }
+    })()
+    expect(error?.fields).toEqual(['OTEL_EXPORTER_OTLP_ENDPOINT'])
+    expect(error?.message).toContain('http://')
   })
 })

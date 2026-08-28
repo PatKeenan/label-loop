@@ -108,7 +108,10 @@ const runJudge = async (
       artifact: request.artifact,
       ...(request.context === undefined ? {} : { context: request.context }),
     },
-    { logger },
+    // The judge's identity is passed for the telemetry, not for the provider: it is what
+    // turns "a model call was slow" into "the needs-human judge at jdv_… was slow", and a
+    // version is the thing that can be rolled back.
+    { logger, slug: judge.slug, judgeVersionId: judge.judgeVersionId },
   )
   return { judge, outcome }
 }

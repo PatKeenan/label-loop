@@ -1,5 +1,22 @@
 import type { ErrorCode, JudgeOutput } from '@labelloop/contracts'
+import { context, SpanKind, SpanStatusCode, type Tracer, trace } from '@opentelemetry/api'
 import type { Clock } from '../ports/clock.ts'
+import {
+  ATTR_ATTEMPTS,
+  ATTR_BACKOFF_MS,
+  ATTR_COST_PRICED,
+  ATTR_COST_USD,
+  ATTR_ERROR_CODE,
+  ATTR_FAILURE_KIND,
+  ATTR_GEN_AI_REQUEST_MODEL,
+  ATTR_GEN_AI_RESPONSE_MODEL,
+  ATTR_GEN_AI_SYSTEM,
+  ATTR_GEN_AI_USAGE_INPUT_TOKENS,
+  ATTR_GEN_AI_USAGE_OUTPUT_TOKENS,
+  ATTR_JUDGE_SLUG,
+  ATTR_JUDGE_VERSION_ID,
+  ATTR_OUTCOME,
+} from './attributes.ts'
 import {
   type BreakerPolicy,
   type BreakerState,
@@ -33,6 +50,14 @@ import { DEFAULT_RETRY_POLICY, type RetryPolicy, retry } from './retry.ts'
  * Raw provider errors never leave this file. What crosses the boundary is a member of the
  * closed taxonomy, which is what makes the codes on a verdict branchable by an agent
  * (`PROVIDER_TIMEOUT` → retry, `CIRCUIT_OPEN` → do not).
+ *
+ * **It is also the only place model calls are traced** (ADR-0007). Two levels of span, and
+ * the split is the point: one per `judge()` call, which is the unit that has a cost and a
+ * verdict, and one per actual provider ATTEMPT beneath it. A single flat span would show a
+ * judge that took four seconds; the nesting shows three attempts, two backoff gaps and a
+ * breaker refusal, which is the difference between knowing something was slow and knowing
+ * why. Attempts refused by an open circuit produce no child span at all, because nobody
+ * was called.
  */
 
 /** The subset of the request logger this module uses. Structural, so pino satisfies it. */
@@ -72,11 +97,20 @@ export type JudgeCallOutcome = OutcomeBase &
       }
   )
 
+/**
+ * What the CALLER knows about this judge that the provider does not need but the telemetry
+ * does: which judge it is, and which immutable version asked the question. Without them a
+ * slow trace says "some model call was slow"; with them it says which judge, at which
+ * version — and a version is the thing you can roll back.
+ */
+export type JudgeCallContext = {
+  logger?: CallLogger
+  slug?: string
+  judgeVersionId?: string
+}
+
 export type ModelGateway = {
-  judge: (
-    call: Omit<JudgeCall, 'signal'>,
-    context?: { logger?: CallLogger },
-  ) => Promise<JudgeCallOutcome>
+  judge: (call: Omit<JudgeCall, 'signal'>, context?: JudgeCallContext) => Promise<JudgeCallOutcome>
   /** Breaker state per model, for the readiness and telemetry surfaces that want it. */
   breakerState: (model: string) => BreakerState
 }
@@ -84,6 +118,12 @@ export type ModelGateway = {
 export type ModelGatewayOptions = {
   provider: ModelProvider
   clock: Clock
+  /**
+   * Where the model-call spans come from. Injected like everything else here rather than
+   * read from OTel's global, so a test can assert on the spans a real provider failure
+   * produces without registering a process-wide tracer provider it then has to live with.
+   */
+  tracer: Tracer
   retryPolicy?: RetryPolicy
   breakerPolicy?: BreakerPolicy
   /** Jitter source. Injected so a backoff schedule can be asserted rather than hoped at. */
@@ -116,6 +156,7 @@ const kindOf = (error: unknown): ProviderFailureKind | undefined =>
 export const createModelGateway = ({
   provider,
   clock,
+  tracer,
   retryPolicy = DEFAULT_RETRY_POLICY,
   breakerPolicy,
   random,
@@ -141,11 +182,63 @@ export const createModelGateway = ({
   return {
     breakerState: (model) => breakers.for(model).state,
 
-    judge: async (call, { logger } = {}) => {
+    judge: async (call, { logger, slug, judgeVersionId } = {}) => {
       // The registry's callbacks outlive any one request, so the most recent request's
       // logger is used for state changes. Its `request_id` is honest — that request is
-      // what tripped the breaker — and P6's spans are where the full causal chain lives.
+      // what tripped the breaker — and the spans below are where the full causal chain
+      // lives, because a span belongs to the call that produced it and a logger does not.
       if (logger !== undefined) stateLogger = logger
+
+      // Named for the judge rather than the model, because "which judge is slow" is the
+      // question, and several judges share one model. The model is an attribute.
+      const span = tracer.startSpan(`judge ${slug ?? call.model}`, {
+        kind: SpanKind.INTERNAL,
+        attributes: {
+          [ATTR_GEN_AI_SYSTEM]: provider.name,
+          [ATTR_GEN_AI_REQUEST_MODEL]: call.model,
+          ...(slug === undefined ? {} : { [ATTR_JUDGE_SLUG]: slug }),
+          ...(judgeVersionId === undefined ? {} : { [ATTR_JUDGE_VERSION_ID]: judgeVersionId }),
+        },
+      })
+      // Note what is NOT here: the question, the artifact, or the context. Those are the
+      // customer's content, and CONVENTIONS' "log metadata, not content" is a rule about
+      // telemetry rather than about pino — a span is read by more people than a log line.
+      //
+      // Attempt spans are parented EXPLICITLY through this context rather than through the
+      // ambient one, so the shape of a trace does not depend on a context manager being
+      // installed — which it is in production and is not in a unit test.
+      const parentContext = trace.setSpan(context.active(), span)
+
+      /**
+       * Every exit from this function goes through here: annotate the span with the
+       * outcome, end it, answer. One funnel rather than five, because there are five ways
+       * out and the one that gets forgotten is always the one you needed.
+       */
+      const finish = (outcome: JudgeCallOutcome): JudgeCallOutcome => {
+        span.setAttributes({
+          [ATTR_OUTCOME]: outcome.status,
+          [ATTR_ATTEMPTS]: outcome.attempts,
+        })
+        if (outcome.status === 'evaluated') {
+          span.setAttributes({
+            [ATTR_GEN_AI_RESPONSE_MODEL]: outcome.servedBy,
+            [ATTR_GEN_AI_USAGE_INPUT_TOKENS]: outcome.cost.inputTokens,
+            [ATTR_GEN_AI_USAGE_OUTPUT_TOKENS]: outcome.cost.outputTokens,
+            [ATTR_COST_USD]: outcome.cost.costUsd,
+            // Zero is ambiguous without this: M0's fake model is genuinely free, and a
+            // model with no price on file also reports zero.
+            [ATTR_COST_PRICED]: outcome.cost.priced,
+          })
+        } else if (outcome.status === 'error') {
+          span.setAttribute(ATTR_ERROR_CODE, outcome.code)
+          // Only `error` sets the span's status. A `failed` outcome means the call WORKED
+          // and the judge's answer was unusable — a rubric problem to fix in a prompt, not
+          // an incident. Colouring it red in Tempo would train everyone to ignore red.
+          span.setStatus({ code: SpanStatusCode.ERROR, message: outcome.message })
+        }
+        span.end()
+        return outcome
+      }
 
       const breaker = breakers.for(call.model)
       const startedAt = clock.now()
@@ -163,9 +256,39 @@ export const createModelGateway = ({
         // trips it short-circuits the rest of its own call.
         const { value } = await retry(
           (signal) =>
-            breaker.run(() => {
+            breaker.run(async () => {
               attempts += 1
-              return provider.evaluate({ ...call, signal })
+              // One span per ATTEMPT, and only for attempts that reach the provider: an
+              // attempt the breaker refuses never gets here, which is why a trace showing
+              // one child span and three `attempts` is not a contradiction.
+              const attemptSpan = tracer.startSpan(
+                `provider call ${call.model}`,
+                {
+                  kind: SpanKind.CLIENT,
+                  attributes: {
+                    [ATTR_GEN_AI_SYSTEM]: provider.name,
+                    [ATTR_GEN_AI_REQUEST_MODEL]: call.model,
+                    [ATTR_ATTEMPTS]: attempts,
+                  },
+                },
+                parentContext,
+              )
+              try {
+                const result = await provider.evaluate({ ...call, signal })
+                attemptSpan.setAttributes({
+                  [ATTR_GEN_AI_RESPONSE_MODEL]: result.servedBy,
+                  [ATTR_GEN_AI_USAGE_INPUT_TOKENS]: result.usage.input,
+                  [ATTR_GEN_AI_USAGE_OUTPUT_TOKENS]: result.usage.output,
+                })
+                return result
+              } catch (error) {
+                const kind = kindOf(error)
+                if (kind !== undefined) attemptSpan.setAttribute(ATTR_FAILURE_KIND, kind)
+                attemptSpan.setStatus({ code: SpanStatusCode.ERROR })
+                throw error
+              } finally {
+                attemptSpan.end()
+              }
             }),
           {
             policy: retryPolicy,
@@ -175,6 +298,13 @@ export const createModelGateway = ({
               // Retrying into an open circuit is the one thing the circuit exists to stop.
               !(error instanceof CircuitOpenError) && RETRYABLE[kindOf(error) ?? 'invalid_output'],
             onRetry: ({ attempt: number, delayMs, error }) => {
+              // An event rather than another span: the backoff is a gap between attempts,
+              // and marking the gap is what makes the shape readable at a glance.
+              span.addEvent('backoff', {
+                [ATTR_ATTEMPTS]: number,
+                [ATTR_BACKOFF_MS]: delayMs,
+                ...(kindOf(error) === undefined ? {} : { [ATTR_FAILURE_KIND]: kindOf(error) }),
+              })
               logger?.warn(
                 {
                   provider: provider.name,
@@ -205,7 +335,7 @@ export const createModelGateway = ({
           'provider call completed',
         )
 
-        return {
+        return finish({
           status: 'evaluated',
           output: value.output,
           cost,
@@ -213,7 +343,7 @@ export const createModelGateway = ({
           raw: value.raw,
           attempts,
           latencyMs,
-        }
+        })
       } catch (error) {
         const latencyMs = clock.now() - startedAt
         const base = { attempts, latencyMs }
@@ -223,7 +353,8 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, retry_after_ms: error.retryAfterMs },
             'provider call refused by an open circuit',
           )
-          return {
+          span.setAttribute(ATTR_FAILURE_KIND, 'circuit_open')
+          return finish({
             ...base,
             status: 'error',
             code: 'CIRCUIT_OPEN',
@@ -231,7 +362,7 @@ export const createModelGateway = ({
             // Rounded UP: a Retry-After that expires a millisecond early sends the caller
             // straight back into a circuit that is still open.
             retryAfterSeconds: Math.max(1, Math.ceil(error.retryAfterMs / 1_000)),
-          }
+          })
         }
 
         const kind = kindOf(error)
@@ -241,12 +372,12 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, attempts },
             'provider answered with unusable output',
           )
-          return {
+          return finish({
             ...base,
             status: 'failed',
             message: 'The judge did not produce a usable answer.',
             raw: isProviderError(error) ? error.raw : undefined,
-          }
+          })
         }
 
         if (kind !== undefined) {
@@ -254,12 +385,12 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, kind, attempts },
             'provider call failed',
           )
-          return {
+          return finish({
             ...base,
             status: 'error',
             code: TAXONOMY[kind],
             message: 'The judge could not be reached.',
-          }
+          })
         }
 
         // Not a `ProviderError`: the adapter broke its own contract, which is a bug in
@@ -269,13 +400,13 @@ export const createModelGateway = ({
           { provider: provider.name, model: call.model, err: error },
           'provider adapter threw an unexpected error',
         )
-        return {
+        return finish({
           ...base,
           status: 'error',
           code: 'INTERNAL',
           message: 'The judge could not be run.',
           cause: error,
-        }
+        })
       }
     },
   }

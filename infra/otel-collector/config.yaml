@@ -1,0 +1,69 @@
+# The OpenTelemetry Collector — the one process between the API and the storage backends.
+#
+# It exists so the API talks to ONE endpoint and never to Tempo, Prometheus or (from M3)
+# Loki directly. Swapping a backend then changes this file rather than the application's
+# configuration, and the application keeps exporting OTLP whatever is behind it.
+#
+# Deliberately discrete containers rather than the bundled `grafana/otel-lgtm` image: the
+# topology is the thing being demonstrated, and an all-in-one image hides exactly the wiring
+# an operator has to understand. It is also not what anyone runs in production.
+
+receivers:
+  otlp:
+    protocols:
+      # Both wire protocols, though only HTTP is used today. The API's exporter is
+      # OTLP/HTTP (`@opentelemetry/exporter-trace-otlp-http`) because it needs no gRPC
+      # runtime under Bun; gRPC is accepted so a future sidecar or a k6 extension does not
+      # need this file changed.
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Ordered deliberately, and the order is the standard one for a reason: the limiter has
+  # to be able to refuse data BEFORE the batcher has spent memory assembling it.
+  memory_limiter:
+    check_interval: 1s
+    # The collector is a shock absorber, not a queue. When Tempo is slow it must shed load
+    # and say so rather than growing until the container is OOM-killed — the same principle
+    # as the API's bounded, drop-on-full span queue.
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+exporters:
+  # `otlp_grpc`, not the bare `otlp` alias — the collector deprecated that spelling and
+  # warns about it on every boot, and a config that warns on boot trains people to skip
+  # the boot logs.
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      # Plaintext INSIDE the compose network only. Nothing here is published to a host
+      # port; the collector is the only thing that talks to Tempo.
+      insecure: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      # The collector's own metrics, for Prometheus to scrape. This is how "are spans being
+      # dropped" becomes a number rather than a suspicion — `otelcol_processor_dropped_spans`
+      # and `otelcol_exporter_send_failed_spans` are the two that matter.
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc/tempo]
+  # No logs pipeline yet. ADR-0007's amendment puts the filelog receiver → Loki at M3;
+  # until then logs are NDJSON on stdout and `docker compose logs` is the reader.

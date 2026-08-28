@@ -1,0 +1,38 @@
+# Tempo, single-binary, local storage. Traces only — Tempo is not a metrics store, which is
+# why Prometheus is a separate container rather than a setting in this file.
+
+server:
+  http_listen_port: 3200
+  # The collector sends over gRPC on 4317; nothing else talks to Tempo.
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  # Short on purpose for a development stack: a trace should be queryable seconds after the
+  # request that produced it, because the demo is "make a call, then find it". Production
+  # would trade this the other way.
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # M0's Postgres volume is throwaway and so is this one. Retention tuning is M3's
+    # problem, when there is a reason to keep a trace for longer than a debugging session.
+    block_retention: 24h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+# No metrics_generator. It would turn spans into RED metrics automatically, which is
+# genuinely useful and is exactly the kind of thing ADR-0007 asks to be a decision rather
+# than a default — M3, with the dashboards.
