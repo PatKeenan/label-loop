@@ -1886,3 +1886,35 @@ finishes them.
 `extends` it cannot resolve is a hard build failure rather than a fallback to defaults.
 **Why it matters:** small, but it is the kind of thing only an actual image build finds —
 the host has the file, so nothing before P8 could have noticed.
+
+### P8 — the console was being built as DEVELOPMENT React on every host, and CI could not see it
+**Expected:** `bun run --cwd apps/web build` on the host and inside the image produce the
+same bundle.
+**Found:** they did not. The image shipped 433 kB; the host built 663 kB — a 54% larger
+bundle, full of React's development-only warning machinery. Noticed only because P8 put the
+two artifacts side by side for the first time.
+
+The cause is P7's `envDir: '../..'`, which points Vite at the repo-root `.env` so there is
+only one env file in the repo. Vite reads `NODE_ENV` out of an env file regardless of the
+`VITE_` prefix rule, and uses it to choose package export conditions — so
+`NODE_ENV=development`, which was in `.env.example` for the API's benefit, resolved React's
+development build into a production bundle.
+
+**Why it matters:** nothing failed. No warning, no error, no failing test — and CI was
+structurally incapable of catching it, because CI never copies `.env.example` to `.env` and
+so built the correct artifact while every developer's local build was wrong. The images are
+and always were correct (`.dockerignore` excludes `.env`), so nothing shipped wrong; but a
+host-built `dist/` was one deploy step away from being the thing that did.
+
+**Resolution:** two independent fixes, because one of them is a line someone could
+plausibly re-add. `.env.example` no longer sets `NODE_ENV` at all — `config.ts` already
+defaults it to `development`, so the API never needed the line — and `apps/web`'s build
+script sets `NODE_ENV=production` explicitly, which wins over an env file if one reappears.
+Both paths now produce 433 kB, verified by building each way.
+
+**Rejected:** a guard inside `vite.config.ts`. The first attempt threw when
+`process.env.NODE_ENV !== 'production'` during a build, and it could never fire — Vite sets
+that variable itself before the config function runs, so the broken and the correct case are
+indistinguishable from in there. A guard reading the env file directly *would* fire, but it
+would also fire on `bun run build`, which produces the correct bundle — a false positive on
+the one command everyone uses. Removing the trap beat guarding it.
