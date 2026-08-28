@@ -356,27 +356,56 @@ so in every response, on purpose.
 
 Three artifact prefixes drive the fake into a specific failure, so the resilience path can
 be watched by hand rather than only in a test. They belong to the fake and disappear with
-it at M1:
+it at M1.
 
-| Artifact begins with | What you get back |
+**Run them in this order, and only this order.** The panel's four judges all sit on one
+model, so they share one circuit breaker — and once it opens it stays open for 30 seconds,
+refusing everything before it reaches the provider. Send `__unavailable__` first and the
+next two requests come back `CIRCUIT_OPEN` no matter what you put in them, which looks
+exactly like nothing working:
+
+```bash
+PANEL=pnl_000000000000000000SEEDPANE
+KEY="llk_test_$(printf '0%.0s' {1..64})"
+send () { curl -s -i -X POST "localhost:3000/v1/panels/$PANEL/evaluate" \
+  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d "{\"artifact\":\"$1\"}"; }
+
+send 'the build is broken'   # 200 — every judge evaluated, complete: true
+send '__invalid__ x'         # 200 — every judge failed, complete: false
+send '__unavailable__ x'     # 503 — CIRCUIT_OPEN, Retry-After: 30
+```
+
+`__invalid__` goes second because it is the one sentinel that leaves the circuit closed.
+For `__slow__`, restart the API or wait out the 30 seconds first.
+
+| Prefix | What you get back |
 |---|---|
-| `__unavailable__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`. The logs show jittered backoff first, then the circuit opening |
-| `__slow__` | `503` + `Retry-After: 30`, after about 20 seconds — two rounds of the 10s per-attempt timeout |
-| `__invalid__` | **`200`.** Every judge comes back `status: "failed"` with `complete: false`, and the circuit stays closed |
+| `__invalid__` | **`200`.** Every judge `status: "failed"`, `complete: false`, circuit untouched |
+| `__unavailable__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`, immediately |
+| `__slow__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`, after about 20 seconds |
 
-Two of those are worth a sentence, because neither is the obvious answer.
+The last two are indistinguishable from the response, and that is honest rather than
+sloppy: by the time the panel gives up, the true fact about both is that the circuit is
+open. What separates them is the latency and the logs — `kind: "timeout"` against
+`kind: "unavailable"`, with the jittered backoff visible before the circuit opens:
 
-**`__slow__` reports `CIRCUIT_OPEN`, not `PROVIDER_TIMEOUT`.** The seeded panel's four
-judges all run on one model, so they share one breaker, and four judges retrying past a
-threshold of five consecutive failures trip it partway through the fan-out. When the panel
-cannot decide, the failure reported is the one that can say *when to come back* — so the
-`504` you might expect is only what a single judge sees, not what this panel returns.
+```bash
+grep -o '"kind":"[^"]*"' <the api log> | sort | uniq -c
+```
+
+Two things here are worth a sentence, because neither is the obvious answer.
+
+**Neither failure reports `PROVIDER_TIMEOUT`.** Four judges retrying past a threshold of
+five consecutive failures trip the shared breaker partway through the fan-out, and when a
+panel cannot decide, the failure reported is the one that can say *when to come back*. The
+`504` is what a single judge sees, not what this panel returns.
 
 **`__invalid__` is not an error response.** An answer that came back unusable is a rubric
 problem, not an outage: retrying is pointless, no code in the closed taxonomy honestly
 describes it, and a `500` would page somebody for a badly written judge. So the call
-succeeds and says exactly what happened per judge — which is also why `complete` exists,
-and why a gate should read it rather than `passed` alone.
+succeeds and says exactly what happened per judge — which is why `complete` exists, and
+why a gate should read it rather than `passed` alone.
 
 The number in these responses is the HTTP status; the body carries the taxonomy `code` as
 a string, never a number. `curl -i` shows both.
