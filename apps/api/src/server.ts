@@ -3,6 +3,7 @@ import { createErrorReporter } from './adapters/sentry-error-reporter.ts'
 import { systemClock } from './adapters/system-clock.ts'
 import { createApp } from './app.ts'
 import { ConfigError, loadConfig } from './config.ts'
+import { createPgBossQueue, registerJobHandlers } from './jobs/index.ts'
 import { installSignalHandlers } from './lifecycle.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { createRootLogger } from './middleware/logger.ts'
@@ -36,11 +37,34 @@ const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_
 // zero-secret boot true (ADR-0009). M1 replaces this one line with a real adapter behind
 // the same port; nothing downstream of the gateway knows the difference.
 const modelGateway = createModelGateway({ provider: createFakeProvider(), clock: systemClock })
-const app = createApp({ config, clock: systemClock, errorReporter, db, modelGateway })
+
+// The queue's own pool, on the app role's credential — which cannot install the schema it
+// connects to. `bun run db:migrate` did that as the migrator, and `start()` below REFUSES
+// if it did not: a boot that fails saying "run the migrations" is better than a process
+// that serves traffic whose follow-up work has nowhere to go.
+//
+// A failure here is deliberately fatal rather than degraded. The container restarts, which
+// is the recovery when the cause is a Postgres that is not up yet, and compose gates on
+// `/readyz` so nothing reaches a replica that never got this far.
+const jobs = createPgBossQueue({
+  url: config.DATABASE_URL,
+  poolMax: config.QUEUE_POOL_MAX,
+  // pg-boss reports maintenance and polling failures on an event emitter, so without this
+  // they would be silent. Reporting is not handling (ADR-0007) — supervision retries on its
+  // own timer, and this is how we find out it has been failing.
+  onError: (error) => {
+    logger.error({ err: error }, 'queue error')
+    errorReporter.report(error, { context: { component: 'queue' } })
+  },
+})
+await jobs.start()
+await registerJobHandlers(jobs, { db, clock: systemClock, errorReporter, logger })
+
+const app = createApp({ config, clock: systemClock, errorReporter, db, modelGateway, jobs })
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })
 
-installSignalHandlers({ server, errorReporter, logger, db })
+installSignalHandlers({ server, errorReporter, logger, db, jobs })
 
 logger.info(
   { port: server.port, url: `http://localhost:${server.port}`, pid: process.pid },

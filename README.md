@@ -267,7 +267,7 @@ bun run --cwd apps/api dev
 | Command | Connects as | Does |
 |---|---|---|
 | `bun run db:bootstrap` | superuser | Creates the two roles. The only step needing a superuser, and the only place that credential is used. |
-| `bun run db:migrate` | `labelloop_migrator` | Applies the forward-only migration stream. Owns the schema; issues all DDL. |
+| `bun run db:migrate` | `labelloop_migrator` | Applies the forward-only migration stream, and installs the queue's schema. Owns both; issues all DDL. |
 | `bun run db:seed` | `labelloop_app` | Inserts the demo org, panel, judges and dev key. DML only — it could not alter a table if it tried. |
 
 The API connects as `labelloop_app`, which holds no DDL at all. That is not a convention
@@ -292,7 +292,7 @@ bun run --cwd apps/api dev | bunx pino-pretty
 |---|---|
 | `POST /v1/panels/{panel_id}/evaluate` | The product: run a panel of judges over one artifact. Authenticated by a panel-scoped API key |
 | `GET /healthz` | Liveness, plus the version and git SHA of the running build. Touches no dependency, deliberately |
-| `GET /readyz` | Readiness: is Postgres reachable, and are migrations current. `503` naming the failing check when not |
+| `GET /readyz` | Readiness: is Postgres reachable, are migrations current, and is the queue answering. `503` naming the failing check when not |
 | `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
 | `GET /v1/docs` | Interactive Scalar reference — the integration surface, since there is no SDK |
 | `GET /_demo/rate-limited` | A synthetic `429` with `Retry-After`, for inspecting the error envelope |

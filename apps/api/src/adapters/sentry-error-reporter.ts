@@ -37,7 +37,7 @@ export const createSentryErrorReporter = async (
   return {
     report: (error, { requestId, context }) => {
       Sentry.captureException(error, {
-        tags: { request_id: requestId },
+        ...(requestId === undefined ? {} : { tags: { request_id: requestId } }),
         ...(context === undefined ? {} : { extra: context }),
       })
     },

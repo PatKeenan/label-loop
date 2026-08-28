@@ -7,22 +7,31 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  *
  * 1. **Stop accepting** new connections — the orchestrator has already removed us from
  *    rotation, and anything arriving now would be killed mid-flight.
- * 2. **Drain in-flight work** — `server.stop(false)` resolves once open requests finish.
- *    Passing `true` would sever them, which is the bug this function exists to avoid.
- * 3. **Flush telemetry** — an error that caused the shutdown is exactly the one you need
- *    reported, and it is still sitting in a buffer.
- * 4. **Close the database pool** — after draining, never before: a request still in flight
- *    at step 2 needs its connection, and closing early would fail the very requests the
- *    drain exists to protect.
- * 5. **Exit 0** — a clean exit, so the orchestrator does not record a crash loop.
- *
- * P5 extends step 2 to drain in-flight *jobs* as well as requests.
+ * 2. **Drain in-flight requests** — `server.stop(false)` resolves once open requests
+ *    finish. Passing `true` would sever them, which is the bug this function exists to
+ *    avoid.
+ * 3. **Drain in-flight jobs** — after the requests, not with them: a request still being
+ *    served can enqueue a job, so stopping the queue first would drop work created by the
+ *    very requests step 2 is protecting. Jobs still running when the timeout expires are
+ *    released back to the queue rather than lost, which is what makes them retryable work
+ *    rather than a deadline.
+ * 4. **Flush telemetry** — an error that caused the shutdown, or a job that failed while
+ *    draining, is exactly the one you need reported, and it is still sitting in a buffer.
+ * 5. **Close the database pool** — after draining, never before: a request in flight at
+ *    step 2 and a job in flight at step 3 both need their connections, and closing early
+ *    would fail the very work the drain exists to protect.
+ * 6. **Exit 0** — a clean exit, so the orchestrator does not record a crash loop.
  */
 export type ShutdownDeps = {
   /** Structurally the part of `Bun.Server` shutdown needs, so tests can pass a stub. */
   server: { stop: (closeActiveConnections?: boolean) => Promise<void> }
   errorReporter: ErrorReporter
   logger: RootLogger
+  /**
+   * Structurally the part of the queue shutdown needs. Optional for the same reason `db`
+   * is: the lifecycle tests are about ordering, not about pg-boss.
+   */
+  jobs?: { stop: () => Promise<void> }
   /**
    * Structurally the part of the database handle shutdown needs. Optional so the
    * lifecycle tests — which are about ordering, not about Postgres — stay free of one.
@@ -34,11 +43,15 @@ export type ShutdownDeps = {
 
 export const gracefulShutdown = async (
   signal: string,
-  { server, errorReporter, logger, db, flushTimeoutMs = 2_000 }: ShutdownDeps,
+  { server, errorReporter, logger, db, jobs, flushTimeoutMs = 2_000 }: ShutdownDeps,
 ): Promise<void> => {
   logger.info({ signal }, 'shutdown started')
   await server.stop(false)
   logger.info({ signal }, 'in-flight requests drained')
+  if (jobs !== undefined) {
+    await jobs.stop()
+    logger.info({ signal }, 'in-flight jobs drained')
+  }
   await errorReporter.flush(flushTimeoutMs)
   if (db !== undefined) {
     await db.close()

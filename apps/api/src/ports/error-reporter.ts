@@ -5,8 +5,16 @@
  * is testable without a network, and swapping trackers touches one file.
  */
 export type ErrorReport = {
-  /** The W3C trace id of the execution that failed — the join to its logs and spans. */
-  requestId: string
+  /**
+   * The W3C trace id of the execution that failed — the join to its logs and spans.
+   *
+   * Optional for exactly one case, and it is worth naming rather than leaving to be
+   * discovered: an error raised OUTSIDE any request. The queue's supervisor fails on its
+   * own timer with no request behind it (P5), and inventing an id there would produce a
+   * tag that joins to nothing, which is worse than an absent one. Everything on the
+   * request path still passes it, and the type is not the thing keeping that true.
+   */
+  requestId?: string
   /** Structured, non-sensitive detail. Never request or response bodies. */
   context?: Record<string, unknown>
 }

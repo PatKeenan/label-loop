@@ -1,6 +1,6 @@
 import { boolean, index, pgTable, real, text } from 'drizzle-orm/pg-core'
 import { apiKeys } from './api-keys.ts'
-import { createdAt, id, idCheck, jsonbColumn } from './columns.ts'
+import { createdAt, id, idCheck, jsonbColumn, timestampAt } from './columns.ts'
 import { orgs } from './orgs.ts'
 import { panelVersions } from './panel-versions.ts'
 import { panels } from './panels.ts'
@@ -54,6 +54,19 @@ export const traces = pgTable(
     complete: boolean('complete').notNull(),
     /** Echoed from the panel version, so the decision is auditable from the row alone. */
     threshold: real('threshold').notNull(),
+    /**
+     * When the asynchronous follow-up for this evaluation ran — the `record-evaluation`
+     * job, enqueued once the row above is committed.
+     *
+     * Nullable, and that is the useful part twice over. It is what makes the job
+     * IDEMPOTENT without a check-then-act: the handler's write is
+     * `SET recorded_at = now() WHERE id = ? AND recorded_at IS NULL`, so a re-delivery
+     * updates zero rows and Postgres, not application code, is what makes the second
+     * delivery a no-op. And it is what makes a DROPPED enqueue recoverable: an evaluation
+     * whose follow-up never ran is a row with a null here, so the reconciliation sweep
+     * that M2's metering needs is a query rather than an archaeology project.
+     */
+    recordedAt: timestampAt('recorded_at'),
     createdAt: createdAt(),
   },
   (table) => [

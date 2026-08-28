@@ -80,6 +80,7 @@ describe('config', () => {
       GIT_SHA: DEV_GIT_SHA,
       DATABASE_URL,
       DATABASE_POOL_MAX: 10,
+      QUEUE_POOL_MAX: 2,
     })
     expect(config.SENTRY_DSN).toBeUndefined()
   })

@@ -13,6 +13,7 @@ import { createApp } from '../../../app.ts'
 import { loadConfig } from '../../../config.ts'
 import { createFakeProvider, createModelGateway, FAKE_SENTINELS } from '../../../llm/index.ts'
 import { sha256Hex } from '../../../middleware/api-key-auth.ts'
+import { fakeQueue } from '../../../testing/fake-queue.ts'
 
 /**
  * The steel thread, end to end: a real HTTP request through the real composition root,
@@ -157,6 +158,14 @@ afterAll(async () => {
 })
 
 let reporter: ReturnType<typeof createRecordingErrorReporter>
+/**
+ * The queue is faked here where the provider is faked and the database is not, and the
+ * reason is the same in both directions: what this file asserts is that the evaluation path
+ * enqueues exactly one job carrying the right ids, which is a claim about this code. That
+ * the job then round-trips through pg-boss and runs idempotently is a claim about the
+ * queue, and it is asserted against a real one in `src/jobs/`.
+ */
+let queue: ReturnType<typeof fakeQueue>
 
 /** The real app, with the real database, and the provider swapped through the same seam. */
 const appWith = (provider = createFakeProvider()) =>
@@ -166,6 +175,7 @@ const appWith = (provider = createFakeProvider()) =>
     errorReporter: reporter,
     db,
     modelGateway: createModelGateway({ provider, clock: createFixedClock(), random: () => 1 }),
+    jobs: queue,
   })
 
 const evaluateRequest = (
@@ -185,6 +195,7 @@ const ARTIFACT = 'Login button does nothing on Safari 17. Repro: click it. Nothi
 
 beforeEach(() => {
   reporter = createRecordingErrorReporter()
+  queue = fakeQueue()
 })
 
 describe('a successful evaluation', () => {
@@ -282,6 +293,43 @@ describe('the trace that gets written (ADR-0001)', () => {
     // The second representation, not a copy of the first: it is shaped like a provider
     // envelope, which is what makes the trace rerunnable rather than parser-dependent.
     expect(gate?.rawResponse).toMatchObject({ provider: 'fake', model: 'fake:deterministic' })
+  })
+})
+
+describe('the follow-up job the evaluation enqueues', () => {
+  test('exactly one job, carrying the tr_ id and the request_id', async () => {
+    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const { data, request_id } = (await res.json()) as { data: Evaluation; request_id: string }
+
+    // Exactly one. A job per judge would be the easy mistake, and it would make the trace's
+    // follow-up run N times for one evaluation.
+    expect(queue.sent).toHaveLength(1)
+    expect(queue.sent[0]?.queue).toBe('record-evaluation')
+    expect(queue.sent[0]?.payload).toEqual({ trace_id: data.trace_id, request_id })
+  })
+
+  test('a queue that refuses the job does NOT fail the evaluation', async () => {
+    /**
+     * The request has already succeeded by this point: the judges ran and the trace is
+     * committed, so the caller is owed their verdicts. Failing them because a background
+     * job could not be queued would turn a degraded dependency into an outage on the one
+     * path that was working.
+     *
+     * What stops that from being a silent data loss is that the dropped work is findable:
+     * `traces.recorded_at` is still null, which is the query a reconciliation sweep runs.
+     */
+    queue = fakeQueue({ sendFails: new Error('queue unreachable') })
+    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    expect(res.status).toBe(200)
+
+    const { data } = (await res.json()) as { data: Evaluation }
+    const trace = await db.query.traces.findFirst({ where: eq(schema.traces.id, data.trace_id) })
+    expect(trace).toBeDefined()
+    expect(trace?.recordedAt).toBeNull()
+
+    // Reporting is not handling (ADR-0007): the caller is served and the tracker is told.
+    expect(reporter.reports).toHaveLength(1)
+    expect(reporter.reports[0]?.context).toMatchObject({ queue: 'record-evaluation' })
   })
 })
 
