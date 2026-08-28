@@ -10,6 +10,7 @@ import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
 import { validationHook } from './routes/public/v1/index.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
+import { fakeQueue } from './testing/fake-queue.ts'
 
 /**
  * The integration test builds the REAL app through its composition root and swaps only
@@ -42,6 +43,7 @@ beforeEach(() => {
     errorReporter: reporter,
     db: fakeDatabase(),
     modelGateway: testGateway(),
+    jobs: fakeQueue(),
   })
 })
 
@@ -183,6 +185,7 @@ describe('contract-validation auto-mapping', () => {
       errorReporter: reporter,
       db: fakeDatabase(),
       modelGateway: testGateway(),
+      jobs: fakeQueue(),
     })
     host.route('/probe-host', probe)
     return host
@@ -234,14 +237,20 @@ describe('/readyz', () => {
    * database blip from becoming a restart storm: `/healthz` stays up so the container is
    * not killed, `/readyz` goes red so traffic stops arriving.
    */
-  const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) =>
+  const withDependencies = (
+    options: Parameters<typeof fakeDatabase>[0],
+    queue: Parameters<typeof fakeQueue>[0] = {},
+  ) =>
     createApp({
       config,
       clock: createFixedClock(),
       errorReporter: reporter,
       db: fakeDatabase(options),
       modelGateway: testGateway(),
+      jobs: fakeQueue(queue),
     })
+
+  const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) => withDependencies(options)
 
   test('reports ready when the database answers and migrations are current', async () => {
     const res = await withDatabase({}).request('/readyz')
@@ -254,6 +263,7 @@ describe('/readyz', () => {
     expect(body.data.checks).toEqual([
       { name: 'database', ok: true },
       { name: 'migrations', ok: true },
+      { name: 'queue', ok: true },
     ])
     expect(requestIdSchema.safeParse(body.request_id).success).toBe(true)
   })
@@ -298,9 +308,31 @@ describe('/readyz', () => {
     const body = (await res.json()) as {
       data: { checks: Array<{ name: string; ok: boolean; detail?: string }> }
     }
-    expect(body.data.checks.every((check) => !check.ok)).toBe(true)
-    expect(body.data.checks[0]?.detail).toContain('timed out')
+    // The queue is fine here; the point is that the DB checks END rather than hang.
+    const failed = body.data.checks.filter((check) => !check.ok)
+    expect(failed.map((check) => check.name)).toEqual(['database', 'migrations'])
+    expect(failed[0]?.detail).toContain('timed out')
   }, 10_000)
+
+  test('an unresponsive QUEUE is unready too, and named', async () => {
+    /**
+     * A queue nobody can reach is invisible from the caller's side: evaluations keep
+     * answering, and every one of their follow-ups piles up unrun. Readiness is the only
+     * place that failure shows up before the backlog does.
+     */
+    const res = await withDependencies(
+      {},
+      { unhealthy: new Error('queue(s) not installed') },
+    ).request('/readyz')
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as {
+      data: { status: string; checks: Array<{ name: string; ok: boolean; detail?: string }> }
+    }
+    expect(body.data.status).toBe('unready')
+    const failed = body.data.checks.filter((check) => !check.ok)
+    expect(failed.map((check) => check.name)).toEqual(['queue'])
+    expect(failed[0]?.detail).toContain('not installed')
+  })
 
   test('/healthz stays up when the database is down — liveness is not readiness', async () => {
     const app = withDatabase({ failing: new Error('connection refused') })

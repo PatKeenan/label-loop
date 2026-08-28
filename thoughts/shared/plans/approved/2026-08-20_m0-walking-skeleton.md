@@ -334,16 +334,19 @@ shutdown drains.
 
 Files: `apps/api/src/jobs/{index,queue.ts,record-evaluation.ts}`,
 `apps/api/src/services/evaluate.ts` (enqueue), `packages/db/src/schema/job-attempts.ts`,
-`apps/api/src/routes/health.ts` (extend `/readyz`).
+`apps/api/src/routes/health.ts` (extend `/readyz`), plus `packages/db/src/queue.ts` and
+`apps/api/src/repositories/job-attempts.ts` (see the deviation records).
 
-- [ ] pg-boss installs **its own schema as the migrator**, never at app runtime
-- [ ] Evaluation enqueues exactly one job carrying the `tr_` id and `request_id`
-- [ ] The handler is idempotent (re-delivery is a no-op) and **records its attempts in
+- [x] pg-boss installs **its own schema as the migrator**, never at app runtime
+      (`migrate: false, createSchema: false` on the app's instance, so it REFUSES rather
+      than installing; `db:migrate` does it, and a test proves the app role cannot)
+- [x] Evaluation enqueues exactly one job carrying the `tr_` id and `request_id`
+- [x] The handler is idempotent (re-delivery is a no-op) and **records its attempts in
       the DB**, proven by a test that delivers the same job twice
-- [ ] Logs cover enqueue / start / finish / fail with attempt counts and `request_id`
-- [ ] Job failures report to the `ErrorReporter` (reporting ≠ handling)
-- [ ] `/readyz` now also checks the queue is responsive
-- [ ] Graceful shutdown drains in-flight jobs as well as requests — test extended
+- [x] Logs cover enqueue / start / finish / fail with attempt counts and `request_id`
+- [x] Job failures report to the `ErrorReporter` (reporting ≠ handling)
+- [x] `/readyz` now also checks the queue is responsive
+- [x] Graceful shutdown drains in-flight jobs as well as requests — test extended
 
 **Automated verification**
 ```bash
@@ -1125,6 +1128,106 @@ Observed failing once in a full run and passing on re-run.
 **Resolution:** NOT fixed here — it belongs to P3's test and to a separate change, and
 silently editing another phase's assertion is not a P4 decision. Raised with the
 stakeholder at the phase boundary.
+
+### P5 — pg-boss cannot run on Bun's Postgres driver, and that is what P5 was for
+**Expected:** unstated. The obvious wiring was to give pg-boss the handle the API already
+has — one pool, one driver, one credential — through its `fromDrizzle` adapter.
+**Found:** it does not work, in two distinct places, and both were found by a spike before
+any code was written. pg-boss's queue lookup binds `= ANY($1::text[])` and Bun's driver
+sends the JS array as a scalar, so Postgres answers `malformed array literal: "spike"`. Its
+`send` binds a `json_to_recordset` array of job rows and gets `cannot call
+json_to_recordset on a scalar`. Same root cause: the adapter's parameters are shaped for
+node-postgres, and Bun's driver serializes them differently.
+**Resolution:** pg-boss owns its own pool over its own bundled `pg` (`connectionString` +
+`QUEUE_POOL_MAX`, default 2). No new dependency — `pg` arrives with pg-boss either way —
+but a second pool, which is why the ceiling is configurable and small: the number Postgres
+sees is `(DATABASE_POOL_MAX + QUEUE_POOL_MAX) x replicas`.
+
+**This is exactly the discovery D-A sequenced P5 early to make.** Three seams were named as
+Bun-sensitive (db/auth-schema, pg-boss, OTel); this is the first one that actually bit, and
+it bit in the cheap place — a 40-line spike at M0 rather than a mystery at M3.
+
+**What it cost, and it is not nothing.** The first design enqueued the job *inside the
+trace's transaction* — a transactional outbox, so the job and the trace commit together and
+the follow-up can neither be lost nor reference a row that does not exist. pg-boss supports
+exactly that (`send(..., { db: fromDrizzle(tx, sql) })`) and it is the second failure above.
+So the enqueue happens after the commit, and a failed enqueue is logged and reported rather
+than fatal — the request has already succeeded and the caller is owed their verdicts.
+The dropped work is bounded rather than hidden: `traces.recorded_at IS NULL` is the query,
+which is the shape a reconciliation sweep takes when M2's metering makes one worth writing.
+Revisit if Bun's driver gains node-postgres parameter parity.
+
+### P5 — the job needed something real to do, and it is `traces.recorded_at`
+**Expected:** the plan named `record-evaluation` and said nothing about its effect.
+**Found:** nothing at M0 genuinely needs to be asynchronous — the judging IS the request,
+and the trace is written inside it because ADR-0001 captures 100% of calls. A handler with
+no effect would make "the handler is idempotent, proven by delivering it twice" a test of
+nothing: re-running a no-op is trivially a no-op.
+**Resolution:** a nullable `recorded_at` on `traces`, stamped by the job. It is the honest
+name for what the job is — the follow-up ran — and the column carries the two properties
+that are painful to retrofit. Idempotency becomes a database guarantee rather than an
+application check (`SET recorded_at = now() WHERE id = ? AND recorded_at IS NULL` updates
+zero rows on a re-delivery, so no check-then-act race exists), and a dropped enqueue
+becomes findable. M2's metering and M5's annotation sampling are lines added to this
+handler rather than a queue introduced then.
+
+### P5 — the queue's schema is installed by `packages/db`, and the queue NAMES live there too
+**Expected:** "pg-boss installs its own schema as the migrator" — a rule, with no home.
+**Found:** two things follow from it that the plan did not spell out. Creating a queue is
+also a schema act (pg-boss's queues are rows the maintenance path reads and, with
+`partition: true`, whole tables), so queue creation belongs on the migrator's side of the
+line as much as the tables do. And the app role needs grants on a schema no migration in our
+stream wrote.
+**Resolution:** `packages/db/src/queue.ts` owns `QUEUE_SCHEMA`, the `QUEUES` list, and
+`installQueueSchema()`; `db:migrate` calls it after the Drizzle stream. `apps/api/src/jobs`
+owns the queue's BEHAVIOUR and creates nothing. The grants are applied on every migrate, as
+`GRANT ... ON ALL TABLES` *and* `ALTER DEFAULT PRIVILEGES` — neither alone is sufficient,
+because default privileges cannot reach backwards to the tables just installed and a
+one-time grant cannot reach forward to the ones the next pg-boss upgrade writes. Both halves
+are asserted, the second by having the migrator create a table and the app role read it.
+
+Two things were checked against Postgres rather than assumed, because getting either wrong
+would have failed a day later rather than at boot: the app role can run pg-boss's
+supervision without any DDL (`persistQueueStats` is off by default, so the daily
+`queue_stats` partitions the installer pre-creates are never extended at runtime), and the
+app role genuinely cannot `CREATE TABLE` or `ALTER TABLE` in `pgboss` — which is the whole
+arrangement, since pg-boss defaults to installing its own schema at first start.
+
+### P5 — `job_attempts` has a natural composite key, and no new id prefix
+**Expected:** unstated. P3 amended CONVENTIONS twice to add prefixes (`org_`, `aud_`) for
+tables that needed a primary key.
+**Found:** this one does not. Its key is `(job_id, attempt)` — the queue's own id for the
+job, plus a counter that is ours — and inventing a `job_` ULID would add a surrogate over a
+natural key that is already unique and already meaningful.
+**Resolution:** kept as a composite key, and the key is load-bearing rather than tidy: the
+attempt number is computed *inside* the INSERT (`coalesce(max(attempt), 0) + 1`), so two
+concurrent deliveries of one job contend on the primary key and one is refused, where a
+read-then-write would have let both write attempt 2. Concurrent delivery is not something
+M0 produces — one worker, batch size one — but it is what an expired heartbeat produces
+later. Storing the queue's job id is not a breach of ADR-0017: that ADR bans reading
+pg-boss's *schema* to answer "how many times has this run", and a correlation key is the
+thing that stops us needing to.
+
+### P5 — `ErrorReport.requestId` became optional, for the one case that has no request
+**Expected:** `requestId: string`, required — "the join to its logs and spans".
+**Found:** pg-boss reports maintenance and polling failures on an event emitter, on its own
+timer, with no request behind them. Without a subscriber they are unhandled and silent; with
+one, there is no honest id to tag them with.
+**Resolution:** optional, with the single case named in the type. Inventing an id there
+would produce a tag that joins to nothing, which is worse than an absent one. Everything on
+the request path still passes it — the type was never what kept that true.
+
+### P5 — a failing ledger write must not replace the error that caused it
+**Trigger:** writing the test for "the work fails mid-job".
+**Found:** the ledger lives in the same database as the work, so whatever broke the work can
+break the attempt-closing write too — and the first version let that second failure
+propagate. The caller would have been told "the update blew up" while the real cause was
+never reported and never written down, which is the failure mode where a bad hour looks
+like a different bug entirely.
+**Resolution:** the close is attempted, logged if it fails, and swallowed; the cause is what
+propagates and what reaches the error reporter. Asserted with a handle whose `update` fails
+only for `traces`, so the job's work fails while the ledger still works — which is the case
+that has to be recordable.
 
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**

@@ -11,7 +11,7 @@ export const noopErrorReporter: ErrorReporter = {
 
 export type RecordedReport = {
   error: unknown
-  requestId: string
+  requestId?: string | undefined
   context?: Record<string, unknown>
 }
 

@@ -9,6 +9,8 @@ import {
 } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { AppError } from '../errors.ts'
+import type { JobQueue } from '../jobs/index.ts'
+import { RECORD_EVALUATION } from '../jobs/index.ts'
 import type { CallLogger, JudgeCallOutcome, ModelGateway } from '../llm/index.ts'
 import type { AuthenticatedKey } from '../middleware/api-key-auth.ts'
 import type { Clock } from '../ports/clock.ts'
@@ -36,6 +38,7 @@ export type EvaluateDeps = {
   clock: Clock
   gateway: ModelGateway
   errorReporter: ErrorReporter
+  jobs: JobQueue
 }
 
 export type EvaluateCommand = {
@@ -232,6 +235,45 @@ const infrastructureFailure = (results: JudgeResult[]) => {
   return errored.find((outcome) => outcome.retryAfterSeconds !== undefined) ?? errored[0]
 }
 
+/**
+ * Hand the evaluation's follow-up to the queue — exactly one job, carrying the two ids
+ * that make its log lines findable (ADR-0010).
+ *
+ * **A failed enqueue does not fail the request**, and the reason is that the request has
+ * already succeeded: the judges ran, the trace is committed, and the caller is owed the
+ * verdicts. Refusing them because a background job could not be queued would turn a
+ * degraded dependency into an outage on the one path that was working.
+ *
+ * The cost is a job that is dropped rather than deferred, and it is bounded rather than
+ * hidden: the work is idempotent and its completion is a nullable column, so an evaluation
+ * whose follow-up never ran is `traces.recorded_at IS NULL` — a query, and the shape a
+ * reconciliation sweep takes when M2's metering makes one worth writing.
+ *
+ * The alternative is enqueueing inside the trace's transaction, which is the right answer
+ * and is currently unavailable: see the P5 deviation record on pg-boss's transactional
+ * `send` under Bun's Postgres driver.
+ */
+const enqueueFollowUp = async (
+  deps: EvaluateDeps,
+  traceId: TraceId,
+  requestId: string,
+  logger: EvaluationLogger,
+): Promise<void> => {
+  try {
+    const jobId = await deps.jobs.send(RECORD_EVALUATION, {
+      trace_id: traceId,
+      request_id: requestId,
+    })
+    logger.info({ queue: RECORD_EVALUATION, job_id: jobId }, 'job enqueued')
+  } catch (error) {
+    logger.error({ queue: RECORD_EVALUATION, err: error }, 'job could not be enqueued')
+    deps.errorReporter.report(error, {
+      requestId,
+      context: { queue: RECORD_EVALUATION, trace_id: traceId },
+    })
+  }
+}
+
 export const evaluate = async (
   deps: EvaluateDeps,
   command: EvaluateCommand,
@@ -303,6 +345,8 @@ export const evaluate = async (
     },
     toVerdictRows(results, evaluation),
   )
+
+  await enqueueFollowUp(deps, traceId, command.requestId, logger)
 
   const evaluated = results.filter(({ outcome }) => outcome.status === 'evaluated')
   const scoringConfigured = panel.judges.filter((judge) => judge.polarity !== 'does_not_score')

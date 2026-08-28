@@ -77,6 +77,7 @@ export const createEvaluateRoutes = () => {
         clock: deps.clock,
         gateway: deps.modelGateway,
         errorReporter: deps.errorReporter,
+        jobs: deps.jobs,
       },
       {
         panelId: panel_id,

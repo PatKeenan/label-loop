@@ -1,6 +1,7 @@
 import type { VerdictStatus } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
+import { and, eq, isNull } from 'drizzle-orm'
 
 /**
  * Writing the trace, which happens on 100% of evaluations because the judge call flows
@@ -62,4 +63,26 @@ export const insertTrace = async (
       .insert(schema.traceVerdicts)
       .values(verdicts.map((verdict) => ({ ...verdict, traceId: trace.id })))
   })
+}
+
+/**
+ * Stamp the trace as having had its asynchronous follow-up run, and say whether this call
+ * is the one that did it.
+ *
+ * `WHERE recorded_at IS NULL` is the entire idempotency mechanism (CONVENTIONS.md "Async &
+ * jobs"). A re-delivered job updates zero rows and gets `false` back, so the second
+ * delivery is a no-op because POSTGRES made it one — not because the handler read a flag
+ * and then decided, which is the version with a race in it.
+ */
+export const markTraceRecorded = async (
+  db: Database,
+  traceId: string,
+  recordedAt: Date,
+): Promise<boolean> => {
+  const rows = await db
+    .update(schema.traces)
+    .set({ recordedAt })
+    .where(and(eq(schema.traces.id, traceId), isNull(schema.traces.recordedAt)))
+    .returning({ id: schema.traces.id })
+  return rows.length > 0
 }

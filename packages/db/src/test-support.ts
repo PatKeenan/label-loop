@@ -32,3 +32,20 @@ export const errnoOf = (error: unknown): string | undefined =>
   typeof error === 'object' && error !== null && 'errno' in error
     ? String((error as { errno: unknown }).errno)
     : undefined
+
+/**
+ * Run a statement that is expected to be REFUSED, and hand back the error to assert on.
+ *
+ * Awaiting a Bun `SQL` query object twice executes it twice and leaks a pooled connection
+ * per extra run, so `expect(query).rejects` is the wrong shape here — one execution, one
+ * result. Asserting the error rather than merely that it threw is the point: a bare "it
+ * threw" also passes on a typo in the statement, which leaves the guarantee untested.
+ */
+export const rejection = async (query: Promise<unknown>): Promise<unknown> => {
+  const outcome = await query.then(
+    () => ({ threw: false, error: undefined as unknown }),
+    (error: unknown) => ({ threw: true, error }),
+  )
+  if (!outcome.threw) throw new Error('expected the statement to be rejected, but it succeeded')
+  return outcome.error
+}

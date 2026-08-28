@@ -133,3 +133,11 @@ export const verdictStatus = pgEnum('verdict_status', [
   'failed',
   'error',
 ])
+
+/**
+ * The lifecycle of ONE delivery attempt of a job, recorded in a table we own rather than
+ * read out of the queue's internals (ADR-0017). `started` is written before the work
+ * begins, so an attempt that never reaches an end state is visible as exactly that — a
+ * worker that died mid-job — which a "record the outcome afterwards" design cannot show.
+ */
+export const jobAttemptStatus = pgEnum('job_attempt_status', ['started', 'completed', 'failed'])

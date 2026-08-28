@@ -2,6 +2,7 @@ import { relations } from 'drizzle-orm'
 import { apiKeys } from './api-keys.ts'
 import { auditEvents } from './audit-events.ts'
 import { account, session, user } from './auth.ts'
+import { jobAttempts } from './job-attempts.ts'
 import { judgeVersions } from './judge-versions.ts'
 import { judges } from './judges.ts'
 import { orgMembers } from './org-members.ts'
@@ -114,6 +115,12 @@ export const tracesRelations = relations(traces, ({ one, many }) => ({
   }),
   apiKey: one(apiKeys, { fields: [traces.apiKeyId], references: [apiKeys.id] }),
   verdicts: many(traceVerdicts),
+  /** Every delivery of this evaluation's follow-up job, ours rather than the queue's (ADR-0017). */
+  jobAttempts: many(jobAttempts),
+}))
+
+export const jobAttemptsRelations = relations(jobAttempts, ({ one }) => ({
+  trace: one(traces, { fields: [jobAttempts.traceId], references: [traces.id] }),
 }))
 
 export const traceVerdictsRelations = relations(traceVerdicts, ({ one }) => ({

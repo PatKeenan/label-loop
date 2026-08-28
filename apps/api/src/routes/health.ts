@@ -60,6 +60,20 @@ const checkMigrations = async (deps: AppDeps): Promise<Check> => {
   }
 }
 
+/**
+ * A queue nobody can reach means every evaluation's follow-up work silently piles up while
+ * the API answers perfectly. That is exactly the shape of failure readiness exists to
+ * catch: nothing is broken from the caller's side, and traffic should still go elsewhere.
+ */
+const checkQueue = async (deps: AppDeps): Promise<Check> => {
+  try {
+    await withTimeout(deps.jobs.check(), 'queue')
+    return { name: 'queue', ok: true }
+  } catch (error) {
+    return { name: 'queue', ok: false, detail: describeFailure(error) }
+  }
+}
+
 export const createHealthRoutes = () => {
   const startedAt = Date.now()
 
@@ -78,9 +92,12 @@ export const createHealthRoutes = () => {
     })
     .get('/readyz', async (c) => {
       const deps = c.var.deps
-      // Concurrently: the probe's latency is the slowest check, not their sum. P5 adds the
-      // queue to this list.
-      const checks = await Promise.all([checkDatabase(deps), checkMigrations(deps)])
+      // Concurrently: the probe's latency is the slowest check, not their sum.
+      const checks = await Promise.all([
+        checkDatabase(deps),
+        checkMigrations(deps),
+        checkQueue(deps),
+      ])
       const ready = checks.every((check) => check.ok)
 
       if (!ready) {

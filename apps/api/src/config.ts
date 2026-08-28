@@ -49,6 +49,15 @@ const configSchema = z
       ),
     /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+    /**
+     * The queue's own pool, which is a second claim on the same `max_connections`.
+     *
+     * pg-boss polls on a timer and holds a connection while it fetches, so it gets its own
+     * pool rather than competing with the request path for the one above — and a small
+     * default, because the number that matters to Postgres is the sum of the two times the
+     * number of replicas.
+     */
+    QUEUE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(2),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return

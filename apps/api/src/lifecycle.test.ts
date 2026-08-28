@@ -22,14 +22,35 @@ const harness = () => {
       order.push('flushed')
     },
   }
-  return { order, server, errorReporter, logger: silentLogger, stopArg: () => stopArg }
+  const jobs = {
+    stop: async () => {
+      // Stand in for a job still running when the signal arrived.
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      order.push('jobs drained')
+    },
+  }
+  return { order, server, jobs, errorReporter, logger: silentLogger, stopArg: () => stopArg }
 }
 
 describe('gracefulShutdown', () => {
-  test('drains in-flight requests BEFORE flushing telemetry', async () => {
+  test('drains requests, THEN jobs, THEN flushes telemetry', async () => {
+    /**
+     * The order is the whole design. Jobs drain AFTER requests because a request still
+     * being served can enqueue one — stopping the queue first would drop work created by
+     * the very requests the first step exists to protect. Telemetry flushes after both,
+     * because a job that failed while draining is exactly the report you want to keep.
+     */
     const h = harness()
     await gracefulShutdown('SIGTERM', h)
-    expect(h.order).toEqual(['drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
+  })
+
+  test('a process with no queue still shuts down cleanly', async () => {
+    // `jobs` is optional so the tests that are about ordering need no pg-boss, and so a
+    // future process that only serves HTTP is not forced to invent one.
+    const { jobs: _unused, ...withoutJobs } = harness()
+    await gracefulShutdown('SIGTERM', withoutJobs)
+    expect(withoutJobs.order).toEqual(['drained', 'flushed'])
   })
 
   test('asks the server to drain, not to sever connections', async () => {
@@ -48,7 +69,7 @@ describe('installSignalHandlers', () => {
     process.emit('SIGTERM')
     await Bun.sleep(60)
     dispose()
-    expect(h.order).toEqual(['drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
     expect(codes).toEqual([0])
   })
 
@@ -61,7 +82,7 @@ describe('installSignalHandlers', () => {
     process.emit('SIGTERM')
     await Bun.sleep(60)
     dispose()
-    expect(h.order).toEqual(['drained', 'flushed'])
+    expect(h.order).toEqual(['drained', 'jobs drained', 'flushed'])
     expect(codes).toEqual([0])
   })
 
