@@ -24,10 +24,21 @@ import type { Config } from './config.ts'
  * schema; better-auth only reads and writes rows.
  */
 
-export type AuthConfig = Pick<Config, 'NODE_ENV'> & {
-  /** Where the console runs, for cookie and redirect scoping. Supplied at P7. */
-  baseURL?: string
-}
+export type AuthConfig = Pick<Config, 'BETTER_AUTH_SECRET' | 'API_BASE_URL' | 'WEB_ORIGIN'>
+
+/**
+ * Where better-auth's own endpoints are mounted, and the one string the API and the
+ * console must agree on. It lives under `/internal` rather than at better-auth's `/api/auth`
+ * default because the split that matters here is by AUDIENCE, not by library: everything
+ * under `/internal` belongs to the console and answers to a session cookie, and everything
+ * under `/v1` belongs to a customer's agent and answers to a panel-scoped API key. Signing
+ * in is a console act, so it lives with the console.
+ *
+ * Exported rather than inlined because `routes/internal/index.ts` mounts the handler at this
+ * path and better-auth is told the same value; a mismatch between the two would produce
+ * 404s from a library that looks correctly configured.
+ */
+export const AUTH_BASE_PATH = '/internal/auth'
 
 export const createAuth = (db: Database, config: AuthConfig) =>
   betterAuth({
@@ -43,10 +54,20 @@ export const createAuth = (db: Database, config: AuthConfig) =>
       },
     }),
     emailAndPassword: { enabled: true },
+    basePath: AUTH_BASE_PATH,
+    // The origin a BROWSER uses to reach this API, which is what cookie scope is computed
+    // from. Stated rather than inferred from request headers: inference is a `Host` header
+    // away from being attacker-controlled, and a boot-time value is one an operator can be
+    // told they got wrong.
+    baseURL: config.API_BASE_URL,
+    secret: config.BETTER_AUTH_SECRET,
+    // The console is served from a different ORIGIN than the API in development (Vite on
+    // 5173, the API on 3000), so better-auth has to be told that origin is ours. It is an
+    // allow-list of one; CORS in `routes/internal/index.ts` is told the same value.
+    trustedOrigins: [config.WEB_ORIGIN],
     // The app role holds no DDL. If this were ever true, better-auth would try to create
     // tables at runtime and fail — loudly, but at the wrong time and in the wrong process.
     disableMigrations: true,
-    ...(config.baseURL === undefined ? {} : { baseURL: config.baseURL }),
   })
 
 export type Auth = ReturnType<typeof createAuth>

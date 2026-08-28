@@ -405,18 +405,18 @@ Files: `apps/web/` (Vite + React + TanStack Router + TanStack Query),
 `apps/api/src/routes/internal/{index,traces}.ts`,
 `apps/api/src/middleware/session.ts`, `apps/api/src/auth.ts` (mount better-auth handler).
 
-- [ ] better-auth mounted with a **credential (email+password) provider only**; no social
+- [x] better-auth mounted with a **credential (email+password) provider only**; no social
       providers (they need secrets and would break zero-secret boot — ADR-0008/0009)
-- [ ] Session middleware guards `routes/internal/*`; API keys grant **no** console access
+- [x] Session middleware guards `routes/internal/*`; API keys grant **no** console access
       and sessions grant no `/v1` access — the two paths never cross
-- [ ] `apps/web` calls the internal surface via Hono RPC (`hc<AppType>`) into TanStack
+- [x] `apps/web` calls the internal surface via Hono RPC (`hc<AppType>`) into TanStack
       Query — no codegen, types flow end to end
-- [ ] Unstyled: log in → the trace list renders rows created by P4. `mockups/tokens.css`
+- [x] Unstyled: log in → the trace list renders rows created by P4. `mockups/tokens.css`
       does **not** enter `apps/web` (CLAUDE.md Phase C)
-- [ ] `errors/error-map.ts` maps **every** contracts `ErrorCode` through an exhaustive
+- [x] `errors/error-map.ts` maps **every** contracts `ErrorCode` through an exhaustive
       switch (copy, fatal vs recoverable, retry affordance); adding a code to contracts
       fails `bun run typecheck` until the UI decides — proven once, then reverted
-- [ ] The seed org's user credentials are in `.env.example` / README so a fresh clone can log in
+- [x] The seed org's user credentials are in `.env.example` / README so a fresh clone can log in
 
 **Automated verification**
 ```bash
@@ -1407,6 +1407,186 @@ list. The guard would not have noticed the documentation going missing.
 with a comment saying a new field goes there in the same commit. The deeper fix — deriving
 the list from the Zod schema's own keys so it cannot drift — is real and is not P6 work;
 noted here so it is not lost.
+
+### P7 — the internal surface has no contract in `packages/contracts`, on purpose
+**Expected:** CONVENTIONS.md "Repo shape" says "No endpoint ships without a contract
+here", and P7 ships three endpoints.
+**Found:** the internal surface's contract is Hono's RPC types, inferred from the route
+handlers and imported by `apps/web` as `AppType`. Nothing was added to `packages/contracts`.
+**Why it matters:** the rule and the plan's own "no codegen, types flow end to end"
+checkbox pull in opposite directions, and one of them had to give.
+**Decision:** the rule stands for `/v1` and is deliberately not applied to `/internal`.
+`/v1` is a versioned public contract with an OpenAPI document and a promise that a breaking
+change means a new version — a hand-written schema is what makes that promise checkable.
+`/internal` has exactly one consumer, which ships in the same repository and is compiled in
+the same command. Inference is the STRONGER guarantee there: a hand-written schema can
+drift from its handler, and an inferred type cannot. The route file's response shape is the
+contract, and `apps/web` fails to compile the moment it changes. Reconsider at M4, when the
+console grows past a handful of reads and a schema starts buying documentation rather than
+just duplication.
+
+### P7 — three new config variables, one of which is a secret with a committed default
+**Expected:** the plan named no configuration for P7.
+**Found:** `BETTER_AUTH_SECRET`, `API_BASE_URL` and `WEB_ORIGIN` were all needed.
+better-auth signs session material with a secret and computes cookie scope from a base URL,
+and the console is a different origin from the API, so CORS and better-auth's trusted-origin
+list both need to be told which one.
+**Why it matters:** ADR-0009 says a fresh clone boots with zero secrets, and a session
+signing key is unambiguously a secret.
+**Resolution:** it gets a default, and the default is REJECTED in production — reusing the
+exact mechanism ADR-0011's `APP_VERSION`/`GIT_SHA` placeholders already use, so there is one
+way this codebase says "fine locally, fatal in production" rather than two. The default value
+is `localdev-not-a-secret`: zero-entropy and self-describing, for the same reason the dev API
+key is, which is the lesson P2's gitleaks failure taught. Zero-secret boot survives intact;
+what would not have survived is a production deploy signing every session with a key
+published on GitHub.
+
+### P7 — `z.url()` accepts `localhost:5173`, and its origin is the string `"null"`
+**Expected:** `z.url()` is enough to validate an origin.
+**Found:** `new URL('localhost:5173')` parses happily — scheme `localhost`, path `5173` —
+so the single most likely typo for an origin passes validation, and `.origin` on it is the
+literal string `"null"`. A CORS header of `null` matches no browser origin.
+**Why it matters:** the failure would have surfaced as "the console cannot log in" with a
+correct-looking configuration file, which is exactly the runtime surprise boot-time
+validation exists to prevent.
+**Resolution:** an `isHttpUrl` refinement on `API_BASE_URL` and `WEB_ORIGIN`, and
+`OTEL_EXPORTER_OTLP_ENDPOINT`'s existing inline version was folded into the same helper so
+there is one rule rather than three copies. `WEB_ORIGIN` is additionally normalised through
+`new URL(url).origin`, because a trailing slash or a path is compared byte for byte against
+an `Origin` header that carries neither.
+
+### P7 — better-auth is mounted under `/internal/auth`, and registration order is load-bearing
+**Expected:** "better-auth mounted", with no path named.
+**Found:** it is mounted at `/internal/auth`, not the library's `/api/auth` default, and its
+handler is registered BEFORE `sessionAuth()` inside `createInternalRoutes`.
+**Why it matters:** the path is a judgement call — the split that matters in this codebase
+is by AUDIENCE (`/v1` answers to an API key, `/internal` to a cookie), not by which library
+serves a route, so signing in belongs with the console. The ORDER is not a judgement call at
+all: put the guard first and every login 401s, which presents as a broken password rather
+than as a routing bug. Everything registered after the guard is protected by construction,
+which is the property worth having — forgetting to guard a new console route is not an
+option that exists, because there is nowhere else to add one.
+**Recorded because** a future reader will be tempted to tidy the file's ordering.
+`index.test.ts` has a test named for exactly this ("signing in does not require being
+signed in") so the tidy-up fails rather than ships.
+
+### P7 — the session guard resolves ORG MEMBERSHIP, not just identity
+**Expected:** "session middleware guards `routes/internal/*`".
+**Found:** `sessionAuth` resolves the session AND the caller's `org_members` row, and puts
+the org id on the context. A member of no organisation gets `403`, not `401`.
+**Why it matters:** every internal route is tenant-scoped, and the classic way a console
+leaks across tenants is a handler that authenticates and then forgets to filter. Resolving
+the org in the guard means `listTraces(db, orgId, limit)` takes the org as a required
+parameter, so there is no way to call it that reads across tenants — the rule is enforced by
+a function signature rather than by remembering a `where` clause. The `403` is a separate
+decision: the caller has already proved who they are, so there is no longer a secret to
+keep by being vague, and a plain answer is what makes the state fixable.
+`findMembership` deliberately reads ONE membership even though the schema allows several
+(ADR-0014) — M0 has no org switcher, so the read is narrowed rather than the schema.
+
+### P7 — `GET /internal/me` exists, and the plan named only the trace list
+**Expected:** `routes/internal/{index,traces}.ts`.
+**Found:** a third route, `me.ts`.
+**Why:** better-auth's client can already answer "who is signed in", but not "which org am
+I looking at and what is my role" — membership is ours, not better-auth's (ADR-0014). One
+endpoint returning both is what lets the console decide between the login form and the trace
+list without joining two sources, and it is what makes the guard's org resolution visible in
+the browser rather than only in a test.
+
+### P7 — the seeded console user's id is NOT deterministic, and D-L still holds
+**Expected:** D-L — "seed data is deterministic, including the dev API key".
+**Found:** the console user is created by calling better-auth's own `signUpEmail` in
+process, so its id is whatever better-auth mints, and idempotency is a check-then-act on
+the email rather than an `ON CONFLICT`.
+**Why it matters:** D-L's reason for determinism is that the README's commands must work
+verbatim on a fresh clone. That reason is fully served by a fixed EMAIL and PASSWORD, which
+is what a reader types; the user id is never quoted anywhere. What determinism would have
+cost is much larger: writing the `user` and `account` rows by hand means this repository
+encoding better-auth's password-hashing algorithm, which would drift silently the first time
+the library changed it, and would mean the seeded credential was never verified by the code
+path that later checks it. ADR-0008 already carves better-auth's ids out of the prefixed-ULID
+convention for the same reason. A check-then-act is safe here and nowhere else: a seed script
+is single-writer by construction.
+
+### P7 — `queryClient.clear()` left the signed-out user's rows on screen
+**Expected:** signing out returns the console to the login form.
+**Found:** it did not. The sign-out request succeeded, the cookie was cleared, and
+`/internal/me` refetched and returned `401` — and the table of the previous user's traces
+stayed rendered. `queryClient.clear()` empties the cache WITHOUT notifying the observers
+watching it, so the components kept rendering their last result until something unrelated
+re-rendered them. A page reload showed the login form correctly, which is what made it clear
+the server side was right and the bug was client-side.
+**Why it matters:** it is a data-exposure bug wearing a UI bug's clothes — one user's rows
+visible after another has signed out — and it was invisible to every automated check in this
+phase. It was found by the plan's own manual verification step, which is the argument for
+keeping that step.
+**Resolution:** `await queryClient.invalidateQueries()` (refetches what is on screen, so
+`me` answers "nobody" and the login form returns) followed by
+`removeQueries({ type: 'inactive' })` (drops what is not on screen, so the previous user's
+rows are not waiting in memory to be shown for a frame when a view next mounts).
+
+### P7 — `apps/api` gained an `exports` map, so the console can import its type
+**Expected:** `hc<AppType>` in `apps/web`, with no mention of how `AppType` gets there.
+**Found:** `apps/api/package.json` now declares `"./app"` and `"./auth"`, and `apps/web`
+depends on `@labelloop/api`. Two consequences worth naming. First, the import is
+`import type`, so nothing server-side reaches the bundle — verified by grepping the built
+output for `drizzle`, `pg-boss`, `pino` and `opentelemetry`, all zero. Second, `createApp`
+now returns the CHAINED value of `app.route(...)` rather than `app`: `route()` merges the
+mounted routes into the return TYPE, and writing those as separate statements throws that
+type away and silently makes every console call untyped. The runtime behaviour is identical,
+which is precisely why the chain needs the comment it now carries.
+`"./auth"` is exported for a second consumer: `scripts/seed.ts`, which creates the console
+account through better-auth rather than by hand.
+
+### P7 — the console's build joined CI, which the plan put at P8
+**Expected:** P8 extends CI with image builds.
+**Found:** a `bun run --cwd apps/web build` step was added to the quality job now.
+**Why:** typechecking `apps/web` is not the same as building it — Vite resolves imports,
+inlines `import.meta.env` and bundles for a browser, and each of those fails on code `tsc`
+is content with. P7 is the phase in which the thing being built started existing, so
+deferring its build check to P8 would leave a gap CI could not see through. Same shape as
+P3's Postgres service, which moved forward for the same reason.
+
+### P7 — `apps/web` has unit tests and no DOM test runner
+**Expected:** `bun test apps/web`.
+**Found:** the only tests are over `errors/error-map.ts` — that every code has copy, and
+that the retry affordance the UI offers agrees with what `ERROR_SPEC` promised. There is no
+component test, because rendering React under Bun needs a DOM implementation, which is a new
+dependency for a two-route unstyled app whose components will be replaced wholesale at M4.
+**Why it is honest rather than a gap:** the structural guarantee P7 is actually claiming —
+that a new error code breaks the frontend build — is a TYPE guarantee, proven by adding
+`PROOF_ONLY_TEMPORARY` to the taxonomy, watching `apps/web`'s typecheck fail on the
+exhaustive switch, and reverting. The behaviour these components have that is worth
+asserting is the session boundary, and that is asserted end to end against a real
+better-auth and a real Postgres in `apps/api/src/routes/internal/index.test.ts`. A DOM
+runner becomes worth its weight at M4, with designed screens and real interaction.
+
+### P7 — P3's id-ordering test was not flaky, it was wrong, and CI proved it
+**Expected:** the pre-existing intermittent failure recorded at P4 ("observed failing once
+in a full run and passing on re-run") would keep being a nuisance until someone looked at it.
+**Found:** it is not intermittent in the usual sense. `packages/db/src/schema/generated-ids.test.ts`
+asserted `a < b` for two back-to-back inserts, and a ULID orders by its 10-character
+millisecond timestamp with 16 RANDOM characters after it — `newId` draws a fresh suffix per
+call rather than incrementing the previous one, since this project does not use the ULID
+spec's optional monotonic mode. So for two ids minted inside the same millisecond the
+comparison is a coin flip: **measured at 49.9% wrong over 10,000 pairs.** The test passed
+locally only because two Drizzle round-trips usually straddle a millisecond boundary; a CI
+runner is faster, and it failed there on the first push of the P7 branch.
+**Why it matters:** the P4 note understated it as a rare flake, which is what let it sit.
+Re-running CI would have gone green on a second coin flip and laundered a false assertion
+into a "known flaky test" — the failure mode where a suite slowly stops meaning anything.
+**Resolution:** split into two tests. One crosses the millisecond boundary deliberately and
+asserts ordering, which is the granularity the guarantee is actually stated at; the other
+mints two ids in the SAME millisecond and asserts they are distinct and share a timestamp
+prefix, explicitly NOT that they are ordered. Verified by running it 25 times.
+**Not a weakening.** The property the design rests on — `traces` appending to its index
+rather than scattering page splits across it, per the comment on `id()` in `columns.ts` —
+is about a stream of inserts over time and is untouched by how two ids minted in the same
+tick compare. That comment needed no change.
+**Fixed on the P7 branch rather than its own**, at the stakeholder's direction, because it
+was blocking PR #17. Editing another phase's assertion is normally out of scope — which is
+exactly why P4 declined to do it silently — so the decision was put to the stakeholder with
+the measurement rather than taken unilaterally a second time.
 
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**

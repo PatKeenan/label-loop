@@ -74,6 +74,12 @@ jobs:
         run: bun run db:seed
       - name: Test
         run: bun run test
+      - name: Build the console
+        # Typechecking apps/web is not the same as building it: Vite resolves imports,
+        # inlines `import.meta.env`, and bundles for a browser, and each of those can fail
+        # on code `tsc` is perfectly happy with. The plan put every build in P8; this one
+        # moved forward because P7 is where the app it builds started existing.
+        run: bun run --cwd apps/web build
 
   commit-messages:
     name: conventional commits (main)

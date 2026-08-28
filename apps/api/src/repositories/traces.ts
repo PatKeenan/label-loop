@@ -1,7 +1,7 @@
 import type { VerdictStatus } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 
 /**
  * Writing the trace, which happens on 100% of evaluations because the judge call flows
@@ -86,3 +86,51 @@ export const markTraceRecorded = async (
     .returning({ id: schema.traces.id })
   return rows.length > 0
 }
+
+/**
+ * One row of the console's trace list. Deliberately NOT the whole trace: the list renders
+ * a table, and `artifact` is unbounded caller text while `context` is an arbitrary object,
+ * so selecting them would put the largest two columns on the page that reads the most rows.
+ * The detail view (M4) fetches those by id, for the one trace being looked at.
+ */
+export type TraceListItem = {
+  id: string
+  panelId: string
+  passed: boolean
+  score: number
+  complete: boolean
+  threshold: number
+  /** Null until the follow-up job has run; the console shows it as "pending". */
+  recordedAt: Date | null
+  createdAt: Date
+}
+
+/**
+ * The console's trace list, newest first, for ONE org.
+ *
+ * `orgId` is a required parameter rather than an optional filter, which is the whole point:
+ * there is no way to call this function that reads across tenants, so the tenancy rule is
+ * enforced by the signature instead of by remembering to add a `where`. The middleware that
+ * resolves the org is the only thing that supplies it.
+ */
+export const listTraces = async (
+  db: Database,
+  orgId: string,
+  limit: number,
+): Promise<TraceListItem[]> =>
+  db
+    .select({
+      id: schema.traces.id,
+      panelId: schema.traces.panelId,
+      passed: schema.traces.passed,
+      score: schema.traces.score,
+      complete: schema.traces.complete,
+      threshold: schema.traces.threshold,
+      recordedAt: schema.traces.recordedAt,
+      createdAt: schema.traces.createdAt,
+    })
+    .from(schema.traces)
+    .where(eq(schema.traces.orgId, orgId))
+    // Matches `traces_org_created_idx`, so the list stays an index scan as the table grows.
+    .orderBy(desc(schema.traces.createdAt))
+    .limit(limit)

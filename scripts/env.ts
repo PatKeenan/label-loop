@@ -12,3 +12,9 @@ export const requireEnv = (name: string): string => {
   }
   return value
 }
+
+/** Same rule, but for a value the environment is allowed to omit. */
+export const envOr = (name: string, fallback: string): string => {
+  const value = process.env[name]
+  return value === undefined || value === '' ? fallback : value
+}

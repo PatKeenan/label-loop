@@ -15,8 +15,9 @@ generates the artifact; we judge it.
 > real Postgres — schema, two-role privilege split, append-only audit guarantee — runs a
 > panel of judges through `POST /v1/panels/{panel_id}/evaluate` on a deterministic **fake**
 > provider, records every call as a `tr_` trace, follows it with an idempotent queue job,
-> and emits a span per request and per judge call into a self-hosted Grafana stack (see
-> [Running it locally](#running-it-locally)). Still to come at M0: the console, and the
+> and emits a span per request and per judge call into a self-hosted Grafana stack. An
+> unstyled console logs in against a real session and lists those traces over a typed RPC
+> surface (see [Running it locally](#running-it-locally)). Still to come at M0: the
 > one-command `docker compose up` walkthrough that boots all of it together.
 
 ---
@@ -213,8 +214,14 @@ serialization. Adding a code requires a change to that package — never an inli
 
 The web console imports the same enum and maps every code through an exhaustive switch to
 its user-facing treatment. A new backend error code therefore *fails the frontend
-typecheck* until someone decides what the user should see. Front-and-back error handling
-stays in sync structurally rather than by remembering.
+typecheck* until someone decides what the user should see — verified by adding a code and
+watching `bun run typecheck` break in `apps/web`, then removing it. Front-and-back error
+handling stays in sync structurally rather than by remembering.
+
+The map is where the taxonomy earns its keep. `RATE_LIMITED` and `QUOTA_EXCEEDED` are both
+`429` and mean opposite things — wait a moment, versus retrying will never help — so a
+console that branched on the HTTP status would tell a customer who is out of quota to try
+again shortly. It branches on the code.
 
 ### REST only
 
@@ -263,6 +270,12 @@ bun run db:up && bun run db:setup
 bun run --cwd apps/api dev
 ```
 
+The console is a second process, in a second terminal:
+
+```bash
+bun run --cwd apps/web dev
+```
+
 `db:setup` is three steps with three privilege levels, and they are separate on purpose:
 
 | Command | Connects as | Does |
@@ -287,6 +300,48 @@ never an in-process transport:
 bun run --cwd apps/api dev | bunx pino-pretty
 ```
 
+### The console
+
+`http://localhost:5173`, and `bun run db:seed` prints the login:
+
+```
+demo@labelloop.test / localdev-password
+```
+
+It is deliberately unstyled. What it is here to prove is the plumbing — a real
+credential sign-in against a self-hosted better-auth, a real httpOnly session cookie, and a
+trace list fetched over a typed RPC surface — and design would only obscure that. The
+mockups' `tokens.css` does **not** enter this app: mockups are disposable spec for the
+designed screens at M5, never scaffold.
+
+The trace list renders rows that `POST /v1/…/evaluate` wrote. Nothing in the console can
+create one; it is the read half of the loop. The **Follow-up** column is `pending` until
+the queue job of the previous phase has stamped the row, which is the asynchronous half
+made visible.
+
+Two things worth trying, because they are the property the console exists to demonstrate:
+
+```bash
+curl -si localhost:3000/internal/traces -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" | head -1
+```
+
+That is the seeded key, valid and active, and it works on `/v1` — see
+[The seeded panel](#the-seeded-panel). On the console it is a `401`. Now the other
+direction: sign in for a cookie, then present it where it does not belong.
+
+```bash
+curl -s -c cookies.txt -X POST localhost:3000/internal/auth/sign-in/email -H 'content-type: application/json' -d '{"email":"demo@labelloop.test","password":"localdev-password"}' > /dev/null && curl -si -b cookies.txt -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate -H 'content-type: application/json' -d '{"artifact":"x"}' | head -1
+```
+
+Neither middleware can see the other's credential — the API-key path reads only
+`Authorization`, the session path reads only the cookie — so the separation is structural
+rather than a rule someone has to remember. Both directions are asserted in
+`apps/api/src/routes/internal/index.test.ts`.
+
+The API and the console are two **origins** in development (5173 and 3000) but one
+**site** — cookies ignore ports — so the session cookie rides along on `SameSite=Lax` and
+only CORS has to be told, against an exact allow-list of one (`WEB_ORIGIN`).
+
 ### What is served today
 
 | Endpoint | What it is for |
@@ -298,6 +353,9 @@ bun run --cwd apps/api dev | bunx pino-pretty
 | `GET /v1/docs` | Interactive Scalar reference — the integration surface, since there is no SDK |
 | `GET /_demo/rate-limited` | A synthetic `429` with `Retry-After`, for inspecting the error envelope |
 | `GET /_demo/boom` | A synthetic `500`, showing that an unexpected error leaks nothing |
+| `POST /internal/auth/*` | better-auth's own endpoints — sign up, sign in, sign out. The console's, never a customer's |
+| `GET /internal/me` | Who the session belongs to, which org it resolved to, and their role |
+| `GET /internal/traces` | The console's trace list, scoped to the session's org. Typed by RPC inference, not by a schema |
 
 Every response is enveloped and carries a `request_id`, on success and on failure alike:
 

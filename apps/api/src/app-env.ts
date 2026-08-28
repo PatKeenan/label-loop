@@ -1,10 +1,12 @@
 import type { Database } from '@labelloop/db'
 import type { Tracer } from '@opentelemetry/api'
 import type { PinoLogger } from 'hono-pino'
+import type { Auth } from './auth.ts'
 import type { Config } from './config.ts'
 import type { JobQueue } from './jobs/index.ts'
 import type { ModelGateway } from './llm/index.ts'
 import type { AuthenticatedKey } from './middleware/api-key-auth.ts'
+import type { AuthenticatedSession } from './middleware/session.ts'
 import type { Clock } from './ports/clock.ts'
 import type { ErrorReporter } from './ports/error-reporter.ts'
 
@@ -13,7 +15,8 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  * (`createApp(deps)`) and never imported ad hoc. No DI container: the seam is the value,
  * not the framework (CONVENTIONS.md "Dependency seams").
  *
- * P4 adds `modelGateway`; P5 adds `jobs`; P6 adds `tracer`. The list growing is the point
+ * P4 adds `modelGateway`; P5 adds `jobs`; P6 adds `tracer`; P7 adds `auth`. The list
+ * growing is the point
  * — each addition is a thing tests can substitute rather than monkey-patch.
  */
 export type AppDeps = {
@@ -43,6 +46,15 @@ export type AppDeps = {
    * one from a provider it owns, or the API's no-op default when it does not care.
    */
   tracer: Tracer
+  /**
+   * better-auth (ADR-0008), configured at P3 and mounted here at P7. Injected rather than
+   * constructed inside the app because it holds the database handle and the signing secret
+   * — so a test that wants a different secret, or no database, passes a different one.
+   *
+   * It serves the CONSOLE only. Nothing on the `/v1` path touches it, and nothing it issues
+   * grants access there (CONVENTIONS.md "Keys & auth").
+   */
+  auth: Auth
 }
 
 /** The Hono environment: what lives on `c.var` for every request. */
@@ -56,5 +68,11 @@ export type AppEnv = {
      * routes behind that middleware — which is every route that reads it.
      */
     apiKey: AuthenticatedKey
+    /**
+     * Who is signed in, and which org they may see. Set by `sessionAuth`, so it is present
+     * only on routes behind that middleware — which is every internal route except
+     * better-auth's own, since signing in cannot require being signed in.
+     */
+    session: AuthenticatedSession
   }
 }

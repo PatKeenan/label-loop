@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "description": "The gateway and platform API: public /v1 REST plus the internal console surface.",
+  "exports": {
+    "./app": "./src/app.ts",
+    "./auth": "./src/auth.ts"
+  },
   "scripts": {
     "dev": "bun --env-file=../../.env --hot src/server.ts",
     "start": "bun --env-file=../../.env src/server.ts",

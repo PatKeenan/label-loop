@@ -2,6 +2,7 @@ import { createDatabase } from '@labelloop/db'
 import { createErrorReporter } from './adapters/sentry-error-reporter.ts'
 import { systemClock } from './adapters/system-clock.ts'
 import { createApp } from './app.ts'
+import { createAuth } from './auth.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createPgBossQueue, registerJobHandlers } from './jobs/index.ts'
 import { installSignalHandlers } from './lifecycle.ts'
@@ -82,6 +83,11 @@ const jobs = createPgBossQueue({
 await jobs.start()
 await registerJobHandlers(jobs, { db, clock: systemClock, errorReporter, logger })
 
+// Configured at P3, mounted here at P7 (plan D-E). It takes the APP role's handle like
+// everything else: better-auth reads and writes its four tables and, with
+// `disableMigrations`, cannot reach for DDL it does not have the privilege to issue.
+const auth = createAuth(db, config)
+
 const app = createApp({
   config,
   clock: systemClock,
@@ -90,6 +96,7 @@ const app = createApp({
   modelGateway,
   jobs,
   tracer: telemetry.tracer,
+  auth,
 })
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })

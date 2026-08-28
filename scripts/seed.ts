@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
+import { createAuth } from '@labelloop/api/auth'
 import { type IdPrefix, isId } from '@labelloop/contracts'
-import { createDatabase } from '@labelloop/db'
-import { requireEnv } from './env.ts'
+import { createDatabase, type Database } from '@labelloop/db'
+import { envOr, requireEnv } from './env.ts'
 
 /**
  * Deterministic seed data (plan D-L). Every id and the dev API key are FIXED rather than
@@ -51,6 +52,17 @@ const API_KEY = seedId('key_', 'SEEDKEY')
  * key — to a scanner and to a reader — which is the lesson the P2 gitleaks failure taught.
  */
 const DEV_KEY_PLAINTEXT = `llk_test_${'0'.repeat(64)}`
+
+/**
+ * The console login, so a fresh clone can sign in (P7). Same reasoning as the key above and
+ * one extra constraint: nothing here ever sees a password HASH. The account is created by
+ * calling better-auth's own sign-up endpoint in-process, so hashing stays entirely inside
+ * the library that owns it (ADR-0008) — writing a hash by hand would mean this script
+ * encoding better-auth's algorithm, and drifting silently the day it changes.
+ */
+const SEED_USER_EMAIL = envOr('SEED_USER_EMAIL', 'demo@labelloop.test')
+const SEED_USER_PASSWORD = envOr('SEED_USER_PASSWORD', 'localdev-password')
+const SEED_USER_NAME = 'Demo Operator'
 
 const sha256 = (value: string) => new Bun.CryptoHasher('sha256').update(value).digest('hex')
 
@@ -161,6 +173,49 @@ const seed = async () => {
     )
     ON CONFLICT (id) DO NOTHING
   `
+
+  await seedConsoleUser(client)
+}
+
+/**
+ * The console account, and the one part of the seed that goes through the application
+ * rather than straight to SQL.
+ *
+ * better-auth mints its own ids and owns its own password hashing (ADR-0008), so this asks
+ * IT to create the account instead of writing `user` and `account` rows by hand. That costs
+ * determinism — the user id is whatever better-auth generates — and buys the thing that
+ * matters more: the credential this seed creates is verified by exactly the code path that
+ * will later check it, so "the README's login works" is proven rather than hoped.
+ *
+ * Idempotency is therefore a check-then-act rather than an `ON CONFLICT`, which is
+ * acceptable here and nowhere else: a seed script is single-writer by construction.
+ */
+const seedConsoleUser = async (client: Database['client']) => {
+  const existing = await client`SELECT id FROM "user" WHERE email = ${SEED_USER_EMAIL} LIMIT 1`
+  const found = existing[0] as { id: string } | undefined
+
+  const userId =
+    found?.id ??
+    (
+      await createAuth(db, {
+        // The seed signs up locally and never issues a cookie anyone keeps, so these three
+        // only have to be well-formed. The API's own boot-time config is what governs the
+        // running server's.
+        BETTER_AUTH_SECRET: 'seed-script-not-a-secret',
+        API_BASE_URL: 'http://localhost:3000',
+        WEB_ORIGIN: 'http://localhost:5173',
+      }).api.signUpEmail({
+        body: { email: SEED_USER_EMAIL, password: SEED_USER_PASSWORD, name: SEED_USER_NAME },
+      })
+    ).user.id
+
+  // Membership, not a role on `user` (ADR-0014). `admin` because this is the account that
+  // owns the demo org; the column is unenforced until M4.
+  await client`
+    INSERT INTO org_members (org_id, user_id, role)
+    VALUES (${ORG}, ${userId}, 'admin'::org_role)
+    ON CONFLICT (org_id, user_id) DO NOTHING
+  `
 }
 
 await seed()
@@ -174,3 +229,4 @@ console.log(`seeded org ${ORG}`)
 console.log(`  panel  ${PANEL} (issue-triage), live @ ${PANEL_VERSION}, threshold 0.5`)
 console.log(`  judges ${JUDGES.map((judge) => judge.slug).join(', ')}`)
 console.log(`  key    ${DEV_KEY_PLAINTEXT}`)
+console.log(`  login  ${SEED_USER_EMAIL} / ${SEED_USER_PASSWORD} (the console)`)
