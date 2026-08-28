@@ -5,6 +5,13 @@ name: pr-title
 # title is therefore linting the thing that actually ships; the branch's individual
 # commits are scratch work and never reach main.
 #
+# It lints the title WITH the " (#123)" GitHub appends on squash, because that suffix is
+# part of what lands and it is six or seven characters long. Linting the bare title let a
+# 96-character one through this gate and then fail `conventional commits (main)` at 102 —
+# a gap that swallowed every title between 95 and 100 characters, and that stayed invisible
+# until a title happened to be long enough to find it (PR #17). Reconstructing the string
+# rather than subtracting a magic number keeps this correct if header-max-length changes.
+#
 # This workflow used to also REWRITE bot titles to satisfy commitlint's subject-case rule.
 # That could not work: Dependabot reasserts its own title on every rebase, and every push
 # to main triggers a rebase, so our rewrite and Dependabot's undo fought each other and
@@ -38,8 +45,9 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
-      - name: Lint the PR title
+      - name: Lint the PR title, as it will land on main
         env:
           # Via env, never inlined into the script: a PR title is attacker-controlled text.
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s\n' "$PR_TITLE" | bunx commitlint --verbose
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: printf '%s (#%s)\n' "$PR_TITLE" "$PR_NUMBER" | bunx commitlint --verbose
