@@ -4,10 +4,10 @@
 # lockfile and the workspace manifests live above this directory.
 #
 # Two things about this image are worth knowing before reading it. It contains no
-# `node_modules` at all — Vite bundles everything the browser needs, and the server that
-# hands out the result uses only Bun's built-ins. And its API URL is baked in at BUILD
-# time, not read at runtime, because that is what Vite does with `import.meta.env`: an
-# image built for one origin cannot be re-pointed at another by an environment variable.
+# `node_modules` and no JavaScript runtime at all — Vite bundles everything the browser
+# needs, and nginx hands out the result. And its API URL is baked in at BUILD time, not read
+# at runtime, because that is what Vite does with `import.meta.env`: an image built for one
+# origin cannot be re-pointed at another by an environment variable.
 
 ARG BUN_VERSION=1.4.0
 
@@ -52,10 +52,15 @@ ENV VITE_API_URL=${VITE_API_URL}
 RUN bun run --cwd apps/web build
 
 # ---------------------------------------------------------------------------------------
-# Stage 3 — runtime. The bundle, the forty-line server, and nothing else.
+# Stage 3 — runtime. nginx and the bundle, and nothing else.
+#
+# The UNPRIVILEGED image rather than plain `nginx`, and the reason is a property worth not
+# losing: the official image's master process runs as root, and everything else this repo
+# ships runs as an unprivileged user. This variant is the same nginx from the same
+# maintainers, listening on 8080 as uid 101 — which also happens to be the port the compose
+# file already publishes from.
 # ---------------------------------------------------------------------------------------
-FROM oven/bun:${BUN_VERSION}-alpine AS runtime
-WORKDIR /app
+FROM nginxinc/nginx-unprivileged:1.29.3-alpine AS runtime
 
 # Carried for parity with the API image (ADR-0011). Nothing in a static bundle reads them;
 # they are here so `docker inspect` can answer "which build is this" for both images the
@@ -65,10 +70,9 @@ ARG GIT_SHA=unknown
 ENV APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA}
 
-COPY --from=build /app/apps/web/dist ./dist
-COPY apps/web/serve.ts ./serve.ts
-
-USER bun
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+# Replaces the image's default server block. Everything specific to this app is in there.
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
 
@@ -78,4 +82,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=6 \
   CMD wget --no-verbose --spider --tries=1 http://127.0.0.1:8080/ || exit 1
 
-CMD ["bun", "run", "serve.ts"]
+# The base image's own entrypoint and CMD start nginx in the foreground. Restating them here
+# would be a second copy of something the maintainers already get right.

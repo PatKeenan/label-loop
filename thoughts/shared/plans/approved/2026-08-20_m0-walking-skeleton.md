@@ -1797,7 +1797,7 @@ exactly the design, since `config.ts` cannot even express the other two. A separ
 would have made the split look like a property of two different builds instead of a
 property of two different grants. It also removes a second image to keep in step.
 
-### P8 — the console is served by forty lines of Bun, not by nginx
+### P8 — the console is served by forty lines of Bun, not by nginx *(SUPERSEDED — see below)*
 **Expected:** the plan says `apps/web/Dockerfile` and stops there.
 **Found:** a static bundle needs something to serve it, and the obvious answer — nginx or
 Caddy — is a technology STACK_DECISIONS does not have a row for, which CLAUDE.md makes a
@@ -1918,3 +1918,29 @@ that variable itself before the config function runs, so the broken and the corr
 indistinguishable from in there. A guard reading the env file directly *would* fire, but it
 would also fire on `bun run build`, which produces the correct bundle — a false positive on
 the one command everyone uses. Removing the trap beat guarding it.
+
+### P8 — REVERSED by the stakeholder: the console is served by nginx after all
+**Expected:** the deviation above proposed a hand-written Bun static server, flagged the
+choice as stakeholder-owned, and offered to swap it.
+**Found:** review turned up the fact that decided it — `serve.ts` did not compress. It sent
+all 433,385 bytes of the bundle to every visitor where nginx sends 137,155, a 3.2x
+difference on the largest asset the product serves, obtained from one directive. That is
+the one place nginx's defaults were a concrete advantage rather than a reputational one.
+The stakeholder made the call on 2026-08-28.
+**Why it matters:** compression was closable in Bun in a few lines, and that is exactly
+what made it the right moment to stop — the question had become how much of nginx we
+intended to reimplement, and a static file server is not the part of this system worth
+demonstrating from scratch. ADR-0012's hand-rolling principle is unaffected: it is about
+the resilience primitives inside `llm/`, which ARE the artifact, and the two were never the
+same argument.
+**Resolution:** the runtime stage is `nginxinc/nginx-unprivileged:1.29.3-alpine` (the
+unprivileged variant, because plain `nginx` runs its master as root and nothing else here
+does) with a committed `apps/web/nginx.conf`; `serve.ts` is deleted. Recorded properly this
+time rather than only as a deviation: **STACK_DECISIONS D14 and ADR-0020**. Every behaviour
+was re-verified rather than assumed — SPA fallback, a real `404` on a missing fingerprinted
+asset, `immutable` vs `no-store` caching, `nosniff` — and nginx additionally answers a
+path-traversal attempt with a `400` where the Bun server returned the SPA shell. The image
+now carries no JavaScript runtime at all.
+**What this says about the first call:** flagging it rather than deciding it silently was
+right, but the flag should have carried the compression measurement. The gap was one `curl
+-I` away and would have made the decision obvious a day earlier.

@@ -1,6 +1,6 @@
 # STACK_DECISIONS.md — technology choices (stakeholder-owned)
 
-REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
+REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
 once made, gets a short ADR recording the why. Options listed are starting points, not
 a menu limit.
 
@@ -19,6 +19,7 @@ a menu limit.
 | D11 | Monorepo tooling | — | **DECIDED: Bun workspaces** (replaces pnpm, tsx, and the test runner). | 0004 |
 | D12 | CI platform | — | **DECIDED: GitHub Actions.** | — |
 | D13 | Release automation | semantic-release, changesets, manual `gh release` | **DECIDED: release-please.** Version + CHANGELOG derived from conventional commits; a standing Release PR is the ship gesture. No hand-written version numbers. | 0011 |
+| D14 | Static asset serving (console container) | hand-rolled Bun file server, nginx, Caddy | **DECIDED 2026-08-28: nginx** (`nginx-unprivileged`, pinned), config committed at `apps/web/nginx.conf`. Static files only — never a reverse proxy in front of the API, so the real CORS and cross-origin cookie stay under test. | 0020 |
 
 Decided-by-stakeholder already (not open):
 - Load testing: **k6** (explicit requirement)
