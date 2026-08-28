@@ -1,0 +1,24 @@
+{
+  "name": "@labelloop/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Schema and forward-only migrations. Owns the two-role privilege split and the append-only audit guarantee.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun --env-file=../../.env test",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@labelloop/contracts": "workspace:*",
+    "better-auth": "^1.7.1",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
+  }
+}

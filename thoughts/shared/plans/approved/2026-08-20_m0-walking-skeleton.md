@@ -220,7 +220,7 @@ Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,ju
 > Recorded here because the previous phase proved the failure mode: a fresh session
 > starting from this file should not have to rediscover it.
 
-- [ ] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable, carrying the
+- [x] Tables: `orgs`, `panels` (`pnl_`), `panel_versions` (`pnv_`, immutable, carrying the
       pass `threshold` and an aggregation `policy` — only `weighted_threshold` exists,
       but the column keeps the decision explicit rather than implied), `judges` (`jud_`),
       `judge_versions` (`jdv_`, immutable, carrying
@@ -228,45 +228,47 @@ Files: `packages/db/src/schema/{orgs,org-members,panels,panel-versions,judges,ju
       SHA-256 hash + last-4 + status + **`name`**, scoped to one panel),
       `traces` (`tr_` PK, a `request_id` column — ADR-0010, **and the `key_` that
       authorised the call**), `audit_events`
-- [ ] `traces` records the `key_` that authorised the call. Metering has to be
+- [x] `traces` records the `key_` that authorised the call. Metering has to be
       attributable at org → panel → judge → **key** granularity, and an aggregate cannot
       be decomposed after the fact. Without the key on the trace, "what does Client A owe
       for this panel" is unanswerable, and so is the org's revenue split. Cheap column
       now; a backfill against production traffic later
-- [ ] `api_keys.name` is a human label, and it is not cosmetic: ADR-0003 already gives
+- [x] `api_keys.name` is a human label, and it is not cosmetic: ADR-0003 already gives
       every key its own rate limit and usage meter, which is exactly the mechanism that
       lets two external clients share one panel with independent activity and revocation
       (the B2B case). Without a name you cannot tell Client A's key from Client B's, and
       key management breaks the moment there is more than one
-- [ ] `required` on a judge version: a `skipped`, `failed` or `error` on a required judge
+- [x] `required` on a judge version: a `skipped`, `failed` or `error` on a required judge
       fails the panel outright, whatever the score says. Ships as a column at M0 and stays
       unenforced until the fan-out exists — the same "cheap column now, painful migration
       later" reasoning as `org_members.role` (D-P)
-- [ ] **`polarity` is three-valued** — answering `true` `passes` | `fails` | `does_not_score`
+- [x] **`polarity` is three-valued** — answering `true` `passes` | `fails` | `does_not_score`
       — not a boolean. `is-missing-repro: true` is a failure, `on-brand: true` is a
       success, `is-bug: true` is a label with no valence. Modelling it as a boolean makes
       the panel score uncomputable and silently wrong (ADR-0019). A CHECK constraint or a
       Postgres enum, not application-level validation
-- [ ] better-auth's tables generated into the same forward-only migration stream
-- [ ] `org_members` (`org_id`, `user_id`, `role`) created at M0 — the role column ships
+- [x] better-auth's tables generated into the same forward-only migration stream
+- [x] `org_members` (`org_id`, `user_id`, `role`) created at M0 — the role column ships
       here, **present but unenforced**, not on the `user` table (D-P)
-- [ ] `migrator` and `app` roles created idempotently; app role holds DML only, never DDL
-- [ ] `ALTER DEFAULT PRIVILEGES` grants the app role on future tables automatically
-- [ ] `REVOKE UPDATE, DELETE ON audit_events FROM app` — the single deliberate exception
-- [ ] **Test: Postgres itself rejects the app role's UPDATE and DELETE on `audit_events`**
-- [ ] Forward-only: no `down` migrations exist anywhere; migrate runs as the migrator
-- [ ] Seed script creates org + panel + one judge + immutable `pnv_`/`jdv_` v1 + a deterministic
+- [x] `migrator` and `app` roles created idempotently; app role holds DML only, never DDL
+- [x] `ALTER DEFAULT PRIVILEGES` grants the app role on future tables automatically
+- [x] `REVOKE UPDATE, DELETE ON audit_events FROM app` — the single deliberate exception
+- [x] **Test: Postgres itself rejects the app role's UPDATE and DELETE on `audit_events`**
+- [x] Forward-only: no `down` migrations exist anywhere; migrate runs as the migrator
+- [x] Seed script creates org + panel + one judge + immutable `pnv_`/`jdv_` v1 + a deterministic
       `llk_test_` dev key, printing the plaintext **exactly once** (ADR-0003), so the
       README curl works verbatim
-- [ ] `/readyz` checks DB reachable **and** migrations current (queue added at P5)
+- [x] `/readyz` checks DB reachable **and** migrations current (queue added at P5)
 
 **Automated verification**
 ```bash
-docker compose -f infra/docker-compose.yml up -d postgres && bun run db:migrate && bun test packages/db
+bun run db:up && bun run db:bootstrap && bun run db:migrate && bun test ./packages/db
 ```
 ```bash
-bun run db:seed && curl -s localhost:3000/readyz
+bun run db:seed && bun run --cwd apps/api dev & sleep 4; curl -s localhost:3000/readyz | jq
 ```
+*(`db:bootstrap` was not in the plan's original command — see the deviation record. `bun run
+db:setup` runs all three.)*
 **Manual verification**
 - `psql` as the app role: `ALTER TABLE traces ...` and `UPDATE audit_events ...` both fail.
 - Re-running migrate is a no-op; re-running seed is idempotent or refuses cleanly.
@@ -757,6 +759,261 @@ by a test asserting the returned reporter *is* the no-op object). And it initial
 **Watch item for P6:** Sentry's SDK can register its own OpenTelemetry tracer provider.
 P6 installs the manual one. If they collide, the fallback is dropping the SDK for a
 direct envelope POST, and this entry gets the outcome appended.
+
+### P3 — two tables the plan's list did not name
+**Expected:** the tables in P3's checkbox — orgs, panels, panel_versions, judges,
+judge_versions, api_keys, traces, audit_events, org_members, plus better-auth's.
+**Found:** two of them cannot express what the merged contract already promises.
+(1) `panel_versions` pins "weights, threshold and judge set" per ADR-0019, but the
+threshold lives on the panel version while the weights live on `judge_versions` — with no
+membership row, a `pnv_` would fix the bar while the judges underneath it moved, and a
+score timeline would silently span a configuration change anyway. That is the exact
+failure immutable versions exist to prevent. (2) ADR-0003 says every trace FKs to a `jdv_`,
+but a panel run fans out across many judge versions while the trace itself can reference
+only one panel version, so there is nowhere to put the per-judge answer.
+**Resolution:** `panel_version_judges` (the pinned judge set) and `trace_verdicts` (one
+row per judge per evaluation). `trace_verdicts` is also what the reconciliation doc's §4
+requires — metering decomposable at judge granularity "from the first migration", because
+each judge has its own model and graduates independently, so cost moves per judge — and
+what an SME annotation attaches to at M5. An aggregate cannot be decomposed after the fact.
+
+### P3 — `created_by` was missing entirely, and it is ledger evidence
+**Expected:** the plan's table list; nothing in it mentions authorship.
+**Found:** raised by the stakeholder — nothing in the schema recorded who created a panel,
+a judge, a version or a key. `audit_events` has `actor_type`/`actor_id`, but it ships empty
+with M8 populating it, so anything created before then would have unrecoverable authorship.
+**Resolution:** `created_by` on `panels`, `panel_versions`, `judges`, `judge_versions` and
+`api_keys` (migration `0003_authorship`), referencing `user` with `ON DELETE RESTRICT`.
+
+The reference target was the real question, and the cascade rules settle it: `org_members`
+cascades from both `orgs` and `user`, so authorship pointed at membership would vanish the
+moment someone leaves the org. `RESTRICT` rather than `SET NULL` follows from the product
+decision the same conversation produced — a contributor keeps earning from a judge still in
+use after they leave, so authorship is evidence the contribution ledger pays against, and
+`SET NULL` would destroy a payout claim through a cascade rule rather than through a
+decision. The policy RESTRICT forces is anonymise-don't-delete, which is also what erasure
+actually requires. Full rationale in the decisions log (2026-08-24T04:05Z, both entries);
+PRODUCT.md's parked open question on royalties after departure is now resolved there.
+
+A "judge ownership group" was proposed and rejected — not as a bad instinct, but as the
+wrong shape: attribution is already specified as mechanical (a share of the
+reliability-weighted annotations in a shipped training set), so the set of people a judge
+owes is derivable from an event log rather than declared, and a declared roster cannot
+express proportional shares without becoming a hand-maintained copy of what the log
+computes. The test applied was this project's usual one — what would it store today that
+cannot be reconstructed later — and the answer for a group is nothing.
+
+**Worth keeping:** the question exposed that `created_by` and "who gets paid" are different
+things, and that fusing them into one ownership concept is what made the group look
+necessary. Contribution is permanent and per person; stewardship — who maintains a judge
+now and gets its drift alert — transfers when someone leaves and is M4+ work that does not
+exist yet.
+
+### P3 — primary keys are generated at insert, and stay prefixed ULIDs
+**Expected:** the plan said nothing; the first implementation had every caller pass
+`newId('pnl_')` explicitly.
+**Found:** raised by the stakeholder as an open question — should ids default at insert,
+and should they be UUIDs while we are at it. The two halves have different answers.
+**Resolution:** `$defaultFn(() => newId(prefix))` on the eight tables with prefixed primary
+keys, and prefixed ULIDs retained. Full rationale in the decisions log (2026-08-24T03:10Z);
+the short version is that automatic generation costs nothing (`drizzle-kit generate`
+confirms it emits no SQL and needs no migration) while UUIDs would cost the public contract,
+the self-describing prefix the branded types key off, and the time-ordering that keeps
+`traces` appending to its index rather than scattering page splits under load.
+
+`$defaultFn` was chosen over a database-side default because a database default cannot be
+known until the INSERT returns, and an evaluation wants its `tr_` id at the *start* so the
+logger can bind it before the row exists. A default that is only a default keeps both doors
+open, and `generated-ids.test.ts` asserts an explicit id is still accepted alongside the
+generated case.
+
+Two costs recorded rather than left to be discovered: raw SQL bypasses the default entirely
+(the seed does, deliberately, since D-L needs fixed ids), so the per-table prefix CHECK
+constraint stays the real guarantee; and `newId()` falls back to `Date.now()` rather than
+the injected `Clock` (D-H), accepted because nothing asserts on an id's timestamp.
+
+### P3 — foreign keys were declared, Drizzle `relations()` were not
+**Expected:** the schema was complete once every FK was declared with `.references()`.
+**Found:** caught in review by the stakeholder. `.references()` and `relations()` are
+different things and only the first had been done. The constraints were real and enforced
+— that half was right — but Drizzle's relational query API was left in a trap: passing
+`schema` to `drizzle()` makes `db.query.<table>` exist and a plain `findMany()` work, so
+the API looks configured, and the first `with:` fails at RUNTIME with
+`undefined is not an object (evaluating 'relation.referencedTable')`. TypeScript does not
+catch it, so the discovery point would have been P4's first repository.
+**Resolution:** `schema/relations.ts` declares every edge, including better-auth's tables
+so the graph has no hole for P7 to trip over. One file rather than co-located, because the
+graph is circular — orgs reference panels and panels reference orgs — and co-locating would
+mean a module cycle per edge.
+
+`schema/relations.test.ts` then *traverses* every edge against a real database rather than
+asserting the relation objects exist, since "the object exists" was already true while this
+was broken. The most valuable of those traversals is the pinned judge set: a `pnv_` loads
+its judges through `panel_version_judges`, not through `panels.judges`, which is a
+different and much less useful question.
+
+No migration changed — relations are a TypeScript-level declaration and emit no SQL,
+confirmed by a `drizzle-kit generate` reporting "nothing to migrate". CI gained a seed step,
+because the traversal test reads the seeded fixtures and seeding in CI also puts the seed
+itself under test.
+
+**Worth keeping:** this is the second bug in this phase whose defining property was that it
+looked fine. The first was a CHECK constraint that passed on NULL. Both were found by
+asking the system to *do* the thing rather than by reading the declaration, which is an
+argument about where the tests in this repo should aim.
+
+### P3 — two id prefixes were missing, and CONVENTIONS was amended
+**Expected:** the prefix list in CONVENTIONS covers every table.
+**Found:** `orgs` and `audit_events` both need a primary key and neither had a prefix.
+The list was written when the domain model was smaller and never revisited.
+**Resolution:** `org_` and `aud_` added to `ID_PREFIXES` and to CONVENTIONS' id rule, with
+a note that better-auth's tables are the one exception — it mints its own ids, so
+`org_members.user_id` holds an unprefixed one. The alternative, an unprefixed UUID for
+orgs alone, would have been a worse inconsistency than the amendment. The contracts test
+asserting "the prefix set is exactly the one CONVENTIONS names" caught this immediately,
+which is the test doing its job.
+
+### P3 — the live version: first no pointer, then a pointer (reversed on review)
+**Expected:** nothing in the plan either way.
+**Found, first pass:** a `panels.current_version_id` FK is a circular foreign key —
+resolvable in Postgres, awkward in Drizzle — so it was dropped, and the live version
+resolved as the highest `version`. The cost was stated at the time: pinning an older
+version and drafting a new one both become unrepresentable.
+**Reversed 2026-08-24 after the stakeholder pushed on exactly that cost**, and they were
+right: "highest wins" means rollback is not an operation that exists, and a new version
+starts judging live traffic the moment it is inserted. Version order is history;
+activation is a separate fact.
+**Resolution:** `panels.current_version_id` (migration `0004_panel_activation`), with a
+**composite** foreign key `(id, current_version_id) → panel_versions(panel_id, id)` — a
+plain reference to `panel_versions.id` would let a panel activate a *different* panel's
+version, which the database would accept and which would be wrong in every other sense.
+Judges deliberately get no pointer: the serving path resolves judge versions through
+`panel_version_judges`, so a judge's own "current version" is never consulted, and an
+unreferenced judge version is already a draft by construction.
+
+Three things were verified against Postgres rather than assumed: a null pointer is allowed
+(composite keys are unenforced under MATCH SIMPLE when any column is null), a panel can
+activate its own version, and it cannot activate another panel's. The circular module
+import resolves cleanly in Drizzle because `.references()` and the extra-config callback
+are both lazy — but the *type* inference does not, and the resulting TS7024 surfaces in
+`apps/api` rather than in `packages/db`, so the extra-config return type is annotated
+explicitly. drizzle-kit also emitted the foreign key BEFORE the unique constraint it
+references, which Postgres rejects; `0004` is hand-ordered, which is a reminder that a
+generated migration is a draft.
+
+**Cost accepted:** a pointer that slides leaves no trace. Where "highest wins" made a
+rollback visible as a new row, this is invisible unless the move is audited — an M8
+`audit_events` obligation rather than a nice-to-have.
+
+### P3 — immutable versions became a database guarantee, widening the plan's exception
+**Expected:** the plan called `audit_events` "the single deliberate exception" to the
+blanket DML grant, and the first pass followed that literally.
+**Found:** raised as an open judgement call and settled by the stakeholder. Immutability of
+`pnv_` and `jdv_` rested on two conventions — no code updated them, and there was no
+mutable column to update — and `UPDATE panel_versions SET threshold = 0.9` would have been
+accepted by the app role. The eval story is agreement plotted per immutable version, so a
+threshold that can move underneath a timeline makes every timeline suspect.
+**Resolution:** `REVOKE UPDATE, DELETE` on both tables (migration `0005_immutable_versions`),
+with tests that try. Two objections were tested rather than argued: cascading deletes still
+work, because a referential action runs with the table owner's privileges rather than the
+caller's; and activation still works, because the pointer from `0004` lives on `panels`.
+The second is not luck — an `is_current` flag on the version row would have been
+incompatible with this migration, so the two decisions compose only because of how the
+first was shaped.
+
+### P3 — the compose file publishes 5433, and the collision was silent
+**Expected:** Postgres on the standard 5432.
+**Found:** this machine runs Homebrew `postgresql@14`, and the failure mode is nastier
+than a bind error. The container binds `*:5432` while the local install binds
+`127.0.0.1:5432`; the loopback address wins, so nothing conflicts and nothing errors —
+`bun run db:migrate` simply connected to the WRONG DATABASE and failed on a missing role.
+**Resolution:** the published port defaults to 5433, overridable via `POSTGRES_PORT`. A
+developer machine very often already has a Postgres, and from P8 the API reaches it over
+the compose network anyway, so the published port is a developer convenience rather than
+part of the running system. CI keeps 5432, where a runner has nothing else on it.
+
+### P3 — `db:bootstrap` is a third command the plan did not anticipate
+**Expected:** `bun run db:migrate` after `compose up`.
+**Found:** `CREATE ROLE` needs a superuser, so role creation cannot live inside the
+migration stream without handing the migrator superuser credentials — which would make the
+whole migrator/app split decorative.
+**Resolution:** three commands with three privilege levels, which is the honest shape.
+`db:bootstrap` (superuser, `sql/0000_roles.sql`, creates the roles), `db:migrate`
+(migrator, DDL), and the app role that only ever does DML. `db:setup` chains all three.
+The superuser connection appears in exactly one script and is absent from the API's config
+schema entirely, so a running API cannot express a credential that could alter its schema.
+Passwords are read out of the connection strings rather than from two more variables, so
+`0000_roles.sql` holds no credential and rotation is a re-run.
+
+### P3 — a CHECK constraint passed on NULL, and a test caught it
+**Expected:** `(polarity <> 'does_not_score' AND weight > 0)` rejects a scoring judge with
+no weight.
+**Found:** it accepted one. `NULL > 0` evaluates to NULL rather than false, and a Postgres
+CHECK constraint **passes** when it evaluates to NULL. So the single most load-bearing
+invariant in the schema — the one ADR-0019 says makes the panel score computable — had a
+hole exactly where the value was missing, which is the case it existed to catch.
+**Resolution:** an explicit `weight IS NOT NULL` conjunct. Migration `0001` was regenerated
+rather than patched by a `0003`, because it had not shipped anywhere: forward-only applies
+to migrations that have run somewhere real, and this one had only ever touched a local
+throwaway volume that was then destroyed and rebuilt.
+**Worth keeping:** this is the argument for asserting a constraint rather than reading it.
+The SQL looked obviously correct, and three-valued logic is not something review reliably
+catches.
+
+### P3 — CI gained a Postgres service, which the plan put at P8
+**Expected:** CI extension is P8 work.
+**Found:** the two claims this phase exists to make — the append-only guarantee and the
+privilege split — are claims about what *Postgres* does. Their tests deliberately do not
+skip when no database is present, because a silently-skipped test reports green while
+proving nothing, and P0 made "CI is green" a standing invariant rather than a P8 goal.
+**Resolution:** a `postgres:18.6` service on the quality job, on the same tag compose pins,
+with bootstrap and migrate as explicit steps before `bun run test`. Small, and the
+alternative was either a red CI or a test suite that lies.
+
+### P3 — "boots with an empty environment" stopped being true, on purpose
+**Expected:** zero-secret boot (ADR-0009), which P2 encoded as a test asserting
+`loadConfig({})` succeeds.
+**Found:** `DATABASE_URL` has no sensible default. A localhost fallback would let a
+misconfigured production deploy boot successfully and talk to nothing — the precise runtime
+surprise boot-time validation exists to prevent.
+**Resolution:** the test now asserts the distinction the old one collapsed: zero required
+*secrets* is not zero required *configuration*. A connection string is not a secret —
+compose supplies it, `.env.example` carries a working local one — but it must be stated.
+The plan predicted this ("the first genuinely required variable is `DATABASE_URL` at P3");
+the P2 test simply had to be rewritten rather than deleted.
+
+### P3 — the seeded panel has four judges, not one
+**Expected:** "org + panel + one judge + immutable `pnv_`/`jdv_` v1".
+**Found:** a one-judge panel demonstrates none of what the schema was built to express.
+**Resolution:** the issue-triage panel PRODUCT.md §171 names as tenant #1 — `is-bug`,
+`is-feature`, `is-question` (all `does_not_score`) plus `needs-human` (`fails`, `required`).
+Three rows more than planned, the same code path, and it puts all three polarities and the
+veto into the seeded data rather than leaving them visible only in tests. It is also
+ADR-0019's own example of a panel that is "mostly informational judges plus perhaps one
+real gate".
+
+### P3 — better-auth's tables are hand-written and drift-tested, not CLI-generated
+**Expected:** "better-auth's tables generated into the same forward-only migration stream".
+**Found:** generating once and committing the output leaves no way to notice when a
+version bump changes the expected schema — the failure surfaces at runtime, on somebody's
+login, in whichever environment upgraded first.
+**Resolution:** the four tables are declared by hand in `schema/auth.ts`, and
+`schema/auth.test.ts` asserts them against better-auth's own `getAuthTables()`. A `bun
+update` that adds or renames a field now fails in CI, next to the migration that would
+need writing. The check immediately earned itself: `account.issuer` is a required field
+this version expects and an older schema would not have had. `disableMigrations: true` is
+set for the same reason the app role has no DDL — the library must never create its own
+tables at runtime.
+
+### P3 — one `.env` at the repo root, named explicitly by the api scripts
+**Expected:** unstated; P2's verification ran `bun run --cwd apps/api dev`.
+**Found:** Bun resolves `.env` from the working directory, so that command loaded
+`apps/api/.env` and the API crashed on a missing `DATABASE_URL` while a perfectly good
+root `.env` sat two directories up.
+**Resolution:** the api `dev` and `start` scripts pass `--env-file=../../.env`. One file
+at the root, as CONVENTIONS' exhaustive-`.env.example` rule implies, rather than a copy
+per workspace to drift. A missing file is tolerated by Bun, which is what keeps the
+container taking its configuration from compose instead.
 
 ## Decisions made
 ADR stubs were spawned at approval on 2026-08-21: **D-F → ADR-0012**, **D-Q → ADR-0013**

@@ -11,7 +11,10 @@ import type { ErrorReporter } from './ports/error-reporter.ts'
  *    Passing `true` would sever them, which is the bug this function exists to avoid.
  * 3. **Flush telemetry** — an error that caused the shutdown is exactly the one you need
  *    reported, and it is still sitting in a buffer.
- * 4. **Exit 0** — a clean exit, so the orchestrator does not record a crash loop.
+ * 4. **Close the database pool** — after draining, never before: a request still in flight
+ *    at step 2 needs its connection, and closing early would fail the very requests the
+ *    drain exists to protect.
+ * 5. **Exit 0** — a clean exit, so the orchestrator does not record a crash loop.
  *
  * P5 extends step 2 to drain in-flight *jobs* as well as requests.
  */
@@ -20,18 +23,27 @@ export type ShutdownDeps = {
   server: { stop: (closeActiveConnections?: boolean) => Promise<void> }
   errorReporter: ErrorReporter
   logger: RootLogger
+  /**
+   * Structurally the part of the database handle shutdown needs. Optional so the
+   * lifecycle tests — which are about ordering, not about Postgres — stay free of one.
+   */
+  db?: { close: () => Promise<void> }
   /** How long telemetry gets to flush before we stop waiting for it. */
   flushTimeoutMs?: number
 }
 
 export const gracefulShutdown = async (
   signal: string,
-  { server, errorReporter, logger, flushTimeoutMs = 2_000 }: ShutdownDeps,
+  { server, errorReporter, logger, db, flushTimeoutMs = 2_000 }: ShutdownDeps,
 ): Promise<void> => {
   logger.info({ signal }, 'shutdown started')
   await server.stop(false)
   logger.info({ signal }, 'in-flight requests drained')
   await errorReporter.flush(flushTimeoutMs)
+  if (db !== undefined) {
+    await db.close()
+    logger.info({ signal }, 'database pool closed')
+  }
   logger.info({ signal }, 'shutdown complete')
 }
 

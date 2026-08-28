@@ -1,0 +1,242 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { newId } from '@labelloop/contracts'
+import { appClient } from '../test-support.ts'
+
+/**
+ * The invariants that are properties of the DATA rather than of the code path that happens
+ * to write it. Each one is here because application-level validation would not survive the
+ * thing it needs to survive: a seed script, a backfill, an import job, a psql session.
+ */
+
+const db = appClient()
+
+const CHECK_VIOLATION = '23514'
+const UNIQUE_VIOLATION = '23505'
+
+const rejection = async (query: Promise<unknown>): Promise<unknown> => {
+  const outcome = await query.then(
+    () => ({ threw: false, error: undefined as unknown }),
+    (error: unknown) => ({ threw: true, error }),
+  )
+  if (!outcome.threw) throw new Error('expected the statement to be rejected, but it succeeded')
+  return outcome.error
+}
+
+const errnoOf = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && 'errno' in error
+    ? String((error as { errno: unknown }).errno)
+    : undefined
+
+const orgId = newId('org_')
+const panelId = newId('pnl_')
+const judgeId = newId('jud_')
+
+beforeAll(async () => {
+  await db`INSERT INTO orgs (id, slug, name) VALUES (${orgId}, ${orgId}, 'Constraint fixtures')`
+  await db`
+    INSERT INTO panels (id, org_id, slug, name)
+    VALUES (${panelId}, ${orgId}, 'fixtures', 'Fixtures')
+  `
+  await db`
+    INSERT INTO judges (id, panel_id, slug, name)
+    VALUES (${judgeId}, ${panelId}, 'is-fixture', 'Is fixture')
+  `
+})
+
+afterAll(async () => {
+  // orgs cascades to panels, judges and their versions.
+  await db`DELETE FROM orgs WHERE id = ${orgId}`
+  await db.close()
+})
+
+const insertJudgeVersion = (fields: {
+  version: number
+  type: 'code' | 'llm'
+  polarity: 'passes' | 'fails' | 'does_not_score'
+  weight: number | null
+  model: string | null
+}) =>
+  db`
+    INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question, model)
+    VALUES (
+      ${newId('jdv_')}, ${judgeId}, ${fields.version}, ${fields.type}::judge_type,
+      ${fields.polarity}::judge_polarity, ${fields.weight}, 'Is this a fixture?', ${fields.model}
+    )
+  `
+
+describe('polarity is three-valued, and weight has to agree with it', () => {
+  /**
+   * The single most load-bearing constraint in the schema (ADR-0019). An informational
+   * judge carries no weight because it is absent from both the numerator and the
+   * denominator; a scoring judge must carry one or the score is uncomputable. Split across
+   * two nullable columns, the invalid combinations are representable — so the check is
+   * what keeps them out.
+   */
+  test('a scoring judge with a weight is accepted', async () => {
+    await insertJudgeVersion({
+      version: 1,
+      type: 'llm',
+      polarity: 'fails',
+      weight: 0.5,
+      model: 'frontier:sonnet',
+    })
+  })
+
+  test('an informational judge with no weight is accepted', async () => {
+    await insertJudgeVersion({
+      version: 2,
+      type: 'llm',
+      polarity: 'does_not_score',
+      weight: null,
+      model: 'frontier:sonnet',
+    })
+  })
+
+  test('an informational judge WITH a weight is rejected', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 3,
+        type: 'llm',
+        polarity: 'does_not_score',
+        weight: 0.5,
+        model: 'frontier:sonnet',
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('a scoring judge WITHOUT a weight is rejected', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 4,
+        type: 'llm',
+        polarity: 'passes',
+        weight: null,
+        model: 'frontier:sonnet',
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('polarity outside the three values is not even representable', async () => {
+    const error = await rejection(
+      db`
+        INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question)
+        VALUES (${newId('jdv_')}, ${judgeId}, 5, 'code', 'maybe', 0.5, 'q')
+      `,
+    )
+    // 22P02 = invalid_text_representation: the enum rejects it before any check runs.
+    expect(errnoOf(error)).toBe('22P02')
+  })
+})
+
+describe('a judge type has to agree with whether it names a model', () => {
+  test('a code judge naming a model is rejected', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 6,
+        type: 'code',
+        polarity: 'fails',
+        weight: 0.5,
+        model: 'frontier:sonnet',
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('an llm judge naming no model is rejected', async () => {
+    const error = await rejection(
+      insertJudgeVersion({ version: 7, type: 'llm', polarity: 'fails', weight: 0.5, model: null }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('a code judge with no model is accepted', async () => {
+    await insertJudgeVersion({
+      version: 8,
+      type: 'code',
+      polarity: 'fails',
+      weight: 1,
+      model: null,
+    })
+  })
+})
+
+describe('ids carry their prefix, enforced by the database', () => {
+  test('a panel id with the wrong prefix is rejected', async () => {
+    const error = await rejection(
+      db`INSERT INTO panels (id, org_id, slug, name) VALUES (${newId('jud_')}, ${orgId}, 'x', 'X')`,
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('an id that is not a ULID at all is rejected', async () => {
+    const error = await rejection(
+      db`INSERT INTO panels (id, org_id, slug, name) VALUES ('pnl_nope', ${orgId}, 'y', 'Y')`,
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+})
+
+describe('versions are unique and monotonic per parent', () => {
+  test('two judge versions cannot share a version number', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 1,
+        type: 'llm',
+        polarity: 'fails',
+        weight: 0.5,
+        model: 'frontier:sonnet',
+      }),
+    )
+    expect(errnoOf(error)).toBe(UNIQUE_VIOLATION)
+  })
+
+  test('version zero is rejected — versions start at 1', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 0,
+        type: 'llm',
+        polarity: 'fails',
+        weight: 0.5,
+        model: 'frontier:sonnet',
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+})
+
+describe('a panel version pins its threshold, and the threshold is a share', () => {
+  test('a threshold above 1 is rejected', async () => {
+    const error = await rejection(
+      db`
+        INSERT INTO panel_versions (id, panel_id, version, threshold)
+        VALUES (${newId('pnv_')}, ${panelId}, 1, 1.5)
+      `,
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('a panel version has no mutable configuration column to update', async () => {
+    /**
+     * Immutability at M0 is structural rather than granted: there is nothing on the row to
+     * change. Every column here is written once at insert — `created_by` included, since
+     * authorship is a historical fact rather than a setting. If a future migration adds a
+     * genuinely mutable column, this test is what should make someone stop and decide
+     * deliberately rather than discover it later.
+     */
+    const rows = (await db`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'panel_versions' ORDER BY column_name
+    `) as Array<{ column_name: string }>
+    expect(rows.map((row) => row.column_name)).toEqual([
+      'aggregation_policy',
+      'created_at',
+      'created_by',
+      'id',
+      'panel_id',
+      'threshold',
+      'version',
+    ])
+  })
+})

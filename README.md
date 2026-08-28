@@ -1,6 +1,6 @@
 # LabelLoop
 
-**Classification-as-a-service with a built-in eval-to-fine-tune flywheel.**
+**Judge-as-a-service with a built-in eval-to-fine-tune flywheel.**
 
 Teams create a **panel of judges** that a subject-matter expert's judgement is distilled
 into, call it as one step inside their own agentic workflow, annotate their own real
@@ -11,11 +11,12 @@ code.
 We are one call inside someone else's loop, never the orchestration layer. Your agent
 generates the artifact; we judge it.
 
-> **Status: early.** The walking skeleton is under construction. The API boots and
-> serves its health, spec and error-taxonomy endpoints (see
-> [Running it locally](#running-it-locally)), but there is no evaluation endpoint
-> yet — that lands at M1. The one-command `docker compose up` walkthrough arrives with
-> the end of M0.
+> **Status: early.** The walking skeleton is under construction. The API boots against a
+> real Postgres, with the schema, the two-role privilege split and the append-only audit
+> guarantee in place, and serves its health, readiness, spec and error-taxonomy endpoints
+> (see [Running it locally](#running-it-locally)). There is no evaluation endpoint yet —
+> that is the next phase. The one-command `docker compose up` walkthrough arrives with the
+> end of M0.
 
 ---
 
@@ -245,12 +246,38 @@ corresponding ADR.
 
 ## Running it locally
 
-Nothing here needs a secret, an API key, or a database yet — the API boots on defaults
-(see `.env.example`, which is exhaustive and committed).
+Nothing here needs a secret. It does now need a database, so the setup is three commands:
+copy the committed `.env.example` (exhaustive, and every value in it is a working local
+default), start Postgres, then create the roles, migrate and seed.
 
 ```bash
-bun install && bun run --cwd apps/api dev
+bun install && cp .env.example .env
 ```
+
+```bash
+bun run db:up && bun run db:setup
+```
+
+```bash
+bun run --cwd apps/api dev
+```
+
+`db:setup` is three steps with three privilege levels, and they are separate on purpose:
+
+| Command | Connects as | Does |
+|---|---|---|
+| `bun run db:bootstrap` | superuser | Creates the two roles. The only step needing a superuser, and the only place that credential is used. |
+| `bun run db:migrate` | `labelloop_migrator` | Applies the forward-only migration stream. Owns the schema; issues all DDL. |
+| `bun run db:seed` | `labelloop_app` | Inserts the demo org, panel, judges and dev key. DML only — it could not alter a table if it tried. |
+
+The API connects as `labelloop_app`, which holds no DDL at all. That is not a convention
+it follows; it is a privilege it does not have, and `packages/db` has tests that prove it
+by trying.
+
+Postgres publishes on **5433**, not 5432, because a developer machine very often already
+has a Postgres and the collision is silent rather than loud — a local install binds the
+loopback address and quietly wins, so tooling connects to the wrong database and fails
+somewhere confusing. Override with `POSTGRES_PORT` if you want it elsewhere.
 
 Pipe through `pino-pretty` if you want the NDJSON readable — pretty-printing is a pipe,
 never an in-process transport:
@@ -263,7 +290,8 @@ bun run --cwd apps/api dev | bunx pino-pretty
 
 | Endpoint | What it is for |
 |---|---|
-| `GET /healthz` | Liveness, plus the version and git SHA of the running build |
+| `GET /healthz` | Liveness, plus the version and git SHA of the running build. Touches no dependency, deliberately |
+| `GET /readyz` | Readiness: is Postgres reachable, and are migrations current. `503` naming the failing check when not |
 | `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
 | `GET /v1/docs` | Interactive Scalar reference — the integration surface, since there is no SDK |
 | `GET /_demo/rate-limited` | A synthetic `429` with `Retry-After`, for inspecting the error envelope |
@@ -275,6 +303,35 @@ Every response is enveloped and carries a `request_id`, on success and on failur
 curl -s localhost:3000/healthz | jq
 curl -si localhost:3000/_demo/rate-limited | head -12
 ```
+
+The two health endpoints answer different questions, and the difference is worth seeing.
+Stop Postgres and `/readyz` goes red naming the check, while `/healthz` stays green — if
+liveness checked the database, a Postgres blip would get every container killed and
+restarted, turning a recoverable outage into a thundering herd:
+
+```bash
+docker compose -f infra/docker-compose.yml stop postgres && curl -s localhost:3000/readyz | jq
+```
+
+```bash
+docker compose -f infra/docker-compose.yml start postgres
+```
+
+### The seeded panel
+
+`bun run db:seed` creates the issue-triage panel this project runs on itself, and prints a
+fixed development API key. The key is deliberately zero-entropy and self-describing: it is
+a real credential in shape only, on a throwaway local database. Real keys are 32 random
+bytes, shown exactly once at creation and stored only as a SHA-256 hash — `api_keys` has
+no column that could hold a plaintext one.
+
+Its four judges are the reason the schema models polarity as three-valued rather than as a
+boolean. `is-bug`, `is-feature` and `is-question` are labels with no valence: they answer a
+question without passing or failing anything, so they score nothing and sit outside both
+the numerator and the denominator. `needs-human` is the one real gate — answering `true`
+*fails*, and it is `required`, so it vetoes the panel whatever the score says.
+
+There is no evaluation endpoint to point the key at yet; that lands at P4.
 
 ### Why the demo routes are not in the API docs
 

@@ -5,16 +5,18 @@
   "type": "module",
   "description": "The gateway and platform API: public /v1 REST plus the internal console surface.",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts",
+    "dev": "bun --env-file=../../.env --hot src/server.ts",
+    "start": "bun --env-file=../../.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@hono/zod-openapi": "^1.6.1",
     "@labelloop/contracts": "workspace:*",
+    "@labelloop/db": "workspace:*",
     "@scalar/hono-api-reference": "^0.11.16",
     "@sentry/bun": "^10.70.0",
+    "better-auth": "^1.7.1",
     "hono": "^4.13.3",
     "hono-pino": "^0.10.3",
     "pino": "^10.3.1",

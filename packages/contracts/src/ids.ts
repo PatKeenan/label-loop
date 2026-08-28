@@ -10,6 +10,7 @@ import { z } from '@hono/zod-openapi'
  */
 
 export const ID_PREFIXES = [
+  'org_',
   'pnl_',
   'pnv_',
   'jud_',
@@ -20,6 +21,7 @@ export const ID_PREFIXES = [
   'key_',
   'ds_',
   'ft_',
+  'aud_',
 ] as const
 
 export type IdPrefix = (typeof ID_PREFIXES)[number]
@@ -84,6 +86,7 @@ export const idSchema = <P extends IdPrefix>(prefix: P, description?: string) =>
 
 export type PrefixedId<P extends IdPrefix> = z.infer<ReturnType<typeof idSchema<P>>>
 
+export type OrgId = PrefixedId<'org_'>
 export type PanelId = PrefixedId<'pnl_'>
 export type PanelVersionId = PrefixedId<'pnv_'>
 export type JudgeVersionId = PrefixedId<'jdv_'>
@@ -94,6 +97,7 @@ export type ApiKeyId = PrefixedId<'key_'>
 export type JudgeId = PrefixedId<'jud_'>
 export type DatasetId = PrefixedId<'ds_'>
 export type FineTuneId = PrefixedId<'ft_'>
+export type AuditEventId = PrefixedId<'aud_'>
 
 /** Mint a new id. `now` is injectable so tests (and the `Clock` port) stay deterministic. */
 export const newId = <P extends IdPrefix>(prefix: P, now: number = Date.now()): PrefixedId<P> => {

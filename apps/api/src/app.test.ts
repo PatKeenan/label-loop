@@ -8,6 +8,7 @@ import { type Config, loadConfig } from './config.ts'
 import { AppError } from './errors.ts'
 import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
 import { validationHook } from './routes/public/v1/index.ts'
+import { fakeDatabase } from './testing/fake-database.ts'
 
 /**
  * The integration test builds the REAL app through its composition root and swaps only
@@ -18,6 +19,7 @@ const config: Config = loadConfig({
   LOG_LEVEL: 'silent',
   APP_VERSION: '9.9.9',
   GIT_SHA: 'deadbee',
+  DATABASE_URL: 'postgres://app:localdev@localhost:5433/labelloop',
 })
 
 let reporter: ReturnType<typeof createRecordingErrorReporter>
@@ -25,7 +27,12 @@ let app: ReturnType<typeof createApp>
 
 beforeEach(() => {
   reporter = createRecordingErrorReporter()
-  app = createApp({ config, clock: createFixedClock(), errorReporter: reporter })
+  app = createApp({
+    config,
+    clock: createFixedClock(),
+    errorReporter: reporter,
+    db: fakeDatabase(),
+  })
 })
 
 describe('/healthz', () => {
@@ -160,7 +167,12 @@ describe('contract-validation auto-mapping', () => {
       }),
       (c) => c.json({ ok: true }, 200),
     )
-    const host = createApp({ config, clock: createFixedClock(), errorReporter: reporter })
+    const host = createApp({
+      config,
+      clock: createFixedClock(),
+      errorReporter: reporter,
+      db: fakeDatabase(),
+    })
     host.route('/probe-host', probe)
     return host
   }
@@ -202,5 +214,85 @@ describe('validationHook', () => {
       expect((error as AppError).code).toBe('VALIDATION_ERROR')
       expect((error as AppError).issues).toEqual([{ path: 'body.input', message: 'Required' }])
     }
+  })
+})
+
+describe('/readyz', () => {
+  /**
+   * Readiness is a different question from liveness, and the split is what stops a
+   * database blip from becoming a restart storm: `/healthz` stays up so the container is
+   * not killed, `/readyz` goes red so traffic stops arriving.
+   */
+  const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) =>
+    createApp({
+      config,
+      clock: createFixedClock(),
+      errorReporter: reporter,
+      db: fakeDatabase(options),
+    })
+
+  test('reports ready when the database answers and migrations are current', async () => {
+    const res = await withDatabase({}).request('/readyz')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      data: { status: string; checks: Array<{ name: string; ok: boolean }> }
+      request_id: string
+    }
+    expect(body.data.status).toBe('ready')
+    expect(body.data.checks).toEqual([
+      { name: 'database', ok: true },
+      { name: 'migrations', ok: true },
+    ])
+    expect(requestIdSchema.safeParse(body.request_id).success).toBe(true)
+  })
+
+  test('an unreachable database is a 503 that NAMES the failing check', async () => {
+    const res = await withDatabase({ failing: new Error('connection refused') }).request('/readyz')
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as {
+      data: { status: string; checks: Array<{ name: string; ok: boolean; detail?: string }> }
+    }
+    expect(body.data.status).toBe('unready')
+    // Naming the check is the entire value of the body — "unready" alone sends whoever is
+    // paged to look at everything at once.
+    const failed = body.data.checks.filter((check) => !check.ok).map((check) => check.name)
+    expect(failed).toEqual(['database', 'migrations'])
+    expect(body.data.checks[0]?.detail).toContain('connection refused')
+  })
+
+  test('a reachable database with migrations behind is still NOT ready', async () => {
+    /**
+     * The case that motivates checking migrations at all: Postgres is perfectly healthy,
+     * so a reachability-only probe reports ready — and the container serves this release's
+     * code against last release's schema, which is a rolling deploy quietly answering
+     * wrongly rather than failing.
+     */
+    const res = await withDatabase({ applied: 0 }).request('/readyz')
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as {
+      data: { checks: Array<{ name: string; ok: boolean; detail?: string }> }
+    }
+    expect(body.data.checks.find((check) => check.name === 'database')?.ok).toBe(true)
+    const migrations = body.data.checks.find((check) => check.name === 'migrations')
+    expect(migrations?.ok).toBe(false)
+    expect(migrations?.detail).toContain('db:migrate')
+  })
+
+  test('a database that never answers times out rather than hanging the probe', async () => {
+    // A readiness probe that hangs is worse than one that fails: the orchestrator waits
+    // on it, and nothing is ever marked unhealthy.
+    const res = await withDatabase({ hanging: true }).request('/readyz')
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as {
+      data: { checks: Array<{ name: string; ok: boolean; detail?: string }> }
+    }
+    expect(body.data.checks.every((check) => !check.ok)).toBe(true)
+    expect(body.data.checks[0]?.detail).toContain('timed out')
+  }, 10_000)
+
+  test('/healthz stays up when the database is down — liveness is not readiness', async () => {
+    const app = withDatabase({ failing: new Error('connection refused') })
+    expect((await app.request('/healthz')).status).toBe(200)
+    expect((await app.request('/readyz')).status).toBe(503)
   })
 })

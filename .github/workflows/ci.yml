@@ -22,6 +22,36 @@ jobs:
   quality:
     name: lint · typecheck · test
     runs-on: ubuntu-latest
+
+    # The database tests deliberately do not skip when there is no Postgres: the
+    # append-only guarantee and the migrator/app privilege split are claims about what
+    # POSTGRES does, and a test that silently skips would report them green while proving
+    # nothing. So CI runs a real one, on the same image tag compose pins.
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_USER: postgres
+          # A throwaway runner database. Self-describing and low-entropy on purpose — a
+          # realistic-looking literal here is indistinguishable from a leaked credential,
+          # to the secret scanner and to a reader.
+          POSTGRES_PASSWORD: localdev
+          POSTGRES_DB: labelloop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d labelloop"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # 5432 here rather than compose's 5433: a runner has nothing else on the port, and
+      # the value that matters is that all three roles point at the same database.
+      DATABASE_URL: postgres://labelloop_app:localdev@localhost:5432/labelloop
+      DATABASE_MIGRATION_URL: postgres://labelloop_migrator:localdev@localhost:5432/labelloop
+      DATABASE_ADMIN_URL: postgres://postgres:localdev@localhost:5432/labelloop
+
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -33,6 +63,15 @@ jobs:
         run: bun run lint
       - name: Typecheck
         run: bun run typecheck
+      - name: Create the database roles
+        # The only step that uses the superuser connection, exactly as it is locally.
+        run: bun run db:bootstrap
+      - name: Migrate
+        run: bun run db:migrate
+      - name: Seed
+        # The relation-graph test traverses the seeded fixtures, and seeding here also puts
+        # the seed itself under test — it is what the README's walkthrough depends on.
+        run: bun run db:seed
       - name: Test
         run: bun run test
 
