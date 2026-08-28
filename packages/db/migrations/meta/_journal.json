@@ -29,6 +29,20 @@
       "when": 1787878558319,
       "tag": "0003_authorship",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787879921347,
+      "tag": "0004_panel_activation",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787879942556,
+      "tag": "0005_immutable_versions",
+      "breakpoints": true
     }
   ]
 }

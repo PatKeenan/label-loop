@@ -873,16 +873,53 @@ orgs alone, would have been a worse inconsistency than the amendment. The contra
 asserting "the prefix set is exactly the one CONVENTIONS names" caught this immediately,
 which is the test doing its job.
 
-### P3 — no `current_version_id` pointer; the live version is the highest one
+### P3 — the live version: first no pointer, then a pointer (reversed on review)
 **Expected:** nothing in the plan either way.
-**Found:** a `panels.current_version_id` FK to `panel_versions`, and the mirror on judges,
-is a circular foreign key — resolvable in Postgres, awkward in Drizzle, and a second
-source of truth for a fact the version number already carries.
-**Resolution:** dropped. ADR-0003 defines an edit as creating version n+1, so the live
-version *is* the highest, and `(panel_id, version)` is unique. **Cost, stated plainly:**
-pinning an older version is not representable, and neither is a draft version — creating
-v2 makes it live immediately. Neither is a described feature; when one becomes one, the
-pointer is the change that adds it.
+**Found, first pass:** a `panels.current_version_id` FK is a circular foreign key —
+resolvable in Postgres, awkward in Drizzle — so it was dropped, and the live version
+resolved as the highest `version`. The cost was stated at the time: pinning an older
+version and drafting a new one both become unrepresentable.
+**Reversed 2026-08-24 after the stakeholder pushed on exactly that cost**, and they were
+right: "highest wins" means rollback is not an operation that exists, and a new version
+starts judging live traffic the moment it is inserted. Version order is history;
+activation is a separate fact.
+**Resolution:** `panels.current_version_id` (migration `0004_panel_activation`), with a
+**composite** foreign key `(id, current_version_id) → panel_versions(panel_id, id)` — a
+plain reference to `panel_versions.id` would let a panel activate a *different* panel's
+version, which the database would accept and which would be wrong in every other sense.
+Judges deliberately get no pointer: the serving path resolves judge versions through
+`panel_version_judges`, so a judge's own "current version" is never consulted, and an
+unreferenced judge version is already a draft by construction.
+
+Three things were verified against Postgres rather than assumed: a null pointer is allowed
+(composite keys are unenforced under MATCH SIMPLE when any column is null), a panel can
+activate its own version, and it cannot activate another panel's. The circular module
+import resolves cleanly in Drizzle because `.references()` and the extra-config callback
+are both lazy — but the *type* inference does not, and the resulting TS7024 surfaces in
+`apps/api` rather than in `packages/db`, so the extra-config return type is annotated
+explicitly. drizzle-kit also emitted the foreign key BEFORE the unique constraint it
+references, which Postgres rejects; `0004` is hand-ordered, which is a reminder that a
+generated migration is a draft.
+
+**Cost accepted:** a pointer that slides leaves no trace. Where "highest wins" made a
+rollback visible as a new row, this is invisible unless the move is audited — an M8
+`audit_events` obligation rather than a nice-to-have.
+
+### P3 — immutable versions became a database guarantee, widening the plan's exception
+**Expected:** the plan called `audit_events` "the single deliberate exception" to the
+blanket DML grant, and the first pass followed that literally.
+**Found:** raised as an open judgement call and settled by the stakeholder. Immutability of
+`pnv_` and `jdv_` rested on two conventions — no code updated them, and there was no
+mutable column to update — and `UPDATE panel_versions SET threshold = 0.9` would have been
+accepted by the app role. The eval story is agreement plotted per immutable version, so a
+threshold that can move underneath a timeline makes every timeline suspect.
+**Resolution:** `REVOKE UPDATE, DELETE` on both tables (migration `0005_immutable_versions`),
+with tests that try. Two objections were tested rather than argued: cascading deletes still
+work, because a referential action runs with the table owner's privileges rather than the
+caller's; and activation still works, because the pointer from `0004` lives on `panels`.
+The second is not luck — an `is_current` flag on the version row would have been
+incompatible with this migration, so the two decisions compose only because of how the
+first was shaped.
 
 ### P3 — the compose file publishes 5433, and the collision was silent
 **Expected:** Postgres on the standard 5432.

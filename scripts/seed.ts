@@ -146,6 +146,13 @@ const seed = async () => {
     `
   }
 
+  // Activation is a separate act from creation: the version exists, then it is pointed at.
+  // Doing it in one INSERT would be impossible anyway — the version cannot be referenced
+  // before it is written.
+  await client`
+    UPDATE panels SET current_version_id = ${PANEL_VERSION} WHERE id = ${PANEL}
+  `
+
   await client`
     INSERT INTO api_keys (id, org_id, panel_id, name, hash, last4)
     VALUES (
@@ -164,6 +171,6 @@ await db.close()
 // README quotes it verbatim. Production key issuance shows the plaintext once and stores
 // only the hash — which is why `api_keys` has no column that could hold it.
 console.log(`seeded org ${ORG}`)
-console.log(`  panel  ${PANEL} (issue-triage) @ ${PANEL_VERSION}, threshold 0.5`)
+console.log(`  panel  ${PANEL} (issue-triage), live @ ${PANEL_VERSION}, threshold 0.5`)
 console.log(`  judges ${JUDGES.map((judge) => judge.slug).join(', ')}`)
 console.log(`  key    ${DEV_KEY_PLAINTEXT}`)

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, integer, pgTable, real, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { check, integer, pgTable, real, text, unique, uniqueIndex } from 'drizzle-orm/pg-core'
 import { createdBy } from './authored.ts'
 import { aggregationPolicy, createdAt, id, idCheck } from './columns.ts'
 import { panels } from './panels.ts'
@@ -14,11 +14,15 @@ import { panels } from './panels.ts'
  * still holds UPDATE by default, because M0's single deliberate grant exception is
  * `audit_events` and widening that set is a decision, not an implementation detail.
  *
- * There is deliberately NO `current_version_id` pointer on `panels`. ADR-0003 defines an
- * edit as creating version n+1, so the live version is the highest one, and a pointer
- * would be a second source of truth for a fact the version number already carries (as
- * well as a circular foreign key). Pinning an older version is not a described feature;
- * when it becomes one, the pointer is the change that adds it.
+ * Which version is LIVE is a pointer on `panels`, not "the highest number here". Version
+ * order is history; activation is a separate fact. Without the pointer there is no way to
+ * roll back — reverting would mean copying v1's configuration into a new v3 — and no way
+ * to prepare a version without it judging traffic the instant it is inserted.
+ *
+ * The `(panel_id, id)` unique constraint below exists only to be the target of that
+ * pointer's composite foreign key, which is what stops a panel activating a version
+ * belonging to a DIFFERENT panel. A plain reference to `id` alone would allow exactly
+ * that, and it would look correct.
  */
 export const panelVersions = pgTable(
   'panel_versions',
@@ -45,6 +49,9 @@ export const panelVersions = pgTable(
   (table) => [
     idCheck('panel_versions', table.id, 'pnv_'),
     uniqueIndex('panel_versions_panel_version_key').on(table.panelId, table.version),
+    // Not redundant with the primary key: a composite foreign key needs a unique
+    // constraint on exactly the columns it references.
+    unique('panel_versions_panel_id_id_key').on(table.panelId, table.id),
     check('panel_versions_version_positive', sql`${table.version} >= 1`),
     check(
       'panel_versions_threshold_range',

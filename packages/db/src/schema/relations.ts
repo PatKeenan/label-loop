@@ -46,13 +46,27 @@ export const panelsRelations = relations(panels, ({ one, many }) => ({
   org: one(orgs, { fields: [panels.orgId], references: [orgs.id] }),
   author: one(user, { fields: [panels.createdBy], references: [user.id] }),
   judges: many(judges),
-  versions: many(panelVersions),
+  /**
+   * Two distinct relations run between `panels` and `panel_versions` — the full history
+   * and the one that is live — so both carry an explicit `relationName`. Without them
+   * Drizzle cannot tell which relation a `with:` is asking for and resolves the wrong one.
+   */
+  versions: many(panelVersions, { relationName: 'panelVersionHistory' }),
+  currentVersion: one(panelVersions, {
+    fields: [panels.currentVersionId],
+    references: [panelVersions.id],
+    relationName: 'panelCurrentVersion',
+  }),
   apiKeys: many(apiKeys),
   traces: many(traces),
 }))
 
 export const panelVersionsRelations = relations(panelVersions, ({ one, many }) => ({
-  panel: one(panels, { fields: [panelVersions.panelId], references: [panels.id] }),
+  panel: one(panels, {
+    fields: [panelVersions.panelId],
+    references: [panels.id],
+    relationName: 'panelVersionHistory',
+  }),
   author: one(user, { fields: [panelVersions.createdBy], references: [user.id] }),
   /** The pinned judge set. Traversed through the join table, never inferred from `judges`. */
   judgeVersions: many(panelVersionJudges),
