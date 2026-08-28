@@ -358,11 +358,28 @@ Three artifact prefixes drive the fake into a specific failure, so the resilienc
 be watched by hand rather than only in a test. They belong to the fake and disappear with
 it at M1:
 
-| Artifact begins with | What happens |
+| Artifact begins with | What you get back |
 |---|---|
-| `__unavailable__` | The call fails. Watch the jittered backoff in the logs, then the circuit open, then a `503` with `Retry-After` |
-| `__invalid__` | The call completes with an unusable answer: `status: failed`, not retried, and the circuit stays closed — a bad rubric is not a sick provider |
-| `__slow__` | The call never returns, and the gateway's timeout ends it as `PROVIDER_TIMEOUT` |
+| `__unavailable__` | `503` + `Retry-After: 30`, `code: CIRCUIT_OPEN`. The logs show jittered backoff first, then the circuit opening |
+| `__slow__` | `503` + `Retry-After: 30`, after about 20 seconds — two rounds of the 10s per-attempt timeout |
+| `__invalid__` | **`200`.** Every judge comes back `status: "failed"` with `complete: false`, and the circuit stays closed |
+
+Two of those are worth a sentence, because neither is the obvious answer.
+
+**`__slow__` reports `CIRCUIT_OPEN`, not `PROVIDER_TIMEOUT`.** The seeded panel's four
+judges all run on one model, so they share one breaker, and four judges retrying past a
+threshold of five consecutive failures trip it partway through the fan-out. When the panel
+cannot decide, the failure reported is the one that can say *when to come back* — so the
+`504` you might expect is only what a single judge sees, not what this panel returns.
+
+**`__invalid__` is not an error response.** An answer that came back unusable is a rubric
+problem, not an outage: retrying is pointless, no code in the closed taxonomy honestly
+describes it, and a `500` would page somebody for a badly written judge. So the call
+succeeds and says exactly what happened per judge — which is also why `complete` exists,
+and why a gate should read it rather than `passed` alone.
+
+The number in these responses is the HTTP status; the body carries the taxonomy `code` as
+a string, never a number. `curl -i` shows both.
 
 ### Why the demo routes are not in the API docs
 
