@@ -207,8 +207,14 @@ jobs:
             '.data.version == $v and .data.git_sha == $s' > /dev/null
 
       - name: k6 smoke
+        # The same three variables as the boot step, not just IMAGE_TAG. Build args are part
+        # of a service's config hash, so omitting them here would make compose consider the
+        # already-running API out of date and recreate it — restarting the thing the smoke
+        # is about to measure, for no reason.
         env:
           IMAGE_TAG: ${{ github.sha }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          GIT_SHA: ${{ github.sha }}
         run: docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
 
       - name: Logs, if any of that failed
