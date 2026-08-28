@@ -286,8 +286,10 @@ Prometheus and Grafana.
 Two of those ports are deliberately not the obvious ones. Grafana is on 3001 because 3000
 is the API's, and Postgres is on 5433 because a developer machine very often already has a
 Postgres on 5432 — and that collision is silent rather than loud, since a local install
-binds the loopback address and quietly wins. Override either with `GRAFANA_PORT` or
-`POSTGRES_PORT`.
+binds the loopback address and quietly wins. Override either in the environment of the
+command — `GRAFANA_PORT=3999 docker compose …` — and not in `.env`, which compose does not
+read: its project directory is `infra/`, so the file it would look for is `infra/.env`.
+`.env.example` lists every knob and says which side of that line each one falls on.
 
 Stopping it, and throwing the data away:
 
