@@ -11,14 +11,16 @@ code.
 We are one call inside someone else's loop, never the orchestration layer. Your agent
 generates the artifact; we judge it.
 
-> **Status: early.** The walking skeleton is under construction. The API boots against a
-> real Postgres — schema, two-role privilege split, append-only audit guarantee — runs a
-> panel of judges through `POST /v1/panels/{panel_id}/evaluate` on a deterministic **fake**
-> provider, records every call as a `tr_` trace, follows it with an idempotent queue job,
-> and emits a span per request and per judge call into a self-hosted Grafana stack. An
-> unstyled console logs in against a real session and lists those traces over a typed RPC
-> surface (see [Running it locally](#running-it-locally)). Still to come at M0: the
-> one-command `docker compose up` walkthrough that boots all of it together.
+> **Status: early — the walking skeleton is complete.** One command boots the whole
+> system (see [Running it locally](#running-it-locally)): the API against a real Postgres
+> — schema, two-role privilege split, append-only audit guarantee — running a panel of
+> judges through `POST /v1/panels/{panel_id}/evaluate` on a deterministic **fake**
+> provider, recording every call as a `tr_` trace, following it with an idempotent queue
+> job, and emitting a span per request and per judge call into a self-hosted Grafana
+> stack; an unstyled console that logs in against a real session and lists those traces
+> over a typed RPC surface; and a k6 smoke test that asserts all of it from inside the
+> composed network. **The judge is a fake and there is no deployed environment** — M0's
+> deliverable is the pattern, so that M1 swaps one adapter rather than rewriting a path.
 
 ---
 
@@ -254,9 +256,123 @@ corresponding ADR.
 
 ## Running it locally
 
-Nothing here needs a secret. It does now need a database, so the setup is three commands:
-copy the committed `.env.example` (exhaustive, and every value in it is a working local
-default), start Postgres, then create the roles, migrate and seed.
+Clone it, then run one command:
+
+```bash
+git clone https://github.com/PatKeenan/label-loop.git && cd label-loop
+```
+
+```bash
+docker compose -f infra/docker-compose.yml up -d --wait
+```
+
+That is the whole setup. No `.env` to copy, no secret to supply, no migration to run by
+hand, and no `bun install` — the stack has **zero required secrets** (ADR-0009), and every
+value it needs has a working default committed alongside it. `--wait` blocks until the
+migrate-and-seed one-shot has exited cleanly and every healthcheck passes, so when the
+command returns, the system is ready rather than merely started.
+
+It takes **about 50 seconds** on a machine that already has the base images, and a few
+minutes more the very first time, while Docker pulls Postgres, the collector, Tempo,
+Prometheus and Grafana.
+
+| | Where | What it is |
+|---|---|---|
+| API | http://localhost:3000 | The gateway. `/v1` for customers, `/internal` for the console |
+| Console | http://localhost:5173 | The unstyled trace list. Log in with the seeded account below |
+| Grafana | http://localhost:3001 | Explore → Tempo, searched by `request_id` |
+| Postgres | `localhost:5433` | Published for host tooling only; the API reaches it over the compose network |
+
+Two of those ports are deliberately not the obvious ones. Grafana is on 3001 because 3000
+is the API's, and Postgres is on 5433 because a developer machine very often already has a
+Postgres on 5432 — and that collision is silent rather than loud, since a local install
+binds the loopback address and quietly wins. Override either with `GRAFANA_PORT` or
+`POSTGRES_PORT`.
+
+Stopping it, and throwing the data away:
+
+```bash
+docker compose -f infra/docker-compose.yml down -v
+```
+
+### The walkthrough
+
+Everything below works verbatim against the stack you just started, because the seed data
+is deterministic on purpose — a random API key would have meant a copy-paste step, and the
+one-command claim would quietly have stopped being true.
+
+**1. Ask a panel of judges to evaluate something.**
+
+```bash
+curl -s -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate \
+  -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" \
+  -H 'content-type: application/json' \
+  -d '{"artifact":"the login button does nothing on Safari 17"}' | jq
+```
+
+You get a decision (`passed`, `score`, `threshold`) and one verdict per judge, reasoning
+first. Keep the `request_id` from the response — it is the next two steps. What is behind
+it, and why the judge is deliberately a fake, is [The seeded panel](#the-seeded-panel).
+
+**2. Find the same call in the console.** Open http://localhost:5173 and sign in:
+
+```
+demo@labelloop.test / localdev-password
+```
+
+The trace list is the read half of the loop: those rows were written server-side by the
+call you just made, because we are the inference path rather than a sidecar (ADR-0001).
+The **Follow-up** column is `pending` until the queue job stamps the row.
+
+**3. Find the same call in Grafana.** Open http://localhost:3001 → **Explore** → **Tempo**
+and paste the `request_id` in. It is not *like* a trace id, it **is** the W3C trace id of
+the span that served the request (ADR-0010), so the string in the JSON body is the string
+Tempo is indexed by. One evaluation is nine spans — see [Seeing the
+trace](#seeing-the-trace) for what the nesting is telling you.
+
+**4. Read the logs.** Raw NDJSON on stdout, one line per request, every line carrying the
+same `request_id`:
+
+```bash
+docker compose -f infra/docker-compose.yml logs -f api | bunx pino-pretty
+```
+
+**5. Run the smoke test.** k6 runs from a container under a compose profile, never a host
+install, so this works on any machine that got this far:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
+```
+
+Twenty assertions across the composed stack: liveness, readiness, an evaluation with every
+seeded judge reasoning before it answers, a `422` on a malformed body, a `401` on a missing
+key, and the console being served. Ramp, spike, soak and a documented breaking point are
+M2; this one is a correctness gate, not a benchmark — and benchmarking a fake provider
+would be benchmarking a hash function.
+
+### Working on it
+
+The one command above boots the **release images**, which is the right thing for a demo
+and the wrong thing for an edit-run cycle. There are two other ways to run it, and neither
+replaces that one.
+
+**The container inner loop.** A developer-only overlay (ADR-0018) that syncs source into
+the running containers — `bun --hot` for the API, Vite's dev server for the console:
+
+```bash
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml watch
+```
+
+`action: sync`, not a bind mount. A bind mount of the repo would shadow the image's
+linux-built `node_modules` with the host's darwin-arm64 one, needing a masking volume per
+workspace — a list that grows silently and breaks confusingly. And on macOS a container
+watching a host filesystem across the VM boundary is the classic sustained-CPU pattern,
+whereas `sync` copies a few kilobytes per save. The `rebuild` rules are scoped to
+`bun.lock`, the manifests and the Dockerfiles and nothing else, because a `rebuild` rule
+on a source path turns every keystroke into a full image build.
+
+**Host processes.** Everything except Postgres and the telemetry stack running on the
+host — the fastest loop, and the one that gives an editor a language server:
 
 ```bash
 bun install && cp .env.example .env
@@ -270,13 +386,11 @@ bun run db:up && bun run db:setup
 bun run --cwd apps/api dev
 ```
 
-The console is a second process, in a second terminal:
-
 ```bash
 bun run --cwd apps/web dev
 ```
 
-`db:setup` is three steps with three privilege levels, and they are separate on purpose:
+`db:setup` is three steps at three privilege levels, and they are separate on purpose:
 
 | Command | Connects as | Does |
 |---|---|---|
@@ -284,14 +398,10 @@ bun run --cwd apps/web dev
 | `bun run db:migrate` | `labelloop_migrator` | Applies the forward-only migration stream, and installs the queue's schema. Owns both; issues all DDL. |
 | `bun run db:seed` | `labelloop_app` | Inserts the demo org, panel, judges and dev key. DML only — it could not alter a table if it tried. |
 
-The API connects as `labelloop_app`, which holds no DDL at all. That is not a convention
-it follows; it is a privilege it does not have, and `packages/db` has tests that prove it
-by trying.
-
-Postgres publishes on **5433**, not 5432, because a developer machine very often already
-has a Postgres and the collision is silent rather than loud — a local install binds the
-loopback address and quietly wins, so tooling connects to the wrong database and fails
-somewhere confusing. Override with `POSTGRES_PORT` if you want it elsewhere.
+Under compose those three are one short-lived `migrate` container running the API's own
+image with credentials the API is never given. The API connects as `labelloop_app`, which
+holds no DDL at all — not a convention it follows but a privilege it does not have, and
+`packages/db` has tests that prove it by trying.
 
 Pipe through `pino-pretty` if you want the NDJSON readable — pretty-printing is a pipe,
 never an in-process transport:
@@ -302,7 +412,7 @@ bun run --cwd apps/api dev | bunx pino-pretty
 
 ### The console
 
-`http://localhost:5173`, and `bun run db:seed` prints the login:
+`http://localhost:5173` either way you run it, and `bun run db:seed` prints the login:
 
 ```
 demo@labelloop.test / localdev-password
@@ -341,6 +451,25 @@ rather than a rule someone has to remember. Both directions are asserted in
 The API and the console are two **origins** in development (5173 and 3000) but one
 **site** — cookies ignore ports — so the session cookie rides along on `SameSite=Lax` and
 only CORS has to be told, against an exact allow-list of one (`WEB_ORIGIN`).
+
+### Which build am I running
+
+Both images take `APP_VERSION` and `GIT_SHA` as build args, and the version flows all the
+way from release-please to a running process (ADR-0011): the tag on the image, the
+`version` and `git_sha` on `/healthz`, and `service.version` on every span. CI builds each
+image with two immutable tags — the git SHA and the release version — and asserts that
+neither is ever `latest`, because an image tagged `latest` cannot answer "what is running
+right now" or "roll back to the previous build".
+
+A locally built image honestly reports `0.0.0-dev` / `unknown`, because a local build has
+no release. `config.ts` REJECTS both placeholders when `NODE_ENV=production`, so an image
+that cannot say what it is cannot pretend to be a deploy.
+
+One deliberate consequence, stated rather than hidden: the compose stack runs the release
+images with `NODE_ENV=development`. It has a throwaway database, an anonymous Grafana and
+the committed session key — precisely the three things that boot guard exists to refuse.
+Labelling it `production` would mean either inventing a secret to satisfy the guard or
+weakening the guard, and both are worse than saying what this is.
 
 ### What is served today
 
@@ -450,7 +579,8 @@ open. What separates them is the latency and the logs — `kind: "timeout"` agai
 `kind: "unavailable"`, with the jittered backoff visible before the circuit opens:
 
 ```bash
-grep -o '"kind":"[^"]*"' <the api log> | sort | uniq -c
+docker compose -f infra/docker-compose.yml logs api \
+  | grep -o '"kind":"[^"]*"' | sort | uniq -c
 ```
 
 Two things here are worth a sentence, because neither is the obvious answer.
@@ -477,13 +607,10 @@ by. Paste it in and the call is there.
 
 The telemetry stack is four discrete containers — OTel Collector, Tempo, Prometheus,
 Grafana — and never the bundled all-in-one image, because the topology is the part worth
-demonstrating. `bun run db:up` starts Postgres alone; this starts everything:
+demonstrating. The one command above already started all four (`bun run db:up` is the
+narrower one, and starts Postgres alone).
 
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
-
-Then open Grafana at **http://localhost:3001** (3001, not 3000 — that is the API's port),
+Open Grafana at **http://localhost:3001** (3001, not 3000 — that is the API's port),
 go to **Explore → Tempo**, and search by the `request_id` from any response. Both
 datasources are already there: they are provisioned from `infra/grafana/provisioning/`, so
 a fresh volume needs no clicking.

@@ -439,35 +439,42 @@ Files: `apps/api/Dockerfile`, `apps/web/Dockerfile`, `.dockerignore`,
 prometheus, grafana, k6 profile), `infra/docker-compose.dev.yml` (the dev overlay),
 `infra/k6/smoke.js`, `.github/workflows/ci.yml` (extend), `README.md`.
 
-- [ ] Multi-stage Dockerfiles taking `APP_VERSION` and `GIT_SHA` as build args, surfaced
+- [x] Multi-stage Dockerfiles taking `APP_VERSION` and `GIT_SHA` as build args, surfaced
       by `/healthz` and `service.version`
-- [ ] Compose boots everything with **zero required secrets** and no manual steps;
+- [x] Compose boots everything with **zero required secrets** and no manual steps;
       migrate+seed run as a one-shot before the API; `depends_on` gates on health, and
       the API's healthcheck is `/readyz`
-- [ ] `infra/k6/smoke.js` runs from the **`grafana/k6` container under a compose
+- [x] `infra/k6/smoke.js` runs from the **`grafana/k6` container under a compose
       profile** (never a host install), targeting the compose network URL
-- [ ] `infra/docker-compose.dev.yml` overlay: `develop.watch` with `action: sync` on
+- [x] `infra/docker-compose.dev.yml` overlay: `develop.watch` with `action: sync` on
       source paths and `bun --hot` inside the container. **The base compose file is not
       touched** — the fresh-clone demo must keep booting the real production images
       (ADR-0009), which a source-overlaid container is not
-- [ ] Watch scoping written into the file, not left to memory: `sync` paths limited to
+- [x] Watch scoping written into the file, not left to memory: `sync` paths limited to
       `apps/*/src` and `packages` (never the repo root), and `rebuild` scoped **only** to
       `bun.lock`, `package.json`, and the Dockerfiles. A `rebuild` rule on a source path
       is what turns every save into a full image build
-- [ ] `.dockerignore` excludes `node_modules`, `.git`, `thoughts/`, `docs/`, `mockups/`
+- [x] `.dockerignore` excludes `node_modules`, `.git`, `thoughts/`, `docs/`, `mockups/`
       — keeps both the watched tree and the build context small, so the rare rebuild is
       also a fast one
-- [ ] Dev loop documented in the README as a **separate** command from the demo command,
+- [x] Dev loop documented in the README as a **separate** command from the demo command,
       so the one-command claim stays unambiguous
-- [ ] CI extended: image build tagged with **git SHA + version, never `:latest`**,
+- [x] CI extended: image build tagged with **git SHA + version, never `:latest`**,
       `bun audit`, gitleaks, and the k6 smoke against a composed stack — on PRs and main
-- [ ] README fresh-clone walkthrough: clone → one command → the verbatim curl from the
+- [x] README fresh-clone walkthrough: clone → one command → the verbatim curl from the
       seeded key → where to see the trace, the logs, and the span
 - [ ] Merge the release-please Release PR: tag + CHANGELOG published; release title names
-      the milestone ("M0 complete: walking skeleton")
-- [ ] Demo clip/GIF recorded and linked from the README (BUILD_SPINE standing rule)
-- [ ] SENIORITY_CHECKLIST boxes 1(part), 5(k6 scripts), 7(structured logging), 8(repo +
-      CI + one-command compose), 10(supply-chain) ticked **only now that they are live**
+      the milestone ("M0 complete: walking skeleton") — **STAKEHOLDER ACTION**: merging a
+      PR and publishing a release are outward-facing gestures, and this one is the "ship
+      it" gesture ADR-0011 defines. Blocked on this branch merging first, since its commit
+      is what the release notes describe.
+- [ ] Demo clip/GIF recorded and linked from the README (BUILD_SPINE standing rule) —
+      **STAKEHOLDER ACTION**: a screen recording of a terminal and a browser is not
+      something this session can produce. Everything it would record is written down and
+      verified in the README walkthrough, so the recording is the only missing artifact.
+- [x] SENIORITY_CHECKLIST boxes 1(part), 5(k6 scripts), 7(structured logging), 8(repo +
+      CI + one-command compose), 10(supply-chain) ticked **only now that they are live** —
+      three ticked, three annotated rather than ticked (deviation below)
 
 **Automated verification**
 ```bash
@@ -1761,3 +1768,121 @@ Three things carry forward out of this plan rather than into it:
   URL has to either put auth on these or move them out of that file. Not M0 work — M0's
   volumes are throwaway and nothing binds beyond localhost — but it must not evaporate, for
   the same reason backup/restore must not.
+
+### P8 — the root workspace links had to become `dependencies`, not `devDependencies`
+**Expected:** the API image installs with `--production` and everything resolves.
+**Found:** `bun run db:setup` in the migrate container died on `Cannot find module
+'@labelloop/db' from '/app/scripts/db-bootstrap.ts'`. The three `@labelloop/*`
+`workspace:*` entries were in the ROOT package's `devDependencies`, which `--production`
+skips — so `node_modules/@labelloop/` at the root was never created. The API itself was
+fine, because it resolves them from its own `apps/api/node_modules`.
+**Why it matters:** the entries were sitting in the wrong section on a technicality that
+nothing had exercised. `scripts/*.ts` are not development tooling — they are the
+operational commands that bootstrap, migrate and seed a real database, and under compose
+they run inside a production image. A dependency the shipped artifact needs at runtime is
+a dependency, and calling it a devDependency was only ever true because nothing had asked.
+**Resolution:** moved the three to `dependencies` in the root `package.json`. The image
+build was the thing that noticed, which is the argument for building images at all.
+
+### P8 — the migrate one-shot is the API's own image, not a third image
+**Expected:** the plan names `apps/api/Dockerfile` and `apps/web/Dockerfile` and a
+"migrate+seed one-shot", without saying what the one-shot is built from.
+**Found/decided:** it is `labelloop-api` run with a different command and different
+credentials. The image already carries the migration stream, the seed script and the
+operational commands.
+**Why it matters:** it makes the privilege split visible as configuration rather than as a
+claim. The same binary artifact is a migrator when handed `DATABASE_MIGRATION_URL` and
+`DATABASE_ADMIN_URL`, and an application when handed only `DATABASE_URL` — which is
+exactly the design, since `config.ts` cannot even express the other two. A separate image
+would have made the split look like a property of two different builds instead of a
+property of two different grants. It also removes a second image to keep in step.
+
+### P8 — the console is served by forty lines of Bun, not by nginx
+**Expected:** the plan says `apps/web/Dockerfile` and stops there.
+**Found:** a static bundle needs something to serve it, and the obvious answer — nginx or
+Caddy — is a technology STACK_DECISIONS does not have a row for, which CLAUDE.md makes a
+stakeholder-owned call.
+**Why it matters:** the alternative was to ask. Weighed against that: the behaviour needed
+is "serve a directory, fall back to `index.html` for client routes, cache fingerprinted
+assets and never cache the shell", which is `apps/web/serve.ts` at about forty readable
+lines, and it keeps both images on one pinned base at one Bun version. A second runtime
+would add a base image to patch and a config language to the repo for behaviour that fits
+on a screen. It is deliberately NOT a reverse proxy: the browser still talks to the API
+cross-origin, which is what keeps the real CORS allow-list and the real cross-origin
+session cookie under test rather than hidden behind a same-origin shortcut.
+**Flagged:** if the stakeholder would rather this were nginx, it is one file and one
+Dockerfile stage to swap, and it should become a STACK_DECISIONS row either way.
+
+### P8 — the compose stack runs the production images with `NODE_ENV=development`
+**Expected:** "compose boots the real production images" (ADR-0018) read as though the
+stack would also declare itself production.
+**Found:** it cannot, and should not. `config.ts` refuses to boot under
+`NODE_ENV=production` when `APP_VERSION`, `GIT_SHA` or `BETTER_AUTH_SECRET` still hold
+their committed placeholders — and on a fresh clone all three do, because a locally built
+image has no release and the stack has no secrets. Declaring production would have forced
+either a fabricated secret in the compose file or a weakened guard.
+**Why it matters:** the two claims are about different things and only look like one. The
+IMAGE is the production artifact — same base, same install, same entrypoint, built by the
+same Dockerfile CI builds. The CONFIGURATION is a development environment, and honestly so:
+throwaway database, anonymous Grafana, committed session key. The guard staying sharp is
+worth more than the label. Stated in the compose header and in the README rather than left
+for someone to discover.
+
+### P8 — compose does not read the repo-root `.env`, and `.env.example` said otherwise
+**Expected:** the compose knobs `.env.example` documents (`POSTGRES_PORT`, `GRAFANA_PORT`,
+the OTLP ports) could be set in the repo-root `.env` like everything else in that file.
+**Found:** they cannot. Compose's project directory is the directory holding the compose
+file, so the `.env` it looks for is `infra/.env` — verified by setting `GRAFANA_PORT` in
+the root `.env` and watching `docker compose config` ignore it. The comments have been
+wrong since P3.
+**Why it matters:** a knob that silently does nothing is worse than no knob, and this one
+would fail exactly when someone needed it — on the machine where a port was already taken.
+The fix is documentation, not an `infra/.env`: a stack that needs a file copied into place
+before it boots is not a one-command stack. `.env.example` now says the compose knobs are
+set in the environment of the command, and draws the line between them and the variables
+that configure a process you run yourself.
+
+### P8 — the dev overlay needs its own image tag, or it silently reuses the wrong image
+**Expected:** overriding `build.target` in the overlay would produce a different image.
+**Found:** it does not. Compose keys a built image by its `image:` name, so the overlay's
+`target: build` was ignored in favour of the already-built `labelloop-web:dev` — and the
+container failed on `Could not change directory to "apps/web"`, because the runtime image
+contains a `dist/` and a server and no source at all.
+**Why it matters:** the failure mode is confusing rather than loud, and it would have hit
+whoever first tried the documented inner loop. The overlay now names
+`labelloop-web:${IMAGE_TAG:-dev}-source`, which also keeps the two distinguishable in
+`docker images`.
+
+### P8 — `bun audit` reports everything and gates at HIGH
+**Expected:** "`bun audit`" in CI, unqualified.
+**Found:** `bun audit` exits non-zero on any advisory, and the repo has one open moderate:
+esbuild's development-server advisory (GHSA-67mh-4wv8-2f99), reachable only through
+`drizzle-kit` and Vite's `tsx`. Neither is in a shipped image — the API installs with
+`--production` and the console discards the stage that had them.
+**Why it matters:** the choice was between a gate that fails on something that cannot
+affect the artifact, and one tuned to what it actually protects. The complication is that
+`--audit-level` filters the OUTPUT as well as the exit code, so gating at HIGH alone would
+have made the moderate invisible rather than merely tolerated — and "we knew and accepted
+it" is a different position from "we never saw it". So CI runs it twice: once
+unconditionally to print the full report, once at `--audit-level=high` to gate.
+
+### P8 — three SENIORITY_CHECKLIST rows are annotated rather than ticked
+**Expected:** the plan lists boxes 1(part), 5(k6 scripts), 7(structured logging), 8 and 10
+to be ticked.
+**Found:** three of them name an artifact that is not live. Box 1's artifact is a LIVE URL
+and there is no deployed environment (CD is M1). Box 5 is "smoke, ramp, spike, soak" and
+only smoke exists (the rest are M2). Box 7 is "structured logging with correlation ids;
+alerting; error tracking" and alerting is M3, with nothing deployed to page about.
+**Why it matters:** the file's own rule is "check items only when the artifact is live and
+linkable", and the plan's own "(part)" was already acknowledging the tension. Ticking a box
+whose artifact does not exist is exactly the dishonesty the scoreboard was written to
+prevent. Boxes 8 (both rows) and 10 (supply-chain) are ticked, because they are fully true
+today. The other three carry an italic note saying what IS done and which milestone
+finishes them.
+
+### P8 — the console's build stage needs `tsconfig.base.json` in the image
+**Expected:** copying `packages`, `apps/web` and the manifests would be enough to run Vite.
+**Found:** Vite reads `apps/web/tsconfig.json` for the JSX and target settings, and an
+`extends` it cannot resolve is a hard build failure rather than a fallback to defaults.
+**Why it matters:** small, but it is the kind of thing only an actual image build finds —
+the host has the file, so nothing before P8 could have noticed.
