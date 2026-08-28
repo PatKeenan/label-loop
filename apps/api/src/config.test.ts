@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { ConfigError, DEV_GIT_SHA, DEV_VERSION, loadConfig } from './config.ts'
+import { ConfigError, DEV_AUTH_SECRET, DEV_GIT_SHA, DEV_VERSION, loadConfig } from './config.ts'
 
 /**
  * `.env.example` is required to be exhaustive (CONVENTIONS.md "Config"). That is only
@@ -31,6 +31,10 @@ describe('.env.example', () => {
       // reminder, not a proof — so a new field goes here in the same commit that adds it.
       'QUEUE_POOL_MAX',
       'OTEL_EXPORTER_OTLP_ENDPOINT',
+      // P7.
+      'BETTER_AUTH_SECRET',
+      'API_BASE_URL',
+      'WEB_ORIGIN',
     ]) {
       expect(documented.has(field), `${field} is missing from .env.example`).toBe(true)
     }
@@ -85,6 +89,9 @@ describe('config', () => {
       DATABASE_URL,
       DATABASE_POOL_MAX: 10,
       QUEUE_POOL_MAX: 2,
+      BETTER_AUTH_SECRET: DEV_AUTH_SECRET,
+      API_BASE_URL: 'http://localhost:3000',
+      WEB_ORIGIN: 'http://localhost:5173',
     })
     expect(config.SENTRY_DSN).toBeUndefined()
   })
@@ -136,7 +143,13 @@ describe('config', () => {
         loadConfig({ DATABASE_URL, NODE_ENV: 'production' })
         throw new Error('expected loadConfig to throw')
       } catch (error) {
-        expect((error as ConfigError).fields).toEqual(['APP_VERSION', 'GIT_SHA'])
+        expect((error as ConfigError).fields).toEqual([
+          'APP_VERSION',
+          'GIT_SHA',
+          // P7 joins the same list, for a reason that is not provenance but is the same
+          // shape: a committed default is fine locally and forgeable in production.
+          'BETTER_AUTH_SECRET',
+        ])
       }
     })
 
@@ -146,6 +159,7 @@ describe('config', () => {
         NODE_ENV: 'production',
         APP_VERSION: '0.2.0',
         GIT_SHA: 'abc1234',
+        BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
       })
       expect(config.APP_VERSION).toBe('0.2.0')
       expect(config.GIT_SHA).toBe('abc1234')
@@ -154,6 +168,37 @@ describe('config', () => {
     test('the same placeholders are fine outside production', () => {
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'development' })).not.toThrow()
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'test' })).not.toThrow()
+    })
+  })
+
+  /**
+   * The console's own configuration (ADR-0008). All three have working local defaults, so
+   * `bun install && bun run dev` still needs no secret — the production guard above is what
+   * keeps that from becoming a production hole.
+   */
+  describe('the console surface (P7)', () => {
+    test('the session secret defaults, so a fresh clone boots with none (ADR-0009)', () => {
+      expect(loadConfig({ DATABASE_URL }).BETTER_AUTH_SECRET).toBe(DEV_AUTH_SECRET)
+    })
+
+    test('WEB_ORIGIN is normalised to an origin — CORS matches exactly, or not at all', () => {
+      // A path or a trailing slash here is the classic silent CORS failure: the header is
+      // compared byte for byte against the browser's `Origin`, which never carries either.
+      expect(loadConfig({ DATABASE_URL, WEB_ORIGIN: 'http://localhost:5173/' }).WEB_ORIGIN).toBe(
+        'http://localhost:5173',
+      )
+      expect(
+        loadConfig({ DATABASE_URL, WEB_ORIGIN: 'https://console.example.com/app' }).WEB_ORIGIN,
+      ).toBe('https://console.example.com')
+    })
+
+    test('a non-URL origin fails at boot, naming the field', () => {
+      try {
+        loadConfig({ DATABASE_URL, WEB_ORIGIN: 'localhost:5173' })
+        throw new Error('expected loadConfig to throw')
+      } catch (error) {
+        expect((error as ConfigError).fields).toEqual(['WEB_ORIGIN'])
+      }
     })
   })
 })

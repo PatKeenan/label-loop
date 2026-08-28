@@ -8,6 +8,7 @@ import { createApp } from '../app.ts'
 import { loadConfig } from '../config.ts'
 import { AppError, toAppError } from '../errors.ts'
 import { createFakeProvider, createModelGateway } from '../llm/index.ts'
+import { fakeAuth } from '../testing/fake-auth.ts'
 import { fakeDatabase } from '../testing/fake-database.ts'
 import { fakeQueue } from '../testing/fake-queue.ts'
 import { recordingSpans } from '../testing/recording-spans.ts'
@@ -147,6 +148,7 @@ describe('request_id, the log line, the envelope and the span', () => {
       }),
       jobs: fakeQueue(),
       tracer: spans.tracer,
+      auth: fakeAuth(),
     })
 
     const response = await app.request('/healthz')

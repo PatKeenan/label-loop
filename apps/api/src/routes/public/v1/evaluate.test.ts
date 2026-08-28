@@ -14,6 +14,7 @@ import { createApp } from '../../../app.ts'
 import { loadConfig } from '../../../config.ts'
 import { createFakeProvider, createModelGateway, FAKE_SENTINELS } from '../../../llm/index.ts'
 import { sha256Hex } from '../../../middleware/api-key-auth.ts'
+import { fakeAuth } from '../../../testing/fake-auth.ts'
 import { fakeQueue } from '../../../testing/fake-queue.ts'
 
 /**
@@ -191,6 +192,7 @@ const appWith = (provider = createFakeProvider()) =>
     }),
     jobs: queue,
     tracer: noopTracer,
+    auth: fakeAuth(),
   })
 
 const evaluateRequest = (

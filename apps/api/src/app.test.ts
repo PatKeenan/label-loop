@@ -10,6 +10,7 @@ import { AppError } from './errors.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
 import { validationHook } from './routes/public/v1/index.ts'
+import { fakeAuth } from './testing/fake-auth.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
 import { fakeQueue } from './testing/fake-queue.ts'
 
@@ -58,6 +59,7 @@ beforeEach(() => {
     modelGateway: testGateway(),
     jobs: fakeQueue(),
     tracer: noopTracer,
+    auth: fakeAuth(),
   })
 })
 
@@ -201,6 +203,7 @@ describe('contract-validation auto-mapping', () => {
       modelGateway: testGateway(),
       jobs: fakeQueue(),
       tracer: noopTracer,
+      auth: fakeAuth(),
     })
     host.route('/probe-host', probe)
     return host
@@ -264,6 +267,7 @@ describe('/readyz', () => {
       modelGateway: testGateway(),
       jobs: fakeQueue(queue),
       tracer: noopTracer,
+      auth: fakeAuth(),
     })
 
   const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) => withDependencies(options)

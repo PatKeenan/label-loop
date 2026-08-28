@@ -25,6 +25,28 @@ export const SERVICE_NAME = 'labelloop-api'
 export const DEV_VERSION = '0.0.0-dev'
 export const DEV_GIT_SHA = 'unknown'
 
+/**
+ * The session-signing key better-auth uses when nobody supplied one. Self-describing and
+ * zero-entropy on purpose: a realistic-looking literal committed here is indistinguishable
+ * from a leaked secret, to a scanner and to a reader (the lesson of P2's gitleaks failure).
+ *
+ * Its presence is what keeps zero-secret boot true (ADR-0009) while still making a
+ * production deploy that forgot the variable fail at boot rather than silently sign every
+ * console session with a value published on GitHub.
+ */
+export const DEV_AUTH_SECRET = 'localdev-not-a-secret'
+
+/**
+ * `z.url()` alone is not enough for anything a browser has to reach. `new URL()` accepts
+ * any scheme, so `localhost:5173` — the single most likely typo for an origin — parses
+ * happily as a URL whose scheme is `localhost`, and its `.origin` is the string `"null"`.
+ * A CORS header of `null` matches nothing, so the failure surfaces as a console that
+ * cannot log in rather than as a configuration error naming the field.
+ */
+const isHttpUrl = (url: string): boolean => url.startsWith('http://') || url.startsWith('https://')
+
+const HTTP_URL_MESSAGE = 'must be an http:// or https:// URL'
+
 const configSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -71,13 +93,40 @@ const configSchema = z
      */
     OTEL_EXPORTER_OTLP_ENDPOINT: z
       .url()
-      .refine(
-        (url) => url.startsWith('http://') || url.startsWith('https://'),
-        'must be an http:// or https:// OTLP endpoint',
-      )
+      .refine(isHttpUrl, 'must be an http:// or https:// OTLP endpoint')
       // A trailing slash would produce `…//v1/traces`, which some collectors 404 on.
       .transform((url) => url.replace(/\/+$/, ''))
       .optional(),
+    /**
+     * The key better-auth signs and encrypts session material with (ADR-0008).
+     *
+     * Defaulted rather than required, because a fresh clone must boot with no secrets —
+     * and rejected in production below, because the default is committed. Note what this
+     * variable is NOT: it is not on the `/v1` path. API keys are our own hashed credentials
+     * (ADR-0003) and never touch better-auth, so rotating this logs the console out and
+     * changes nothing about a customer's integration.
+     */
+    BETTER_AUTH_SECRET: z.string().min(1).default(DEV_AUTH_SECRET),
+    /**
+     * Where a browser reaches THIS api. better-auth builds cookie scope and callback URLs
+     * from it, so it is the origin as the browser sees it, not as the process sees itself —
+     * behind a proxy those differ, and the one that matters is the browser's.
+     */
+    API_BASE_URL: z.url().refine(isHttpUrl, HTTP_URL_MESSAGE).default('http://localhost:3000'),
+    /**
+     * Where the console runs. It is the CORS allow-list and better-auth's trusted origin,
+     * both of which need an exact origin, so a value carrying a path or a trailing slash is
+     * normalised to one rather than quietly never matching.
+     *
+     * Two origins rather than one is the dev reality: Vite serves the console on 5173 while
+     * the API answers on 3000. They are cross-ORIGIN but same-SITE — cookies ignore ports —
+     * so the session cookie rides along on `SameSite=Lax` and only CORS has to be told.
+     */
+    WEB_ORIGIN: z
+      .url()
+      .refine(isHttpUrl, HTTP_URL_MESSAGE)
+      .transform((url) => new URL(url).origin)
+      .default('http://localhost:5173'),
     /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
     /**
@@ -93,16 +142,29 @@ const configSchema = z
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return
     const placeholders = [
-      ['APP_VERSION', config.APP_VERSION, DEV_VERSION],
-      ['GIT_SHA', config.GIT_SHA, DEV_GIT_SHA],
+      [
+        'APP_VERSION',
+        config.APP_VERSION,
+        DEV_VERSION,
+        'must be set in production — it is a container build arg (ADR-0011)',
+      ],
+      [
+        'GIT_SHA',
+        config.GIT_SHA,
+        DEV_GIT_SHA,
+        'must be set in production — it is a container build arg (ADR-0011)',
+      ],
+      [
+        'BETTER_AUTH_SECRET',
+        config.BETTER_AUTH_SECRET,
+        DEV_AUTH_SECRET,
+        'must be set in production — the development default is committed, so every ' +
+          'session signed with it is forgeable by anyone who has read the repository',
+      ],
     ] as const
-    for (const [field, value, placeholder] of placeholders) {
+    for (const [field, value, placeholder, message] of placeholders) {
       if (value !== placeholder) continue
-      ctx.addIssue({
-        code: 'custom',
-        path: [field],
-        message: `must be set in production — it is a container build arg (ADR-0011)`,
-      })
+      ctx.addIssue({ code: 'custom', path: [field], message })
     }
   })
 

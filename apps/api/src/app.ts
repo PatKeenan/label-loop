@@ -8,6 +8,7 @@ import { currentRequestId, REQUEST_ID_KEY, requestContext } from './middleware/r
 import { tracing } from './middleware/tracing.ts'
 import { createDemoErrorRoutes } from './routes/demo-errors.ts'
 import { createHealthRoutes } from './routes/health.ts'
+import { createInternalRoutes, INTERNAL_BASE_PATH } from './routes/internal/index.ts'
 import { createV1Routes } from './routes/public/v1/index.ts'
 
 /**
@@ -80,20 +81,38 @@ export const createApp = (deps: AppDeps) => {
   app.use('*', requestContext())
   app.use('*', httpLogger(rootLogger))
 
-  app.route('/', createHealthRoutes())
-  app.route('/', createDemoErrorRoutes())
-
   const v1 = createV1Routes()
   mountDocs(v1, deps.config)
-  app.route('/v1', v1)
+
+  // Chained, and that is not style: `app.route()` returns the app with the mounted routes
+  // MERGED INTO ITS TYPE, and that accumulated type is what `hc<AppType>` in `apps/web`
+  // turns into a typed client. Writing these as separate statements throws the type away
+  // and the console's calls silently become untyped.
+  //
+  // The two surfaces are mounted side by side and share nothing but this line. `/v1` is
+  // authenticated by a hashed panel-scoped API key; `/internal` by a session cookie. Neither
+  // middleware can see the other's credential, so the separation is structural rather than
+  // a rule someone has to follow (CONVENTIONS.md "Keys & auth").
+  const routes = app
+    .route('/', createHealthRoutes())
+    .route('/', createDemoErrorRoutes())
+    .route(INTERNAL_BASE_PATH, createInternalRoutes())
+    .route('/v1', v1)
 
   app.notFound((c) =>
     renderError(new AppError('NOT_FOUND', 'No route matches this path.'), c, deps, rootLogger),
   )
   app.onError((error, c) => renderError(error, c, deps, rootLogger))
 
-  return app
+  return routes
 }
 
-/** The type `apps/web` consumes over Hono RPC at P7. */
+/**
+ * The type `apps/web` consumes over Hono RPC — the whole point of the chain above.
+ *
+ * No codegen and no published schema: the console imports this type straight out of the
+ * API's source, so a route that changes shape breaks the console's typecheck in the same
+ * commit rather than at runtime in someone's browser (ADR-0002 rules out an SDK for
+ * CUSTOMERS; this client ships in the same repo and is not one).
+ */
 export type AppType = ReturnType<typeof createApp>
