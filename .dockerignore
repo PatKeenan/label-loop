@@ -1,0 +1,46 @@
+# What never enters a build context.
+#
+# Two jobs, and the second is the one people forget. The obvious one is image size. The
+# other is the developer inner loop: `docker compose watch` (ADR-0018) walks this same
+# tree, so anything left in here is something the host-side watcher has to stat on every
+# save — and `thoughts/` alone is hundreds of files that could never change a build.
+#
+# Rule of thumb: if COPY in a Dockerfile does not name it, it does not belong here.
+
+# Dependencies. Built for darwin-arm64 on this machine and for linux in the image; letting
+# the host's copy into the context is how "works on my machine" gets containerised.
+node_modules
+**/node_modules
+
+# Build output. Regenerated inside the image; a stale local copy would silently win.
+dist
+**/dist
+*.tsbuildinfo
+
+# Version control and CI metadata. The build args carry the git SHA (ADR-0011); the image
+# has no reason to contain the history it came from.
+.git
+.gitignore
+.githooks
+.github
+
+# Local configuration and secrets. `.env` is the one file that must never be baked in: the
+# container takes its configuration from compose, and an image carrying a developer's
+# environment is an image that behaves differently everywhere else (ADR-0009).
+.env
+.env.*
+!.env.example
+
+# The written record. Large, and none of it is code.
+thoughts
+docs
+mockups
+
+# Editor and OS noise.
+.DS_Store
+.idea
+.vscode
+*.log
+
+# The compose files and load scripts are read by the docker CLI, not copied into an image.
+infra

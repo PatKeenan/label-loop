@@ -1,0 +1,106 @@
+# The developer inner loop, and NOTHING else (ADR-0018).
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml watch
+#
+# This file never runs in CI and never leaves a developer's machine, so unlike the base
+# file it is free to use modern compose features — `develop.watch` and the `!override` tag
+# both appear below. The base file stays conservative because it is what CI composes and
+# what a future ECS translation would be read against.
+#
+# WHY `sync` AND NOT A BIND MOUNT. Two reasons, both specific to this repo. A bind mount of
+# the repo would shadow the image's `/app/node_modules` (built for linux) with the host's
+# (built for darwin-arm64), which then has to be masked by an anonymous volume per
+# workspace — a list that grows silently and fails confusingly the day someone forgets one.
+# And on macOS an in-container watcher observing a host filesystem across the VM boundary
+# is the classic sustained-CPU pattern; under `sync` the host-side watcher uses FSEvents
+# and the cost is a few kilobytes copied per save.
+#
+# WHY THE `rebuild` RULES ARE SO NARROW. A `rebuild` rule on a source path turns every
+# keystroke into a full image build. Only the three things that genuinely cannot be copied
+# into a running container are listed: the lockfile, the manifests, and the Dockerfiles.
+
+services:
+  api:
+    # `--hot` reloads the module graph in place, which is what makes `sync` enough: the
+    # file arrives, Bun re-evaluates, and the container never restarts.
+    command: ['bun', '--hot', 'apps/api/src/server.ts']
+    environment:
+      # Debug by default here and nowhere else. The inner loop is where the retry backoff
+      # and the breaker's state transitions are worth watching go by.
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    develop:
+      watch:
+        # Source only. NOT the repo root — watching `..` would hand the watcher `thoughts/`,
+        # `docs/`, `.git` and every build artifact, which is both slow and pointless.
+        - action: sync
+          path: ../apps/api/src
+          target: /app/apps/api/src
+        - action: sync
+          path: ../packages
+          target: /app/packages
+          ignore:
+            - node_modules/
+        - action: sync
+          path: ../scripts
+          target: /app/scripts
+        # The three rebuild triggers. A dependency moved, a manifest changed, or the image
+        # definition itself changed — none of which a file copy can express.
+        - action: rebuild
+          path: ../bun.lock
+        - action: rebuild
+          path: ../package.json
+        - action: rebuild
+          path: ../apps/api/package.json
+        - action: rebuild
+          path: ../apps/api/Dockerfile
+
+  web:
+    # The console's production image is a static bundle and a forty-line file server, which
+    # is exactly the wrong thing for an inner loop: a source change would mean rebuilding
+    # the bundle. So the dev overlay stops one stage earlier, at the build stage — which
+    # already has Vite and the full dependency tree — and runs the dev server instead.
+    build:
+      target: build
+    # A DIFFERENT tag from the base file's. Compose keys a built image by its `image:` name,
+    # so leaving it as `labelloop-web:dev` would have this overlay quietly reuse the static
+    # runtime image it just built — a container with no `apps/web` in it at all, failing on
+    # `chdir`. Naming the stage in the tag keeps the two images distinguishable in
+    # `docker images` as well.
+    image: labelloop-web:${IMAGE_TAG:-dev}-source
+    command: ['bun', 'run', '--cwd', 'apps/web', 'dev', '--', '--host', '0.0.0.0']
+    ports:
+      # `!override` rather than appending: compose concatenates sequences by default, and a
+      # second mapping here would fight the base file's for port 5173. Vite serves on its
+      # own port with `strictPort`, so the container's port changes too.
+      !override
+      - '${WEB_PORT:-5173}:5173'
+    healthcheck:
+      # The image's healthcheck probes 8080, where the static server would have been.
+      test: ['CMD-SHELL', 'wget --no-verbose --spider --tries=1 http://127.0.0.1:5173/ || exit 1']
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
+    develop:
+      watch:
+        - action: sync
+          path: ../apps/web/src
+          target: /app/apps/web/src
+        - action: sync
+          path: ../apps/web/index.html
+          target: /app/apps/web/index.html
+        - action: sync
+          path: ../packages
+          target: /app/packages
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ../bun.lock
+        - action: rebuild
+          path: ../package.json
+        - action: rebuild
+          path: ../apps/web/package.json
+        - action: rebuild
+          path: ../apps/web/vite.config.ts
+        - action: rebuild
+          path: ../apps/web/Dockerfile
