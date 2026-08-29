@@ -65,7 +65,11 @@ alert rule. Tooling per STACK_DECISIONS.md D6.
 ## M4 — Console + auth + the interviewer flow (Categories 6, 1)
 OIDC login; roles admin/engineer/annotator enforced server-side. Minimal engineer
 console: create panel and judges (wizard → immutable version 1), issue/revoke keys, raw
-trace table. Publish thin client SDK (typed client generated from contracts,
+trace table. The judge wizard includes a **capability-gated model picker** — the
+catalogue client and per-endpoint gating are deferred here from M1 (ADR-0021), because a
+model is offerable only when an endpoint satisfying that judge's pin actually supports
+structured output, and the model-level capability list is a union across endpoints that
+do not all agree. Publish thin client SDK (typed client generated from contracts,
 retries+jitter, idempotency header; language/registry per STACK_DECISIONS.md D5) — see ADR-0002.
 **Demo moment:** the full interviewer flow end-to-end, no seeding scripts.
 **Not now:** annotator UI polish, guest experts, taxonomy tooling.
