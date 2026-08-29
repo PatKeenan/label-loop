@@ -1,7 +1,33 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { auth } from '../api/client.ts'
 import { meQuery } from '../api/queries.ts'
+
+/**
+ * What the `/login` ROUTE renders, as opposed to the form itself.
+ *
+ * The two are separate because the form has two callers with opposite needs. `TracesPage`
+ * renders `LoginPage` inline as its signed-out branch and must NOT redirect — the whole
+ * point there is to show the form where the traces would be. Arriving at `/login` with a
+ * live session is the other case entirely: there is nothing to sign in to, and showing the
+ * form invites someone to type credentials that will not be checked.
+ *
+ * A component-level `<Navigate>` rather than the router's `beforeLoad` + `redirect()`,
+ * because the session lives in a TanStack Query cache that the router has no context for.
+ * Wiring the query client into router context to serve one redirect would be more
+ * machinery than the redirect is worth; when M4 adds real redirect-after-401 the context
+ * will earn itself, and this becomes a `beforeLoad`.
+ */
+export const LoginRoute = () => {
+  const me = useQuery(meQuery)
+
+  // Not `me.data == null` — that conflates "still asking" with "nobody". Rendering the
+  // form during the first fetch would flash it at a signed-in user on every hard reload.
+  if (me.isPending) return <p>Loading…</p>
+  if (me.data != null) return <Navigate to="/" replace />
+  return <LoginPage />
+}
 
 /**
  * The login form. A real credential sign-in against a real better-auth handler over a real

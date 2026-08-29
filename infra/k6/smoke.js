@@ -17,6 +17,8 @@ import http from 'k6/http'
  */
 
 const BASE = __ENV.API_BASE_URL || 'http://api:3000'
+/** Trailing slash stripped, because everything below appends a path to it. */
+const WEB = (__ENV.WEB_BASE_URL || 'http://web:8080').replace(/\/+$/, '')
 const PANEL = __ENV.PANEL_ID || 'pnl_000000000000000000SEEDPANE'
 const KEY = __ENV.API_KEY || `llk_test_${'0'.repeat(64)}`
 
@@ -134,10 +136,52 @@ export default function () {
     'and the code is UNAUTHORIZED': () => denied?.error?.code === 'UNAUTHORIZED',
   })
 
-  // ---- the console is served -------------------------------------------------------------
-  const console_ = http.get(__ENV.WEB_BASE_URL || 'http://web:8080/')
-  check(console_, {
+  // ---- the console, and the four properties nginx is here to provide (ADR-0020) ----------
+  //
+  // These are asserted rather than trusted because every one of them is a single line of
+  // `nginx.conf` away from silently disappearing, and three of the four fail in ways that
+  // look like something else entirely.
+  const shell = http.get(`${WEB}/`)
+  check(shell, {
     'the console is served': (r) => r.status === 200,
     'and it is the SPA shell': (r) => r.body.includes('<div id="root"></div>'),
+    // A cached shell is how a browser ends up asking for a bundle that no longer exists.
+    'the shell is not cached': (r) => (r.headers['Cache-Control'] || '').includes('no-store'),
+  })
+
+  // The bundle's real path, read out of the shell rather than hard-coded — Vite fingerprints
+  // it, so the name changes on every build that changes a byte.
+  const asset = (/src="(\/assets\/[^"]+\.js)"/.exec(shell.body) || [])[1]
+  check(shell, { 'the shell names a fingerprinted bundle': () => asset !== undefined })
+
+  if (asset !== undefined) {
+    const bundle = http.get(`${WEB}${asset}`, { headers: { 'Accept-Encoding': 'gzip' } })
+    check(bundle, {
+      'the bundle is served': (r) => r.status === 200,
+      // THE reason the console moved from a hand-rolled Bun server to nginx: that server
+      // sent ~433 kB where this sends ~137 kB. Nothing else in the repo would notice if
+      // `gzip on` were dropped — the page would still work, just three times heavier.
+      'and it is gzipped': (r) => (r.headers['Content-Encoding'] || '') === 'gzip',
+      // Fingerprinted content can never change under a given name, so a year is honest.
+      'and cached for a year': (r) => (r.headers['Cache-Control'] || '').includes('immutable'),
+    })
+  }
+
+  // A deep link must reach the SPA shell. This is the classic misconfiguration: it breaks
+  // only on a RELOAD or a pasted link, so client-side navigation hides it completely.
+  const deepLink = http.get(`${WEB}/login`)
+  check(deepLink, {
+    'a deep link serves the shell': (r) =>
+      r.status === 200 && r.body.includes('<div id="root"></div>'),
+  })
+
+  // And the inverse, which the fallback above makes easy to get wrong: a MISSING
+  // fingerprinted asset must be a real 404 and never the HTML shell. Answered with HTML, a
+  // browser reports "Unexpected token '<'" — a syntax error in a file that is not there,
+  // which sends whoever is debugging it somewhere entirely unrelated.
+  const missing = http.get(`${WEB}/assets/does-not-exist.js`, expect(404))
+  check(missing, {
+    'a missing asset is a real 404': (r) => r.status === 404,
+    'and not the SPA shell': (r) => !r.body.includes('<div id="root"></div>'),
   })
 }
