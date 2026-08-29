@@ -9,6 +9,8 @@ interviewer in under five minutes.
 
 ## 1. Core Application
 - [ ] Full-stack app: web console + typed API + relational store — M0/M1 · live URL
+      *(M0: all three exist and boot with one command. The artifact is a LIVE URL and
+      there is no deployed environment yet — CD is M1.)*
 - [ ] Real, eval-able AI feature (judgment gateway) — M1 · /docs + demo
 - [ ] Streaming + structured outputs with confidence — M1 · API contract
 - [ ] Versioned public API with OpenAPI + interactive docs — M1 · /openapi.json, /docs
@@ -34,6 +36,8 @@ interviewer in under five minutes.
 
 ## 5. Reliability & Load
 - [ ] k6 scenarios: smoke, ramp, spike, soak — M0/M2 · scripts in repo
+      *(M0: `infra/k6/smoke.js` runs in CI against the composed stack. Ramp, spike and
+      soak are M2 — and load numbers against a fake provider would measure a hash.)*
 - [ ] Circuit breakers, retries + backoff + jitter, timeouts — M2 · code + logs
 - [ ] Per-key rate limiting, quota enforcement, graceful 429/503 — M2/M8 · API behavior
 - [ ] Documented breaking point + degradation behavior — M2 · BREAKING_POINT.md
@@ -48,11 +52,13 @@ interviewer in under five minutes.
 - [ ] Distributed traces incl. LLM spans (tokens/cost/latency) — M3 · dashboard
 - [ ] Metrics dashboards (p50/95/99, error rate, cost/min, per-key) — M3 · Grafana
 - [ ] Structured logging with correlation ids; alerting; error tracking — M0/M3 · live
+      *(M0: NDJSON logs carrying `request_id`, and an `ErrorReporter` port with a Sentry
+      adapter. Alerting is M3, and there is nothing deployed for it to page about.)*
 - [ ] Live dashboards during a load test — M3 · recorded clip
 
 ## 8. Delivery & Public Proof
-- [ ] Public repo, ADR discipline (0001+), conventional commits — M0 · repo
-- [ ] CI from day one (lint/typecheck/tests/image build, on PRs); walking skeleton
+- [x] Public repo, ADR discipline (0001+), conventional commits — M0 · repo
+- [x] CI from day one (lint/typecheck/tests/image build, on PRs); walking skeleton
       boots via one command — M0 · Actions + compose
 - [ ] CD to a live URL; automated versioning + generated CHANGELOG — M1 · Releases
 - [ ] Dogfood case study: repo's own issues judged in production — M5 · case study
@@ -70,7 +76,7 @@ documented, AWS-style). The platform owns only its own surfaces:
 - [ ] Shared-responsibility statement published (what's ours vs the tenant's) — M8 · doc
 - [ ] Judge-injection hardening: untrusted trace content fenced in the platform's own
       judge/clustering prompts + adversarial eval cases proving it — M6 · eval cases
-- [ ] Supply-chain hygiene: dependency + secret scanning in CI — M0 · Actions config
+- [x] Supply-chain hygiene: dependency + secret scanning in CI — M0 · Actions config
 - [ ] OWASP-basics pass on the public surface (headers, CORS, input limits) — M2 · checklist
 - [ ] Per-key budget caps + spend anomaly alert (customer protection, billing-adjacent) — M8 · console
 - [ ] SHOWCASE TENANT: a prompt-injection-detection judge built on the platform —

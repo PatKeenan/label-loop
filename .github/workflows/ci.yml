@@ -81,6 +81,20 @@ jobs:
         # moved forward because P7 is where the app it builds started existing.
         run: bun run --cwd apps/web build
 
+      - name: Dependency audit (report)
+        # Prints everything, gates nothing. `--audit-level` FILTERS the output rather than
+        # only the exit code, so without this pass a moderate advisory would be invisible
+        # rather than merely tolerated — and "we knew and accepted it" is a different
+        # position from "we never saw it".
+        run: bun audit || true
+
+      - name: Dependency audit (gate)
+        # HIGH and above fails the build. The line is drawn there because everything
+        # currently below it is a build-tool advisory reachable only through drizzle-kit
+        # and Vite's tsx — neither of which exists in a shipped image, since both images
+        # install with `--production` or discard the stage that had them.
+        run: bun audit --audit-level=high
+
   commit-messages:
     name: conventional commits (main)
     runs-on: ubuntu-latest
@@ -119,3 +133,94 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  stack:
+    name: compose · images · k6 smoke
+    runs-on: ubuntu-latest
+    # The only job that proves the claim the README actually makes. Everything above runs
+    # against a checkout; this runs against the images, composed, migrated and seeded the
+    # same way a reader's `docker compose up` would do it.
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the release version
+        # From package.json, which release-please owns (ADR-0011). Never typed by hand, and
+        # never `latest`: an image tagged `latest` cannot answer "what is running right now"
+        # or "roll back to the previous build".
+        id: version
+        run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the images
+        # `docker compose build` rather than a bare `docker build`, so the thing CI builds
+        # is the thing the compose file says to build — one definition, not two.
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          GIT_SHA: ${{ github.sha }}
+        run: docker compose -f infra/docker-compose.yml build api web
+
+      - name: Tag the images with the version as well as the SHA
+        # Two immutable tags per image and no floating one. The SHA answers "which commit",
+        # the version answers "which release", and both point at the same digest.
+        env:
+          SHA: ${{ github.sha }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          for image in labelloop-api labelloop-web; do
+            docker tag "$image:$SHA" "$image:$VERSION"
+          done
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep '^labelloop-' | sort
+
+      - name: Refuse a `latest` tag
+        # ADR-0011 as an assertion rather than a habit. The failure this catches is someone
+        # adding a convenience tag months from now, in a file nobody re-reads.
+        run: |
+          set -euo pipefail
+          if docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^labelloop-(api|web):latest$'; then
+            echo "::error::an image was tagged :latest — ADR-0011 forbids it"
+            exit 1
+          fi
+
+      - name: Boot the stack
+        # `--wait` is what makes this a test rather than a launch: it blocks until every
+        # healthcheck passes and the migrate one-shot has exited zero, and fails otherwise.
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          GIT_SHA: ${{ github.sha }}
+        run: docker compose -f infra/docker-compose.yml up -d --wait
+
+      - name: The build provenance reached the running process
+        # ADR-0011's chain, checked at its far end: release-please's version and the built
+        # commit have to arrive as build args, survive into config, and come back out of
+        # `/healthz`. A break anywhere along it is silent until someone asks a container
+        # what it is.
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS localhost:3000/healthz)
+          echo "$body"
+          echo "$body" | jq -e --arg v "$VERSION" --arg s "$SHA" \
+            '.data.version == $v and .data.git_sha == $s' > /dev/null
+
+      - name: k6 smoke
+        # The same three variables as the boot step, not just IMAGE_TAG. Build args are part
+        # of a service's config hash, so omitting them here would make compose consider the
+        # already-running API out of date and recreate it — restarting the thing the smoke
+        # is about to measure, for no reason.
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          GIT_SHA: ${{ github.sha }}
+        run: docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
+
+      - name: Logs, if any of that failed
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v --remove-orphans

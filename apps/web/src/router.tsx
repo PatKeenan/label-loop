@@ -1,5 +1,5 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { LoginPage } from './routes/login.tsx'
+import { LoginRoute } from './routes/login.tsx'
 import { RootLayout } from './routes/root.tsx'
 import { TracesPage } from './routes/traces.tsx'
 
@@ -24,11 +24,14 @@ const tracesRoute = createRoute({
 /**
  * A route of its own as well as the signed-out branch of `/`, so that "sign in" is a place
  * you can be sent to, which M4's real redirect-after-401 will need.
+ *
+ * `LoginRoute`, not `LoginPage`: the route bounces an already-signed-in visitor to the
+ * trace list, while the bare form stays reusable as the signed-out branch of `/`.
  */
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  component: LoginPage,
+  component: LoginRoute,
 })
 
 export const router = createRouter({ routeTree: rootRoute.addChildren([tracesRoute, loginRoute]) })

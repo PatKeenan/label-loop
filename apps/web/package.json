@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The console and annotator surface. Unstyled at M0 — the plumbing is the deliverable.",
+  "description": "The console and annotator surface. Unstyled at M0 \u2014 the plumbing is the deliverable.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "NODE_ENV=production vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "bun test"

@@ -3,8 +3,17 @@
 # (ADR-0018). The developer inner loop lives in `docker-compose.dev.yml` and never touches
 # this one.
 #
-# At M0-P6 it contains Postgres and the telemetry stack. P8 extends this same file with the
-# API, the web app and the migrate+seed one-shot.
+# It contains the whole system: the API, the console, Postgres, the one-shot that migrates
+# and seeds, the four telemetry containers, and — behind a profile, so it never starts with
+# the rest — the k6 smoke test.
+#
+# ZERO REQUIRED SECRETS (ADR-0009). Every value below has a working default, so the demo is
+# `docker compose -f infra/docker-compose.yml up -d --wait` on a fresh clone and nothing
+# else. The one deliberate consequence is that the API runs with NODE_ENV=development: the
+# stack has a throwaway database, an anonymous Grafana and the committed session key, which
+# are precisely the three things `config.ts` refuses to start with under `production`.
+# Calling it production here would mean either inventing a secret to satisfy the guard or
+# weakening the guard, and both are worse than saying what this is.
 #
 # The telemetry stack is FOUR DISCRETE CONTAINERS — collector, Tempo, Prometheus, Grafana —
 # and never the bundled `grafana/otel-lgtm` image. The topology is part of what M0 exists to
@@ -50,6 +59,99 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------------
+  # The application. Two images built from the repo root, and one short-lived container
+  # that prepares the database before either of them is allowed to matter.
+  # ---------------------------------------------------------------------------------
+
+  migrate:
+    # The API's image, run with a different command and different credentials. It carries
+    # the migration stream, the seed and the operational scripts already, and a second
+    # image built from the same source would be a second thing to keep in step.
+    build: &api-build
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      args:
+        # Real values in CI (ADR-0011); the placeholders `config.ts` uses for local
+        # development otherwise, because a locally built image genuinely has no release.
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: labelloop-api:${IMAGE_TAG:-dev}
+    # `db:setup` is bootstrap, then migrate, then seed — three steps at three privilege
+    # levels, which is why this container holds all three connection strings and the API
+    # below holds exactly one. It is idempotent, so it re-runs on every `up` and is a
+    # no-op on the second.
+    command: ['bun', 'run', 'db:setup']
+    environment:
+      DATABASE_URL: postgres://labelloop_app:localdev@postgres:5432/labelloop
+      DATABASE_MIGRATION_URL: postgres://labelloop_migrator:localdev@postgres:5432/labelloop
+      # The ONLY container that ever sees the superuser, and only long enough to CREATE
+      # ROLE. Nothing that serves traffic is given it.
+      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_SUPERUSER_PASSWORD:-localdev}@postgres:5432/labelloop
+      SEED_USER_EMAIL: ${SEED_USER_EMAIL:-demo@labelloop.test}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-localdev-password}
+    depends_on:
+      postgres:
+        # Not "the container started" — initdb runs first, and migrating against a
+        # database that is not accepting connections yet is the classic compose race.
+        condition: service_healthy
+    # A one-shot. Restarting a completed migration is how a crash-loop is manufactured.
+    restart: 'no'
+
+  api:
+    build: *api-build
+    image: labelloop-api:${IMAGE_TAG:-dev}
+    environment:
+      # See the header: this stack is a development environment running production images,
+      # and it says so rather than dressing up.
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The APP role, and only the APP role. No DDL, and no config field that could carry a
+      # credential holding any (`apps/api/src/config.ts`).
+      DATABASE_URL: postgres://labelloop_app:localdev@postgres:5432/labelloop
+      # Over the compose network now, not the published port: inside the stack the
+      # collector is a hostname, and 4318 is its own port rather than the host's mapping.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Both of these are origins as the BROWSER sees them, which is the host's view — the
+      # published ports — not the compose network's.
+      API_BASE_URL: http://localhost:${API_PORT:-3000}
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
+    ports:
+      - '${API_PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        # The API refuses to start against an unmigrated database — `/readyz` reports the
+        # migration stream and the queue schema is installed by the migrator. Gating here
+        # turns that refusal from a crash-loop into an ordering.
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the bundle, because Vite inlines `import.meta.env` at build time. It
+        # is where the BROWSER reaches the API, so it is the published port on the host and
+        # not `http://api:3000`, which means nothing outside this network.
+        VITE_API_URL: http://localhost:${API_PORT:-3000}
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: labelloop-web:${IMAGE_TAG:-dev}
+    ports:
+      # 5173 on the host, matching the port Vite serves on in development, so `WEB_ORIGIN`
+      # and better-auth's trusted origin are the same string either way you run it.
+      - '${WEB_PORT:-5173}:8080'
+    depends_on:
+      api:
+        # Not required for the console to serve — it would render its own error — but it
+        # makes `up --wait` mean "the demo is ready", which is what the README promises.
+        condition: service_healthy
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------------
@@ -122,6 +224,33 @@ services:
       - tempo
       - prometheus
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------------
+  # Load testing (SENIORITY_CHECKLIST 5). Behind a profile, so `up` never starts it and
+  # it exists only when asked for:
+  #
+  #   docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
+  #
+  # In a container rather than a host install, so "can I run the load test" has the same
+  # answer on every machine and in CI.
+  # ---------------------------------------------------------------------------------
+  k6:
+    profiles: ['k6']
+    image: grafana/k6:1.4.0
+    volumes:
+      - ./k6:/scripts:ro
+    environment:
+      # Compose-network URLs: k6 is inside the stack, so it uses service names and real
+      # ports rather than the host's published mappings.
+      API_BASE_URL: http://api:3000
+      WEB_BASE_URL: http://web:8080/
+      # The seeded panel and the fixed development key (plan D-L). Deterministic seed data
+      # is what lets this script — and the README's curl — be written down at all.
+      PANEL_ID: pnl_000000000000000000SEEDPANE
+      API_KEY: llk_test_0000000000000000000000000000000000000000000000000000000000000000
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres-data:
