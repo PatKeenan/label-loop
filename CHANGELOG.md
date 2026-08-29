@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.2.0](https://github.com/PatKeenan/label-loop/compare/v0.1.0...v0.2.0) (2026-08-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **contracts:** taxonomy-coded reasons, confidence, and judges keyed by slug ([#12](https://github.com/PatKeenan/label-loop/issues/12))
+* **contracts:** replace the classifier with a panel of judges ([#10](https://github.com/PatKeenan/label-loop/issues/10))
+
+### Features
+
+* **api:** boot the API with the error, logging and lifecycle patterns ([#9](https://github.com/PatKeenan/label-loop/issues/9)) ([4076ddf](https://github.com/PatKeenan/label-loop/commit/4076ddffdadd6bf44d9e1a2106fd1ab1dfee736f))
+* **api:** hand-written spans, a Grafana stack of four, and a request_id that is the trace id ([#16](https://github.com/PatKeenan/label-loop/issues/16)) ([be5bbc3](https://github.com/PatKeenan/label-loop/commit/be5bbc3a91c51d61e189985eac03a2cc72d85349))
+* **api:** the queue seam — idempotent jobs, an attempt ledger we own, and a drain that waits ([#15](https://github.com/PatKeenan/label-loop/issues/15)) ([d9b4bf1](https://github.com/PatKeenan/label-loop/commit/d9b4bf16fbdd56c4106b754806eba06bffaf1b1f))
+* **api:** the steel thread — a panel of judges, behind one gateway ([#14](https://github.com/PatKeenan/label-loop/issues/14)) ([749d738](https://github.com/PatKeenan/label-loop/commit/749d738c18798d83bcd00ba6b61f538ba2d664fe))
+* **contracts:** error taxonomy, envelope, prefixed ids, and classify schemas ([#7](https://github.com/PatKeenan/label-loop/issues/7)) ([59e13ea](https://github.com/PatKeenan/label-loop/commit/59e13ea7690a5f3ab817e43371098e9851d88f74))
+* **contracts:** replace the classifier with a panel of judges ([#10](https://github.com/PatKeenan/label-loop/issues/10)) ([20e0eec](https://github.com/PatKeenan/label-loop/commit/20e0eec541a85b48924d3cc609871480ce0db3df))
+* **contracts:** taxonomy-coded reasons, confidence, and judges keyed by slug ([#12](https://github.com/PatKeenan/label-loop/issues/12)) ([566db31](https://github.com/PatKeenan/label-loop/commit/566db31a9850ecfd026878ec21c12aeb385a4199))
+* **db:** the schema, two Postgres roles, and rules the database enforces rather than trusts ([#13](https://github.com/PatKeenan/label-loop/issues/13)) ([8d7566a](https://github.com/PatKeenan/label-loop/commit/8d7566ab2a8fbf0b9ac6f49ff902566ba16e9d62))
+* **infra:** one command, and the guts stay visible — images, compose, k6, full CI ([#19](https://github.com/PatKeenan/label-loop/issues/19)) ([3c1f8b1](https://github.com/PatKeenan/label-loop/commit/3c1f8b145622f4b5674d306fead1b4ed126fceac))
+* **web:** the console — a real session, a typed RPC surface, and an error map that cannot drift ([#17](https://github.com/PatKeenan/label-loop/issues/17)) ([eb6ad6a](https://github.com/PatKeenan/label-loop/commit/eb6ad6a57517d55c03c098a6e7154f20a9ff92a7))
+
+
+### Bug Fixes
+
+* **ci:** lint the PR title with the suffix the squash merge adds ([#18](https://github.com/PatKeenan/label-loop/issues/18)) ([5e1ac78](https://github.com/PatKeenan/label-loop/commit/5e1ac7863113532b4ace1f6615358b74db08df97))
+
+
+### Documentation
+
+* **plan:** correct the P0 deviation record for subject-case ([826a875](https://github.com/PatKeenan/label-loop/commit/826a87517056487112618790adb9ad95259d00d8))
+* **process:** require feature branches and PRs for all new code ([#8](https://github.com/PatKeenan/label-loop/issues/8)) ([596dba1](https://github.com/PatKeenan/label-loop/commit/596dba1d030241bf107ec32da1364e7b11acd545))
+* **product:** reconcile the parallel planning session, and make billing two-sided ([#11](https://github.com/PatKeenan/label-loop/issues/11)) ([76dda04](https://github.com/PatKeenan/label-loop/commit/76dda04046b4248c9a5823c7adb02c2532bc736a))
+
+
+### CI
+
+* Bump actions/checkout from 6 to 7 ([#3](https://github.com/PatKeenan/label-loop/issues/3)) ([b7fc9e2](https://github.com/PatKeenan/label-loop/commit/b7fc9e256a729307aabedac1d1c0bc180b5178d3))
+* bump gitleaks/gitleaks-action from 2 to 3 ([#1](https://github.com/PatKeenan/label-loop/issues/1)) ([a6fc63a](https://github.com/PatKeenan/label-loop/commit/a6fc63ad1bd1f8b66d49c78fb10114fe23ac9a1a))
+* bump googleapis/release-please-action from 4 to 5 ([#2](https://github.com/PatKeenan/label-loop/issues/2)) ([64efd45](https://github.com/PatKeenan/label-loop/commit/64efd45266ed35a53bad9f37e36079ae8dcaba56))
+
 ## 0.1.0 (2026-08-22)
 
 
