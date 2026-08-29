@@ -68,8 +68,10 @@ describe('only src/llm may reach a model provider (ADR-0016)', () => {
   test('no provider hostname appears outside the gateway', () => {
     // The obvious way around an import ban is a hand-rolled HTTP call, so the hosts are
     // banned as well as the SDKs.
+    // `openrouter\.ai` joins the list at M1 (ADR-0021). Written escaped, exactly like
+    // every entry beside it, so the rule does not match its own source and fail here.
     const providerHost =
-      /api\.(?:anthropic|openai|mistral|cohere|groq|together|deepseek)\.(?:com|ai)|generativelanguage\.googleapis\.com|bedrock-runtime\.[\w-]+\.amazonaws\.com/i
+      /api\.(?:anthropic|openai|mistral|cohere|groq|together|deepseek)\.(?:com|ai)|generativelanguage\.googleapis\.com|bedrock-runtime\.[\w-]+\.amazonaws\.com|openrouter\.ai/i
     expect(offences(outsideTheGateway(), providerHost)).toEqual([])
   })
 

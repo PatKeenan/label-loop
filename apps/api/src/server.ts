@@ -7,6 +7,8 @@ import { ConfigError, loadConfig } from './config.ts'
 import { createPgBossQueue, registerJobHandlers } from './jobs/index.ts'
 import { installSignalHandlers } from './lifecycle.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
+import { createOpenRouterProvider } from './llm/openrouter-provider.ts'
+import { createProviderRegistry } from './llm/provider-registry.ts'
 import { createRootLogger } from './middleware/logger.ts'
 import { startTelemetry } from './otel.ts'
 
@@ -52,14 +54,30 @@ const errorReporter = await createErrorReporter(config)
 // The APP role's pool — DML only. The API cannot migrate itself even if asked to: the
 // credential it holds has no DDL, and its config schema cannot express one that does.
 const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_MAX })
-// The only provider M0 has, and it is deterministic and offline — which is what keeps
-// zero-secret boot true (ADR-0009). M1 replaces this one line with a real adapter behind
-// the same port; nothing downstream of the gateway knows the difference.
+// **The one line ADR-0021 is about.** M0 had a single deterministic fake here; M1 has a
+// registry that dispatches on the model's route prefix. Nothing downstream of the gateway
+// knows the difference — which is the honest measure of whether the port was worth having.
+//
+// The OpenRouter adapter is registered only when a key is present, so zero-secret boot
+// survives intact (ADR-0009): without one the registry holds `fake:` alone, and an
+// `openrouter:` judge answers `unavailable` rather than taking the process down. That is
+// the right failure — the panel's other judges are fine and should still answer.
 const modelGateway = createModelGateway({
-  provider: createFakeProvider(),
+  provider: createProviderRegistry({
+    providers: {
+      fake: createFakeProvider(),
+      ...(config.OPENROUTER_API_KEY === undefined
+        ? {}
+        : { openrouter: createOpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY }) }),
+    },
+  }),
   clock: systemClock,
   tracer: telemetry.tracer,
 })
+logger.info(
+  { routes: config.OPENROUTER_API_KEY === undefined ? ['fake'] : ['fake', 'openrouter'] },
+  'model provider registry composed',
+)
 
 // The queue's own pool, on the app role's credential — which cannot install the schema it
 // connects to. `bun run db:migrate` did that as the migrator, and `start()` below REFUSES

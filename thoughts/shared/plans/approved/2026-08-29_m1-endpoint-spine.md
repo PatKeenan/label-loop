@@ -166,18 +166,18 @@ Files (all inside `apps/api/src/llm/`, which is the fence — ADR-0016):
   and pin, printing key order, `usage.cost`, `served_by` and the available-endpoint count.
   This is the live check, and it is a script rather than a test on purpose (see Decisions).
 
-- [ ] `describeModelProviderContract` is **imported**, not reimplemented, and passes against
+- [x] `describeModelProviderContract` is **imported**, not reimplemented, and passes against
       a stubbed `fetch` — including the abort case and the unknown-model case
-- [ ] The derived schema has exactly `rationale, reasons, verdict, confidence`, **in that
+- [x] The derived schema has exactly `rationale, reasons, verdict, confidence`, **in that
       order**, all required, `additionalProperties: false`, and no `$ref`
-- [ ] `topLevelKeyOrder` ignores keys nested inside `reasons` and inside string literals
-- [ ] A response with `verdict` emitted first is `invalid_output`, **even though Zod accepts it**
-- [ ] Every row of the failure table above has a test
-- [ ] The request body carries `require_parameters: true` and `data_collection: 'deny'`
+- [x] `topLevelKeyOrder` ignores keys nested inside `reasons` and inside string literals
+- [x] A response with `verdict` emitted first is `invalid_output`, **even though Zod accepts it**
+- [x] Every row of the failure table above has a test
+- [x] The request body carries `require_parameters: true` and `data_collection: 'deny'`
       whenever a pin is supplied, and `reasoning: {enabled:false}` for effort `none`
-- [ ] **A moderation payload never reaches a log line or a span** — asserted with a fake
+- [x] **A moderation payload never reaches a log line or a span** — asserted with a fake
       logger and an in-memory span exporter against a 400 carrying `flagged_input` (D7)
-- [ ] `architecture.test.ts` is green with the hostname added, and still catches a planted
+- [x] `architecture.test.ts` is green with the hostname added, and still catches a planted
       `fetch(` in `apps/api/src/services/`
 - [ ] The per-attempt timeout is **re-derived, not inherited**: run `verify:pin` against a
       ~2,000-token artifact on all three seed models, record the latencies in this plan's
