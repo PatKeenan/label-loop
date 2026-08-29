@@ -3,6 +3,7 @@ import { createFixedClock } from '../adapters/fixed-clock.ts'
 import { recordingSpans } from '../testing/recording-spans.ts'
 import { createFakeProvider, FAKE_MODEL, FAKE_SENTINELS } from './fake-provider.ts'
 import { createModelGateway } from './index.ts'
+import { type ModelProvider, ProviderError } from './provider.port.ts'
 
 /**
  * What one judge call looks like in Tempo.
@@ -26,7 +27,7 @@ beforeEach(() => {
   spans = recordingSpans()
 })
 
-const gatewayFor = (provider = createFakeProvider()) =>
+const gatewayFor = (provider: ModelProvider = createFakeProvider()) =>
   createModelGateway({
     provider,
     clock: createFixedClock(),
@@ -146,6 +147,28 @@ describe('a judge whose answer was unusable', () => {
     // like one is how a team learns to ignore the colour.
     expect(judge?.status.code).toBe(0)
     expect(judge?.attributes['labelloop.error_code']).toBeUndefined()
+  })
+})
+
+describe('a judge the provider will never accept', () => {
+  test('leaves ONE attempt span, named as misconfigured — the alert query M3 needs', async () => {
+    const provider: ModelProvider = {
+      name: 'unhappy',
+      evaluate: () => Promise.reject(new ProviderError('misconfigured', 'no credentials')),
+    }
+    const outcome = await gatewayFor(provider).judge(CALL, IDENTITY)
+    expect(outcome.status).toBe('error')
+
+    const attempts = spans.named(`provider call ${FAKE_MODEL}`)
+    // One, not three. The span count is the retry policy made visible: this is the shape
+    // that distinguishes "the provider is flaky" from "we did not pay the bill".
+    expect(attempts).toHaveLength(1)
+    expect(attempts[0]?.attributes['labelloop.failure_kind']).toBe('misconfigured')
+
+    const [judge] = spans.named('judge is-bug')
+    expect(judge?.attributes['labelloop.error_code']).toBe('INTERNAL')
+    expect(judge?.attributes['labelloop.attempts']).toBe(1)
+    expect(judge?.status.code).toBe(2)
   })
 })
 

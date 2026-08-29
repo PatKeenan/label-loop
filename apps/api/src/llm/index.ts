@@ -135,6 +135,9 @@ const RETRYABLE: Record<ProviderFailureKind, boolean> = {
   timeout: true,
   unavailable: true,
   invalid_output: false,
+  // A rejected key is still rejected on the second call. Retrying is the same answer
+  // twice, paid for three times (ADR-0024).
+  misconfigured: false,
 }
 
 /** Which failures say something about the DEPENDENCY rather than about the judge. */
@@ -143,9 +146,20 @@ const AFFECTS_HEALTH: Record<ProviderFailureKind, boolean> = {
   unavailable: true,
   // A badly written judge must not take a working provider out of service.
   invalid_output: false,
+  // Nothing for a half-open probe to recover. A breaker over this condition would cycle
+  // forever without ever being the thing that fixes it.
+  misconfigured: false,
 }
 
-const TAXONOMY: Record<Exclude<ProviderFailureKind, 'invalid_output'>, ErrorCode> = {
+/**
+ * Kinds with no branch of their own, and the code each becomes. `invalid_output` is
+ * excluded because it is not an error at all — the call completed. `misconfigured` is
+ * excluded because it needs `cause` set and a louder log level, which is a branch.
+ */
+const TAXONOMY: Record<
+  Exclude<ProviderFailureKind, 'invalid_output' | 'misconfigured'>,
+  ErrorCode
+> = {
   timeout: 'PROVIDER_TIMEOUT',
   unavailable: 'PROVIDER_UNAVAILABLE',
 }
@@ -377,6 +391,32 @@ export const createModelGateway = ({
             status: 'failed',
             message: 'The judge did not produce a usable answer.',
             raw: isProviderError(error) ? error.raw : undefined,
+          })
+        }
+
+        // Before the generic branch, because it is the one kind that is OUR fault. The
+        // levels mean things (CONVENTIONS.md "Logging"): `error` is alert-worthy, and this
+        // never self-heals and takes every judge down at once, which makes it the
+        // strongest candidate for M3's one alert rule. It sets `cause` for the same
+        // reason — `evaluate.ts` forwards that to the error reporter, and a condition
+        // nobody is told about is a condition nobody fixes.
+        //
+        // Deliberately NOT surfaced on `/readyz` (ADR-0024): the console and the trace
+        // explorer are fine, and marking the instance unready would produce a restart loop
+        // over a condition no restart fixes.
+        if (kind === 'misconfigured') {
+          logger?.error(
+            { provider: provider.name, model: call.model, kind, attempts, err: error },
+            'provider rejected the request in a way no retry can fix',
+          )
+          return finish({
+            ...base,
+            status: 'error',
+            // The existing code, so no published contract changes: from the caller's side
+            // this is our problem, not something for them to retry or route around.
+            code: 'INTERNAL',
+            message: 'The judge could not be run.',
+            cause: error,
           })
         }
 
