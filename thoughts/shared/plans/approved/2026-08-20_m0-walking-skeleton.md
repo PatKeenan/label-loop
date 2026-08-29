@@ -463,11 +463,12 @@ prometheus, grafana, k6 profile), `infra/docker-compose.dev.yml` (the dev overla
       `bun audit`, gitleaks, and the k6 smoke against a composed stack — on PRs and main
 - [x] README fresh-clone walkthrough: clone → one command → the verbatim curl from the
       seeded key → where to see the trace, the logs, and the span
-- [ ] Merge the release-please Release PR: tag + CHANGELOG published; release title names
+- [x] Merge the release-please Release PR: tag + CHANGELOG published; release title names
       the milestone ("M0 complete: walking skeleton") — **STAKEHOLDER ACTION**: merging a
       PR and publishing a release are outward-facing gestures, and this one is the "ship
       it" gesture ADR-0011 defines. Blocked on this branch merging first, since its commit
-      is what the release notes describe.
+      is what the release notes describe. Done 2026-08-29: PR #5 merged as `77c0e29`,
+      `v0.2.0` tagged and released.
 - [ ] Demo clip/GIF recorded and linked from the README (BUILD_SPINE standing rule) —
       **STAKEHOLDER ACTION**: a screen recording of a terminal and a browser is not
       something this session can produce. Everything it would record is written down and
