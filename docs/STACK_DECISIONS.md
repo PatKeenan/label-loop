@@ -1,6 +1,6 @@
 # STACK_DECISIONS.md — technology choices (stakeholder-owned)
 
-REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
+REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
 once made, gets a short ADR recording the why. Options listed are starting points, not
 a menu limit.
 
@@ -15,7 +15,7 @@ a menu limit.
 | D7 | Inference server | — | **DECIDED: vLLM** (multi-LoRA dynamic adapter serving). | 0006 |
 | D8 | Fine-tune training | — | **DECIDED: Axolotl on rented GPU; training YAML configs live in the repo.** | 0006 |
 | D9 | Auth implementation | — | **DECIDED: better-auth** (self-hosted, TS-native, OIDC social login + API-key support). Hosted providers would hide the auth work being showcased. | 0008 |
-| D10 | Deploy target | — | **DECIDED: containers-first. Railway now; AWS as documented escape hatch. GPU serving (M7) on a GPU host as a separate service.** | 0009 |
+| D10 | Deploy target | — | **DECIDED: containers-first. Railway now; AWS as documented escape hatch. GPU serving (M7) on a GPU host as a separate service.** Amended 2026-08-29: CI publishes SHA-tagged images to GHCR and Railway services source from them, so the artifact CI tested is the artifact that runs (ADR-0011). Images are **private**, which requires **Railway Pro — $20/month per workspace** (not per seat; includes $20/month usage credit). Postgres is our own container per ADR-0013, never the managed add-on. Topology and rationale: decisions-log 2026-08-29; ADR to follow when M1's CD phase is built. | 0009 |
 | D11 | Monorepo tooling | — | **DECIDED: Bun workspaces** (replaces pnpm, tsx, and the test runner). | 0004 |
 | D12 | CI platform | — | **DECIDED: GitHub Actions.** | — |
 | D13 | Release automation | semantic-release, changesets, manual `gh release` | **DECIDED: release-please.** Version + CHANGELOG derived from conventional commits; a standing Release PR is the ship gesture. No hand-written version numbers. | 0011 |
