@@ -94,15 +94,15 @@ Files:
     restart fixes.
 - `apps/api/src/llm/gateway.test.ts` — cases for the new kind.
 
-- [ ] `modelPinSchema` round-trips, rejects `data_collection: 'allow'`, and defaults
+- [x] `modelPinSchema` round-trips, rejects `data_collection: 'allow'`, and defaults
       `reasoning.effort` to `'none'`
-- [ ] `parseModelRef` accepts `fake:deterministic` and `openrouter:anthropic/claude-sonnet-5`,
+- [x] `parseModelRef` accepts `fake:deterministic` and `openrouter:anthropic/claude-sonnet-5`,
       rejects a bare `claude-sonnet-5` and an unknown prefix
-- [ ] A `misconfigured` failure is **not retried** (exactly one provider call)
-- [ ] A `misconfigured` failure does **not** move the breaker off `closed`
-- [ ] It returns `INTERNAL` with `cause` set, and the outcome carries no provider prose
-- [ ] It is logged at `error`, and the attempt span carries `failure_kind: 'misconfigured'`
-- [ ] The existing gateway/breaker/retry/cost suites still pass unchanged
+- [x] A `misconfigured` failure is **not retried** (exactly one provider call)
+- [x] A `misconfigured` failure does **not** move the breaker off `closed`
+- [x] It returns `INTERNAL` with `cause` set, and the outcome carries no provider prose
+- [x] It is logged at `error`, and the attempt span carries `failure_kind: 'misconfigured'`
+- [x] The existing gateway/breaker/retry/cost suites still pass unchanged
 
 **Automated verification**
 ```bash
