@@ -405,8 +405,15 @@ export const createModelGateway = ({
         // explorer are fine, and marking the instance unready would produce a restart loop
         // over a condition no restart fixes.
         if (kind === 'misconfigured') {
+          // NO `err` here, deliberately. `ProviderError.raw` is an own-enumerable field
+          // holding the provider's payload, and a JSON logger serializes it — so `err`
+          // would put a 400's echoed request, or a moderation refusal's `flagged_input`,
+          // into log storage. That is the customer's content, and CONVENTIONS is explicit:
+          // log metadata, not content; payloads live in the access-controlled traces table.
+          // Nothing is lost — `cause` below carries the whole error to the error reporter,
+          // which is the sink that is allowed to hold detail (ADR-0007).
           logger?.error(
-            { provider: provider.name, model: call.model, kind, attempts, err: error },
+            { provider: provider.name, model: call.model, kind, attempts },
             'provider rejected the request in a way no retry can fix',
           )
           return finish({

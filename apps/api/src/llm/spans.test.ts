@@ -170,6 +170,29 @@ describe('a judge the provider will never accept', () => {
     expect(judge?.attributes['labelloop.attempts']).toBe(1)
     expect(judge?.status.code).toBe(2)
   })
+
+  test('puts none of the provider’s payload on a span — a span is read by more people', async () => {
+    const artifact = 'Login button does nothing on Safari 17.'
+    const provider: ModelProvider = {
+      name: 'unhappy',
+      evaluate: () =>
+        Promise.reject(
+          new ProviderError('misconfigured', 'bad request', {
+            raw: { error: { code: 400, metadata: { flagged_input: artifact } } },
+          }),
+        ),
+    }
+    await gatewayFor(provider).judge({ ...CALL, artifact }, IDENTITY)
+
+    const serialized = JSON.stringify(
+      spans.spans().map((span) => ({ attributes: span.attributes, status: span.status })),
+    )
+    expect(serialized).not.toContain('Safari')
+    expect(serialized).not.toContain('flagged_input')
+    // The status message is ours, not the provider's — asserted so a future change that
+    // forwards the provider's message into it fails here rather than in production.
+    expect(serialized).not.toContain('bad request')
+  })
 })
 
 describe('a judge span without an identity', () => {
