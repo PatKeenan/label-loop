@@ -1,6 +1,6 @@
 {
   "name": "labelloop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Judge-as-a-service with an eval-to-fine-tune flywheel.",
@@ -23,7 +23,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "prepare": "bun run setup",
-    "setup": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || echo 'setup: no git dir (tarball or image build) \u2014 skipping hook install'",
+    "setup": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || echo 'setup: no git dir (tarball or image build) — skipping hook install'",
     "test": "bun test --pass-with-no-tests",
     "typecheck": "bun run --filter '*' --if-present typecheck"
   },
