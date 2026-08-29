@@ -243,6 +243,26 @@ describe('a provider that will never accept us', () => {
     expect(logger.lines.some((line) => line.level === 'warn')).toBe(false)
   })
 
+  test('never writes the provider’s payload to a log line, whatever it contains', async () => {
+    // A 400 echoes the request back, and a moderation refusal names the flagged input, so
+    // the provider's payload on this path routinely CONTAINS the customer's artifact.
+    // `ProviderError.raw` is own-enumerable, which means a line logging `err` serializes
+    // it — the one way this rule breaks without anybody deciding to break it.
+    const logger = recordingLogger()
+    const artifact = 'Login button does nothing on Safari 17.'
+    const unhappy = alwaysFailing('misconfigured', {
+      error: { code: 400, metadata: { flagged_input: artifact } },
+    })
+    const { gateway } = gatewayFor(unhappy.provider)
+    await gateway.judge({ ...CALL, artifact }, { logger })
+
+    // Metadata, not content (CONVENTIONS.md "Logging"). The detail is not lost: `cause`
+    // carries the whole error to the error reporter, which is the sink allowed to hold it.
+    expect(JSON.stringify(logger.lines)).not.toContain('Safari')
+    expect(JSON.stringify(logger.lines)).not.toContain('flagged_input')
+    expect(logger.lines.some((line) => line.msg.startsWith('provider rejected'))).toBe(true)
+  })
+
   test('the OTHER kinds are unmoved by its arrival — unavailable still retries and trips', async () => {
     const unhappy = alwaysFailing('unavailable')
     const { gateway } = gatewayFor(unhappy.provider)
