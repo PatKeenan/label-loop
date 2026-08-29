@@ -31,7 +31,7 @@ end-to-end thread BEFORE feature work. Deliverables:
   eval gate plugs into machinery that already exists. Container images are tagged with
   the git SHA and version — never `:latest` — and the running app reports its build via
   `/healthz` and `service.version` on every span (ADR-0011). CI only: the deploy to a
-  live URL is M1.
+  live URL is M8 (moved from M1 on 2026-08-29 — see the note under M1).
 - Supply-chain hygiene in CI from the first commit (SENIORITY_CHECKLIST 10): secret
   scanning (GitHub push protection + gitleaks) and dependency scanning (Dependabot +
   `bun audit`). Secret scanning is preventative and cannot be added retroactively — a
@@ -43,10 +43,32 @@ end-to-end thread BEFORE feature work. Deliverables:
 Replace M0's fake adapter with one real frontier provider; structured JSON out
 (label, confidence, trace_id). Server-side trace persisted on every call (input, output,
 model, judge_version, latency, tokens, cost). API-key auth: hashed at rest, shown
-once, scoped to panel. Relational DB + forward-only migrations. CI/CD deploying to a live URL from
-day one. Classifier + version rows seeded by script (no UI yet).
+once, scoped to panel. Relational DB + forward-only migrations. Classifier + version rows
+seeded by script (no UI yet).
 **Demo moment:** curl with a key returns a label; trace row visible in DB.
 **Not now:** UI, judge, billing, more providers.
+
+> **CD moved out of this milestone to M8 — stakeholder decision, 2026-08-29.** This line
+> originally read "CI/CD deploying to a live URL from day one". The stakeholder's sequencing
+> is to reach a working console, issued keys, data in the panel, error analysis, open and
+> axial coding, judge creation, the full configuration surface and a fine-tune **before**
+> anything is deployed — i.e. everything runs on `docker compose` through M7. Nothing in
+> M2–M7 hard-blocks on a live URL: k6 and the Grafana stack are compose-local, OIDC
+> providers accept localhost redirect URIs, M5's dogfooding can pull this repo's issues
+> from a local process, and M7's GPU host is reached outbound.
+>
+> **The cost is named rather than discovered.** Deploying late concentrates every deploy
+> surprise into one moment on top of the largest codebase the project will ever have:
+> registry pull credentials, migration ordering without compose's
+> `depends_on: service_completed_successfully`, real cross-origin CORS and cookie `SameSite`
+> across two real domains (ADR-0020 keeps this partly under test in compose, which is what
+> makes the risk tolerable rather than reckless), and the production config placeholders
+> `config.ts` deliberately rejects. Spreading that out is exactly what "deploy from day one"
+> buys, and this trades it for a faster path to the product loop.
+>
+> The research and phase plan for the deploy are **already written and banked** — see
+> `thoughts/shared/plans/drafts/2026-08-29_m1-endpoint-spine.md` (its banked CD appendix) and D9 in
+> `thoughts/shared/research/2026-08-28_m1-endpoint-spine.md`. Nothing needs re-deriving.
 
 ## M2 — Resilience & load baseline (Category 5)
 Per-key rate limiting, request timeouts, retries with exponential backoff + jitter
@@ -126,6 +148,14 @@ outputs to the trace.
 > looks like, and the GPU density the model needs to clear its floor — one tenant's LoRA
 > on a dedicated GPU costs more than frontier tokens, so multi-adapter serving is what
 > makes the margin real. See PRODUCT 5.11 and the M7 gate above; they are one decision.
+
+**First, before anything else in this milestone: CD to a live URL** — CI publishes
+SHA-tagged private images to GHCR and Railway services source from them, so the digest CI
+booted and k6'd is the digest that runs (ADR-0011, STACK_DECISIONS D10). Moved here from M1
+on 2026-08-29; it leads M8 rather than trailing it because Stripe webhooks need a public
+endpoint and "public proof" needs something public. Topology, the rejected
+`preDeployCommand`, and the accepted risk: the banked CD appendix of
+`thoughts/shared/plans/drafts/2026-08-29_m1-endpoint-spine.md`.
 
 Stripe metered billing; tier quotas (max panels, max keys, monthly calls) enforced
 at the endpoint. Append-only audit log surfaced in console. `COMPLIANCE_READINESS.md`
