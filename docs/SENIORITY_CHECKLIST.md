@@ -8,9 +8,9 @@ linkable. Definition of done: every box checked, every artifact verifiable by an
 interviewer in under five minutes.
 
 ## 1. Core Application
-- [ ] Full-stack app: web console + typed API + relational store — M0/M1 · live URL
+- [ ] Full-stack app: web console + typed API + relational store — M0/M1 · live URL at M8
       *(M0: all three exist and boot with one command. The artifact is a LIVE URL and
-      there is no deployed environment yet — CD is M1.)*
+      there is no deployed environment yet — CD moved to M8 on 2026-08-29.)*
 - [ ] Real, eval-able AI feature (judgment gateway) — M1 · /docs + demo
 - [ ] Streaming + structured outputs with confidence — M1 · API contract
 - [ ] Versioned public API with OpenAPI + interactive docs — M1 · /openapi.json, /docs
@@ -60,7 +60,8 @@ interviewer in under five minutes.
 - [x] Public repo, ADR discipline (0001+), conventional commits — M0 · repo
 - [x] CI from day one (lint/typecheck/tests/image build, on PRs); walking skeleton
       boots via one command — M0 · Actions + compose
-- [ ] CD to a live URL; automated versioning + generated CHANGELOG — M1 · Releases
+- [ ] CD to a live URL — **M8** (moved from M1, 2026-08-29); automated versioning +
+      generated CHANGELOG — M0 · Releases
 - [ ] Dogfood case study: repo's own issues judged in production — M5 · case study
 - [ ] Architecture writeup + demo video of eval + load findings — M8 · links
 
