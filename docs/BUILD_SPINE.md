@@ -91,7 +91,10 @@ trace table. The judge wizard includes a **capability-gated model picker** — t
 catalogue client and per-endpoint gating are deferred here from M1 (ADR-0021), because a
 model is offerable only when an endpoint satisfying that judge's pin actually supports
 structured output, and the model-level capability list is a union across endpoints that
-do not all agree. Publish thin client SDK (typed client generated from contracts,
+do not all agree. Measurements to build this against — six models priced, timed and
+validated against the live API, including a model that advertises structured output and
+still breaks the output contract — are in
+`thoughts/shared/research/2026-08-30_model-tier-measurements.md`. Publish thin client SDK (typed client generated from contracts,
 retries+jitter, idempotency header; language/registry per STACK_DECISIONS.md D5) — see ADR-0002.
 **Demo moment:** the full interviewer flow end-to-end, no seeding scripts.
 **Not now:** annotator UI polish, guest experts, taxonomy tooling.

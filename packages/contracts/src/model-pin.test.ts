@@ -7,6 +7,7 @@ import {
   modelPinSchema,
   modelRefOf,
   parseModelRef,
+  REASONING_EFFORTS,
 } from './model-pin.ts'
 
 /**
@@ -51,9 +52,43 @@ describe('the pin', () => {
   })
 
   test('an effort the models API does not use is rejected rather than stored', () => {
+    // `maximum`, not `max` — the near-miss is the interesting case, because a typo that
+    // parses would be frozen into a `jdv_` and silently mean something else.
     expect(modelPinSchema.safeParse({ ...MINIMAL, reasoning: { effort: 'maximum' } }).success).toBe(
       false,
     )
+    expect(modelPinSchema.safeParse({ ...MINIMAL, reasoning: { effort: 'off' } }).success).toBe(
+      false,
+    )
+  })
+
+  test('accepts every effort the live catalogue actually uses, ordered ascending', () => {
+    // Four values did not cover the vocabulary: 20 models DEFAULT to `minimal`, `xhigh` or
+    // `max` (measured 2026-08-30), and ADR-0025 requires that default to be written in as a
+    // literal — so a missing value made those models unpinnable, not merely awkward.
+    expect([...REASONING_EFFORTS]).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    for (const effort of REASONING_EFFORTS) {
+      expect(modelPinSchema.parse({ ...MINIMAL, reasoning: { effort } }).reasoning.effort).toBe(
+        effort,
+      )
+    }
+  })
+
+  test('`none` and `minimal` stay distinct — one disables, the other is the least possible', () => {
+    // A model with mandatory reasoning cannot take `none`; `minimal` is the floor it CAN
+    // take, so collapsing them would make that model unpinnable again.
+    expect(
+      modelPinSchema.parse({ ...MINIMAL, reasoning: { effort: 'minimal' } }).reasoning,
+    ).toEqual({ effort: 'minimal' })
+    expect(modelPinSchema.parse(MINIMAL).reasoning).toEqual({ effort: 'none' })
   })
 
   test('`quantizations` is optional, and absent is not the same as empty', () => {

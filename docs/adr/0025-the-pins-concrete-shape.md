@@ -1,6 +1,6 @@
 # ADR-0025: The model pin's concrete shape
 
-**Status:** Accepted · **Date:** 2026-08-29 · **Milestone:** M1
+**Status:** Accepted (amended 2026-08-30: the effort vocabulary widened) · **Date:** 2026-08-29 · **Milestone:** M1
 
 ## Decision
 ADR-0022 established that a frozen judge version pins a capability contract; this fixes its
@@ -14,6 +14,28 @@ shape. `model_pin` is jsonb carrying `capabilities`, `data_collection` (ADR-0023
   mirror of the model/type rule rather than a route-conditional special case.
 - **`reasoning.effort` is always present and always a concrete literal.** There is no
   "inherit the provider's default".
+
+## Amendment 2026-08-30 — `reasoning.effort` takes seven values, not four
+The original four (`none`, `low`, `medium`, `high`) did not cover the vocabulary the
+catalogue actually uses. Measured against the live models API on 2026-08-30: `minimal` is
+supported by 29 models, `xhigh` by 53, `max` by 47 — and **20 models DEFAULT to one of the
+three.**
+
+That is not a cosmetic gap, because of this ADR's own rule. "Read `default_effort` and
+write that concrete value into the pin" is unsatisfiable when the value cannot be
+represented, so those 20 models were **unpinnable** — and for the ones whose reasoning is
+also mandatory, unusable outright. `google/gemini-3.5-flash-lite` is the concrete case:
+`mandatory: true` with `default_effort: 'minimal'`, so it could be neither disabled nor
+pinned to its own default.
+
+The set is now `none · minimal · low · medium · high · xhigh · max`, ordered ascending.
+`none` and `minimal` are deliberately distinct: `none` disables deliberation, `minimal` is
+the least a model that cannot be silenced will do — collapsing them would re-create exactly
+the hole this amendment closes.
+
+Widened **before P4 wrote the migration**, which is the only reason it was cheap. The column
+is frozen by ADR-0003 once written, so the same fix a week later is a migration plus an
+audit of which judges predate it. Stakeholder decision, 2026-08-30.
 
 ## Context
 ADR-0022 deliberately left the shape to M1's plan. The reasoning rule is the sharp one: 83 of
