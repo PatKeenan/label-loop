@@ -18,12 +18,18 @@ export type ModelPrice = {
 }
 
 /**
- * The price list. One entry at M0, because M0 has one provider and it is free.
+ * The price list, and **it SHRANK at M1 rather than growing** (ADR-0027).
  *
- * A table rather than a field on the judge config: prices change without the judge
- * changing, and a price baked into an immutable `jdv_` would freeze the wrong thing. When
- * real models arrive at M1 this grows; when prices move it will need to become versioned
- * and dated, which is M2's metering problem rather than a shape to guess at now.
+ * The M0 note here predicted it would grow when real models arrived. It did not, because
+ * the provider reports `usage.cost` per call — verified denominated exactly 1:1 in USD
+ * against three models with a real key on 2026-08-29 — so cost became a fetch rather than
+ * a literal somebody has to maintain. A hand-kept price list across the catalogue a model
+ * picker implies is wrong within a week of being written, and `priced: false` would have
+ * become the normal case instead of the exception it is designed to be.
+ *
+ * What remains is the one model no provider prices for us: the fake, which is genuinely
+ * free. Keeping the entry is what makes its zero mean "measured as free" rather than
+ * "unknown" — the distinction `priced` exists for.
  */
 export const MODEL_PRICES: Record<string, ModelPrice> = {
   'fake:deterministic': { inputPerMillion: 0, outputPerMillion: 0 },
@@ -33,6 +39,17 @@ export type CallCost = {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  /**
+   * Billed deliberation, where the provider reported any. Absent when it did not, which is
+   * not the same claim as zero.
+   *
+   * It is not folded into `outputTokens` because it is the part of the bill we cannot
+   * see: a model with mandatory reasoning deliberates privately, we pay, and none of it
+   * can be stored or shown to an annotator (ADR-0022). Measured 2026-08-30, one model's
+   * own effort dial moved this from 0 to 269 tokens and its cost by 1.8x, so it is the
+   * difference between a bill that is explicable and one that is merely correct.
+   */
+  reasoningTokens?: number
   /** US dollars for this one call. Zero when unpriced — see `priced`. */
   costUsd: number
   /**
@@ -46,14 +63,34 @@ export type CallCost = {
 /** Cents-of-a-cent precision. Enough for a single call; short of float noise. */
 const round = (value: number): number => Math.round(value * 1e8) / 1e8
 
-export const costOf = (model: string, usage: TokenUsage): CallCost => {
-  const price = MODEL_PRICES[model]
+/**
+ * What one call cost.
+ *
+ * **The provider's own figure wins when there is one** (ADR-0027). It is authoritative in a
+ * way an arithmetic reconstruction cannot be: it already accounts for cached input, tiered
+ * and per-endpoint rates, and reasoning tokens billed at rates the catalogue does not
+ * publish. Recomputing it from a table would be inventing a second, quieter answer to a
+ * question the provider already answered.
+ *
+ * `reportedUsd` is optional rather than required because not every adapter has one — the
+ * fake has no bill at all — and because a provider may omit it on any given response.
+ */
+export const costOf = (model: string, usage: TokenUsage, reportedUsd?: number): CallCost => {
   const totals = {
     inputTokens: usage.input,
     outputTokens: usage.output,
     totalTokens: usage.input + usage.output,
+    ...(typeof usage.reasoning === 'number' ? { reasoningTokens: usage.reasoning } : {}),
   }
 
+  // `priced` is true here for the same reason it is true for the fake: somebody who knows
+  // told us. A zero that was reported and a zero that was assumed are different claims,
+  // and M2's metering must not sum them as if they were one.
+  if (typeof reportedUsd === 'number' && Number.isFinite(reportedUsd)) {
+    return { ...totals, costUsd: round(reportedUsd), priced: true }
+  }
+
+  const price = MODEL_PRICES[model]
   if (price === undefined) return { ...totals, costUsd: 0, priced: false }
 
   return {

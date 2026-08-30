@@ -16,6 +16,7 @@ import {
   ATTR_JUDGE_SLUG,
   ATTR_JUDGE_VERSION_ID,
   ATTR_OUTCOME,
+  ATTR_REASONING_TOKENS,
 } from './attributes.ts'
 import {
   type BreakerPolicy,
@@ -242,6 +243,11 @@ export const createModelGateway = ({
             // Zero is ambiguous without this: M0's fake model is genuinely free, and a
             // model with no price on file also reports zero.
             [ATTR_COST_PRICED]: outcome.cost.priced,
+            // Only when the provider reported it. Absent is not zero, and a span that
+            // asserted zero would make invisible deliberation look measured.
+            ...(outcome.cost.reasoningTokens === undefined
+              ? {}
+              : { [ATTR_REASONING_TOKENS]: outcome.cost.reasoningTokens }),
           })
         } else if (outcome.status === 'error') {
           span.setAttribute(ATTR_ERROR_CODE, outcome.code)
@@ -334,7 +340,8 @@ export const createModelGateway = ({
         )
 
         const latencyMs = clock.now() - startedAt
-        const cost = costOf(call.model, value.usage)
+        // The provider's own figure when it gave one (ADR-0027); the table otherwise.
+        const cost = costOf(call.model, value.usage, value.costUsd)
         logger?.debug(
           {
             provider: provider.name,
@@ -342,6 +349,7 @@ export const createModelGateway = ({
             served_by: value.servedBy,
             tokens_in: cost.inputTokens,
             tokens_out: cost.outputTokens,
+            reasoning_tokens: cost.reasoningTokens ?? null,
             cost_usd: cost.costUsd,
             latency_ms: latencyMs,
             attempts,

@@ -50,6 +50,13 @@
       "when": 1787885995924,
       "tag": "0006_job_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788058294489,
+      "tag": "0007_verdict_cost",
+      "breakpoints": true
     }
   ]
 }
