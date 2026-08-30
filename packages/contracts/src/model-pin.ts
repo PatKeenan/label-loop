@@ -49,8 +49,28 @@ export const CAPABILITY_STRUCTURED_OUTPUTS = 'structured_outputs'
  *
  * Whether deliberation makes a judge BETTER is deliberately not asserted here. It is
  * empirical, and M6 can answer it as an A/B between two immutable versions.
+ *
+ * **Ordered ascending, and the full set the catalogue actually uses.** It originally held
+ * four values, which turned out not to cover the vocabulary: measured on 2026-08-30, the
+ * live catalogue supports `minimal` on 29 models, `xhigh` on 53 and `max` on 47, and
+ * **20 models DEFAULT to one of the three** — including `google/gemini-3.5-flash-lite`,
+ * whose default is `minimal` and whose reasoning is mandatory, so it could be neither
+ * pinned to its default nor disabled. Since ADR-0025 requires the default to be written in
+ * as a concrete literal, a missing value is not a cosmetic gap: it makes those models
+ * unpinnable. Widened before P4 froze the column (ADR-0025, amended).
+ *
+ * `none` and `minimal` are distinct and both are kept: `none` disables deliberation, while
+ * `minimal` is the smallest amount of it a model that cannot be silenced will do.
  */
-export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const
+export const REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 

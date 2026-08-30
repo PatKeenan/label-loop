@@ -108,6 +108,16 @@ const configSchema = z
      */
     BETTER_AUTH_SECRET: z.string().min(1).default(DEV_AUTH_SECRET),
     /**
+     * The credential for the M1 provider (ADR-0021). Optional, because a fresh clone must
+     * boot and seed with no secrets at all: without it the registry holds only the `fake:`
+     * adapter, and every seeded judge is a `fake:` judge, so the whole path still runs.
+     *
+     * P5 makes it REQUIRED in production, beside the build-provenance guards — an API
+     * deployed to judge with no key is not a degraded system, it is a broken one, and boot
+     * is where that should be said.
+     */
+    OPENROUTER_API_KEY: z.string().min(1).optional(),
+    /**
      * Where a browser reaches THIS api. better-auth builds cookie scope and callback URLs
      * from it, so it is the origin as the browser sees it, not as the process sees itself —
      * behind a proxy those differ, and the one that matters is the browser's.

@@ -60,16 +60,24 @@ describe('only src/llm may reach a model provider (ADR-0016)', () => {
   test('no provider SDK is imported outside the gateway', () => {
     // Matched by name rather than by an allow-list of packages we happen to have
     // installed, so a provider added at M1 or M7 is caught the day it arrives.
+    //
+    // `(?!\.)` restricts this to BARE specifiers — third-party packages. A relative import
+    // of our own adapter is not what this rule is about: `server.ts` is the composition
+    // root and its whole job is to wire `./llm/openrouter-provider.ts` in. Without the
+    // guard the rule fires on the one file that is supposed to do that, which would teach
+    // everyone to weaken the rule rather than to keep it.
     const providerPackage =
-      /from\s+['"](?:@?[\w./-]*)(anthropic|openai|gemini|generative-ai|bedrock-runtime|mistral|cohere|groq|ollama|replicate|together)/i
+      /from\s+['"](?!\.)(?:@?[\w./-]*)(anthropic|openai|openrouter|gemini|generative-ai|bedrock-runtime|mistral|cohere|groq|ollama|replicate|together)/i
     expect(offences(outsideTheGateway(), providerPackage)).toEqual([])
   })
 
   test('no provider hostname appears outside the gateway', () => {
     // The obvious way around an import ban is a hand-rolled HTTP call, so the hosts are
     // banned as well as the SDKs.
+    // `openrouter\.ai` joins the list at M1 (ADR-0021). Written escaped, exactly like
+    // every entry beside it, so the rule does not match its own source and fail here.
     const providerHost =
-      /api\.(?:anthropic|openai|mistral|cohere|groq|together|deepseek)\.(?:com|ai)|generativelanguage\.googleapis\.com|bedrock-runtime\.[\w-]+\.amazonaws\.com/i
+      /api\.(?:anthropic|openai|mistral|cohere|groq|together|deepseek)\.(?:com|ai)|generativelanguage\.googleapis\.com|bedrock-runtime\.[\w-]+\.amazonaws\.com|openrouter\.ai/i
     expect(offences(outsideTheGateway(), providerHost)).toEqual([])
   })
 

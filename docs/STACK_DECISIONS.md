@@ -1,6 +1,6 @@
 # STACK_DECISIONS.md — technology choices (stakeholder-owned)
 
-REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
+REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29; D16 added 2026-08-30). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
 once made, gets a short ADR recording the why. Options listed are starting points, not
 a menu limit.
 
@@ -21,6 +21,7 @@ a menu limit.
 | D13 | Release automation | semantic-release, changesets, manual `gh release` | **DECIDED: release-please.** Version + CHANGELOG derived from conventional commits; a standing Release PR is the ship gesture. No hand-written version numbers. | 0011 |
 | D14 | Static asset serving (console container) | hand-rolled Bun file server, nginx, Caddy | **DECIDED 2026-08-28: nginx** (`nginx-unprivileged`, pinned), config committed at `apps/web/nginx.conf`. Static files only — never a reverse proxy in front of the API, so the real CORS and cross-origin cookie stay under test. | 0020 |
 | D15 | Judge inference provider | direct per-provider adapters, Anthropic only, Bedrock/Vertex/Foundry, self-hosted LiteLLM proxy | **DECIDED 2026-08-29: OpenRouter**, as the only real adapter at M1 and **only for the phase where the artifacts are our own**. Model choice is customer configuration, not an architecture choice. Carries an expiry condition: before any tenant that is not us sends artifacts through a panel, a direct or cloud-vendor adapter must exist and the ADR be revisited — on data-governance grounds. | 0021 |
+| D16 | Provider response decoding | hand-written wire types, `@openrouter/ai-sdk-provider`, the SDK as the client | **DECIDED 2026-08-30: `@openrouter/sdk` for its response types and `chatResultFromJSON` decode ONLY.** Request stays plain `fetch`; every resilience primitive stays hand-rolled (ADR-0012) — their client retries 5XX for up to an hour with weak jitter and has no breaker. Depends on `zod` alone, already in the tree. Narrows ADR-0021's rejection of client libraries, which was aimed at abstraction layers that hide retry and error mapping, not at a vendor's type definitions. | 0030 |
 
 Decided-by-stakeholder already (not open):
 - Load testing: **k6** (explicit requirement)

@@ -107,6 +107,15 @@
   subject to three standing constraints: actively maintained, no large transitive tree,
   and any library that becomes an architectural seam is promoted to a stack row
   retroactively (a retry/breaker helper inside `llm/` is architecture, not a utility).
+- **The bar is LIMITED dependencies, never zero.** Hand-rolling is not automatically the
+  safer choice, and a plan that says "no new dependency" is describing that plan rather
+  than setting policy. The question to ask is what a package would REPLACE. One that takes
+  over a behaviour this project exists to demonstrate is refused, however convenient
+  (ADR-0012: retry, backoff, breaker). One that supplies a fact we would otherwise be
+  guessing at is usually worth taking — a vendor's own type definitions beat a hand-written
+  copy of them, because a copy cannot fail and so its drift is invisible (ADR-0030). Both
+  of those are situational judgements, made per case and recorded, not a standing lean in
+  either direction.
 
 ## LLM-call rules
 - Every provider call goes through one internal `llm/` module: timeout, retry with

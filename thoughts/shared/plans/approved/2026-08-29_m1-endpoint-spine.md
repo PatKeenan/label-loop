@@ -166,20 +166,20 @@ Files (all inside `apps/api/src/llm/`, which is the fence — ADR-0016):
   and pin, printing key order, `usage.cost`, `served_by` and the available-endpoint count.
   This is the live check, and it is a script rather than a test on purpose (see Decisions).
 
-- [ ] `describeModelProviderContract` is **imported**, not reimplemented, and passes against
+- [x] `describeModelProviderContract` is **imported**, not reimplemented, and passes against
       a stubbed `fetch` — including the abort case and the unknown-model case
-- [ ] The derived schema has exactly `rationale, reasons, verdict, confidence`, **in that
+- [x] The derived schema has exactly `rationale, reasons, verdict, confidence`, **in that
       order**, all required, `additionalProperties: false`, and no `$ref`
-- [ ] `topLevelKeyOrder` ignores keys nested inside `reasons` and inside string literals
-- [ ] A response with `verdict` emitted first is `invalid_output`, **even though Zod accepts it**
-- [ ] Every row of the failure table above has a test
-- [ ] The request body carries `require_parameters: true` and `data_collection: 'deny'`
+- [x] `topLevelKeyOrder` ignores keys nested inside `reasons` and inside string literals
+- [x] A response with `verdict` emitted first is `invalid_output`, **even though Zod accepts it**
+- [x] Every row of the failure table above has a test
+- [x] The request body carries `require_parameters: true` and `data_collection: 'deny'`
       whenever a pin is supplied, and `reasoning: {enabled:false}` for effort `none`
-- [ ] **A moderation payload never reaches a log line or a span** — asserted with a fake
+- [x] **A moderation payload never reaches a log line or a span** — asserted with a fake
       logger and an in-memory span exporter against a 400 carrying `flagged_input` (D7)
-- [ ] `architecture.test.ts` is green with the hostname added, and still catches a planted
+- [x] `architecture.test.ts` is green with the hostname added, and still catches a planted
       `fetch(` in `apps/api/src/services/`
-- [ ] The per-attempt timeout is **re-derived, not inherited**: run `verify:pin` against a
+- [x] The per-attempt timeout is **re-derived, not inherited**: run `verify:pin` against a
       ~2,000-token artifact on all three seed models, record the latencies in this plan's
       deviations, and set `DEFAULT_RETRY_POLICY.timeoutMs` to a value the slowest clears with
       headroom. M2's k6 work inherits whatever this phase writes down.
@@ -518,6 +518,80 @@ turns them into ADR stubs.
 `stack` and on `push: main`, and the live `/healthz` provenance check is the deploy's
 acceptance test — nothing reaches the registry that has not already been composed, migrated,
 seeded and k6'd.
+
+## Deviations
+Recorded as they happened; these are decision provenance too.
+
+1. **`OPENROUTER_API_KEY` moved from P5 to P2 (`config.ts`).** P2's `server.ts` change
+   registers the adapter "only when a key is present", which requires reading it. P5 still
+   owns making it **required in production** via the `superRefine`.
+2. **`@openrouter/sdk` adopted for response decoding — a new dependency the plan said it
+   would not introduce.** Stakeholder decision, 2026-08-30, recorded as **ADR-0030** and
+   **STACK_DECISIONS D16**. The plan's "no new npm dependency is introduced at all" was an
+   observation about this plan's expected shape, not a policy — CONVENTIONS' bar is limited
+   dependencies, never zero — so this is a plan-scoped deviation and not a rule being
+   broken. The reason it was worth taking: the hand-written
+   `OpenRouterResponse` had already produced a real bug. `served_by` read
+   `available[0].model` where the endpoint that actually answered is the one flagged
+   `selected` — a plausible wrong answer in the field ADR-0022 says routing-drift queries
+   depend on. Their transport was inspected and deliberately NOT adopted (one-hour retry
+   ceiling, jitter added on a deterministic base, no breaker), so ADR-0012 stands intact.
+3. **The import fence was narrowed to bare specifiers.** Adding `openrouter` to the
+   provider-SDK regex made it fire on `server.ts` importing our own
+   `./llm/openrouter-provider.ts`. `(?!\.)` restricts the rule to third-party packages,
+   which is what it was always about; verified to still catch a planted
+   `@openrouter/sdk` import in `services/`.
+
+4. **The per-attempt timeout was re-derived and the measurement CONFIRMED 10s (Decision 14).**
+   Measured 2026-08-30
+   with `verify:pin` against a ~2,700-input-token artifact, three real models, a real key:
+
+   | Model | Effort | Latency | Endpoints | Cost | Reasoning tokens |
+   |---|---|---|---|---|---|
+   | `anthropic/claude-sonnet-5` | none | 5304 / 3829 / 4092 ms | **5** | $0.007244 | 0 |
+   | `google/gemini-3.7-flash` | **medium** | 2337 ms | 2 | $0.002115 | **84** |
+   | `openai/gpt-5.6-sol` | none | 1877 ms | 3 | $0.005366 | 0 |
+
+   The value does not move, and that is the honest outcome rather than a missed change: it
+   is now evidenced instead of inherited from a number chosen against a fake. Two
+   constraints bracket it. From below, the slowest observed call at 5304ms, cleared with
+   1.9x headroom — and erring high matters because the failure modes are asymmetric: too
+   high costs one slow request, too low KILLS calls that would have succeeded and pays for
+   them again. From above, `retry.test.ts` caps the caller's worst case
+   (`maxAttempts * timeoutMs` + backoff) at 31s, which at three attempts puts the ceiling
+   at **10.23s**. 10s is very nearly the largest value that budget permits.
+
+   **Corrected the same day, and the correction matters more than the number.** A sweep of
+   the cheap tier caught `anthropic/claude-haiku-4.5` at **15092ms** on the same probe
+   (3078 / 5839 / 15092 across three runs) — half again the timeout, on the model advertised
+   as the fast one. So "1.9x headroom" was an artefact of sampling three frontier models:
+   latency varies far more ACROSS the catalogue than within one model, and three samples of
+   one model do not bound it. The value still does not move, because the caller-latency
+   budget is what fixes it, but the justification is now the budget rather than a headroom
+   claim the data does not support. A slow model is expected to time out and be retried.
+
+   Worth recording as process: an initial 12s was written and the budget test rejected it.
+   That test encodes a product commitment about what a caller waits, so the right response
+   was to accept the constraint rather than raise the bound to fit a number picked by feel.
+   Going above 10s is not tuning — it means renegotiating that budget or spending a retry
+   attempt, and nothing measured here justifies either. M2's k6 work should replace three
+   samples with a distribution.
+
+   Three things the live run confirmed that no stub could:
+   - Sonnet's pin leaves **5 endpoints**, matching ADR-0023's independently measured "5 of 9".
+   - Key order was correct on all three, and `served_by` returned the DATED id via
+     `selected` — the field the vendor types surfaced (ADR-0030).
+   - Gemini's reasoning tokens are **84** while the other two are 0 — the
+     pinned-versus-mandatory distinction, visible in data, which P5's manual verification
+     asks for and which is now confirmed ahead of it.
+
+5. **`google/gemini-3.7-flash` has `reasoning.default_effort: "medium"`**, read from the
+   models API on **2026-08-30**. That is the literal Decision 17 requires P5 to write into
+   its pin — not an absent field. Recorded here so a later provider-side change to that
+   default is a visible divergence rather than a silent one. Confirmed the hard way first:
+   at effort `none` the model returns a 400, *"Reasoning is mandatory for this endpoint and
+   cannot be disabled"*, which the adapter classified as **`misconfigured`** and did not
+   retry — the failure table's 400-without-moderation row, exercised live.
 
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1
