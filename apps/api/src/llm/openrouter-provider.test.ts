@@ -17,20 +17,43 @@ const MODEL = 'openrouter:anthropic/claude-sonnet-5'
 const IN_ORDER =
   '{"rationale":"Steps are present but no expected behaviour.","reasons":["missing-expected-behaviour"],"verdict":true,"confidence":0.82}'
 
+/**
+ * A realistic wire payload — snake_case, and carrying the fields the SDK's schema declares
+ * required. Fixtures now have to look like the real thing, which is itself part of what
+ * adopting the vendor schema bought: a fixture that drifts from the wire fails here.
+ */
 const okBody = (content = IN_ORDER, overrides: Record<string, unknown> = {}) => ({
+  id: 'gen-1756500000-abc',
+  object: 'chat.completion',
+  created: 1756500000,
   model: 'anthropic/claude-sonnet-5',
-  choices: [{ finish_reason: 'stop', message: { content } }],
+  system_fingerprint: null,
+  choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }],
   usage: {
     prompt_tokens: 412,
     completion_tokens: 96,
+    total_tokens: 508,
     cost: 0.0023,
     completion_tokens_details: { reasoning_tokens: 0 },
   },
   openrouter_metadata: {
+    attempt: 1,
+    is_byok: false,
+    region: null,
+    requested: 'anthropic/claude-sonnet-5',
+    strategy: 'default',
+    summary: 'routed',
     endpoints: {
+      // `total` is the catalogue; `available` is what survived the pin. The endpoint that
+      // ANSWERED is the one flagged `selected`, and it is deliberately not the first.
+      total: 9,
       available: [
-        { model: 'anthropic/claude-sonnet-5-20260630' },
-        { model: 'anthropic/claude-sonnet-5-20260630' },
+        {
+          model: 'anthropic/claude-sonnet-5-20260101',
+          provider: 'Amazon Bedrock',
+          selected: false,
+        },
+        { model: 'anthropic/claude-sonnet-5-20260630', provider: 'Anthropic', selected: true },
       ],
     },
   },
@@ -139,17 +162,42 @@ describe('the request built from the pin', () => {
 })
 
 describe('a successful answer', () => {
-  test('reports the DATED endpoint id, not the alias the response echoes', async () => {
+  test('reports the SELECTED endpoint\u2019s dated id, not the alias and not the first', async () => {
     const { provider } = providerWith(200, okBody())
     const result = await provider.evaluate(CALL)
-    // The alias is `anthropic/claude-sonnet-5`; the identity that answered is dated.
+    // Three candidates, and only one is right. The alias is `anthropic/claude-sonnet-5`;
+    // the FIRST available endpoint is `...-20260101` and did not answer; the one that did
+    // is flagged `selected`. Reading position zero would name a real endpoint that served
+    // nothing \u2014 a plausible wrong answer in the field routing-drift queries depend on.
     expect(result.servedBy).toBe('anthropic/claude-sonnet-5-20260630')
   })
 
-  test('falls back to the echoed model when metadata carries no endpoint', async () => {
-    const { provider } = providerWith(200, okBody(IN_ORDER, { openrouter_metadata: {} }))
+  test('counts the pool that survived the pin, not the catalogue it was drawn from', async () => {
+    const { provider } = providerWith(200, okBody())
+    // `total` is 9; `available` is 2. ADR-0026 records how much failover the pin LEFT.
+    expect((await provider.evaluate(CALL)).availableEndpoints).toBe(2)
+  })
+
+  test('a response the provider schema cannot read is invalid_output, never a crash', async () => {
+    const { provider } = providerWith(200, { id: 'g', object: 'chat.completion' })
+    await expectProviderFailure(provider.evaluate(CALL), 'invalid_output')
+  })
+
+  test('a field OpenRouter ADDS tomorrow does not break a good call', async () => {
+    // Unknown keys are stripped by the vendor schema rather than rejected, so the risk of
+    // adopting it is bounded: additions are safe, and only a REMOVED required field bites.
+    const { provider } = providerWith(200, okBody(IN_ORDER, { brand_new_field: { x: 1 } }))
+    expect((await provider.evaluate(CALL)).servedBy).toBe('anthropic/claude-sonnet-5-20260630')
+  })
+
+  test('falls back to the echoed model when the response carries no routing metadata', async () => {
+    // Metadata is opt-in, so a response without it is ordinary rather than broken.
+    const bare = okBody()
+    const { openrouter_metadata: _omitted, ...withoutMetadata } = bare
+    const { provider } = providerWith(200, withoutMetadata)
     const result = await provider.evaluate(CALL)
     expect(result.servedBy).toBe('anthropic/claude-sonnet-5')
+    expect(result.availableEndpoints).toBeUndefined()
   })
 
   test('takes cost from the provider, and counts the endpoints that survived the pin', async () => {
@@ -165,7 +213,7 @@ describe('a successful answer', () => {
 
     const silent = providerWith(
       200,
-      okBody(IN_ORDER, { usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+      okBody(IN_ORDER, { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }),
     )
     // Absent, not zero: a provider that said nothing has not said "none".
     expect((await silent.provider.evaluate(CALL)).usage.reasoning).toBeUndefined()
@@ -193,14 +241,19 @@ describe('an answer that completed and is unusable', () => {
   })
 
   test('a 200 with finish_reason `error` is invalid_output — it completed, unusably', async () => {
-    const body = okBody()
-    body.choices = [{ finish_reason: 'error', message: { content: '' } }]
-    const { provider } = providerWith(200, body)
+    const { provider } = providerWith(
+      200,
+      okBody(IN_ORDER, {
+        choices: [
+          { index: 0, finish_reason: 'error', message: { role: 'assistant', content: '' } },
+        ],
+      }),
+    )
     await expectProviderFailure(provider.evaluate(CALL), 'invalid_output')
   })
 
   test('a 200 with no message at all is invalid_output', async () => {
-    const { provider } = providerWith(200, { model: 'x', choices: [] })
+    const { provider } = providerWith(200, okBody(IN_ORDER, { choices: [] }))
     await expectProviderFailure(provider.evaluate(CALL), 'invalid_output')
   })
 })

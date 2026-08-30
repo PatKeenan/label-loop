@@ -519,6 +519,27 @@ turns them into ADR stubs.
 acceptance test — nothing reaches the registry that has not already been composed, migrated,
 seeded and k6'd.
 
+## Deviations
+Recorded as they happened; these are decision provenance too.
+
+1. **`OPENROUTER_API_KEY` moved from P5 to P2 (`config.ts`).** P2's `server.ts` change
+   registers the adapter "only when a key is present", which requires reading it. P5 still
+   owns making it **required in production** via the `superRefine`.
+2. **`@openrouter/sdk` adopted for response decoding — a new dependency the plan said it
+   would not introduce.** Stakeholder decision, 2026-08-30, recorded as **ADR-0030** and
+   **STACK_DECISIONS D16**. The plan's "no new npm dependency is introduced at all" is
+   therefore no longer true, and the reason is worth the amendment: the hand-written
+   `OpenRouterResponse` had already produced a real bug. `served_by` read
+   `available[0].model` where the endpoint that actually answered is the one flagged
+   `selected` — a plausible wrong answer in the field ADR-0022 says routing-drift queries
+   depend on. Their transport was inspected and deliberately NOT adopted (one-hour retry
+   ceiling, jitter added on a deterministic base, no breaker), so ADR-0012 stands intact.
+3. **The import fence was narrowed to bare specifiers.** Adding `openrouter` to the
+   provider-SDK regex made it fire on `server.ts` importing our own
+   `./llm/openrouter-provider.ts`. `(?!\.)` restricts the rule to third-party packages,
+   which is what it was always about; verified to still catch a planted
+   `@openrouter/sdk` import in `services/`.
+
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1
   exists to harden — error mapping (mid-stream failures arrive inside a 200) and cost
