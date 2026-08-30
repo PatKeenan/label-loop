@@ -52,12 +52,12 @@ const rejection = async (work: Promise<unknown>): Promise<unknown> => {
   return outcome.error
 }
 
-const errnoOf = (error: unknown): string | undefined => {
+const sqlStateOf = (error: unknown): string | undefined => {
   const seen = new Set<unknown>()
   let current: unknown = error
   while (current !== null && typeof current === 'object' && !seen.has(current)) {
     seen.add(current)
-    if ('errno' in current) return String((current as { errno: unknown }).errno)
+    if ('code' in current) return String((current as { code: unknown }).code)
     current = (current as { cause?: unknown }).cause
   }
   return undefined
@@ -118,7 +118,7 @@ describe('activation is a pointer', () => {
      * belongs here.
      */
     const error = await rejection(activate(panelB, v1))
-    expect(errnoOf(error)).toBe('23503')
+    expect(sqlStateOf(error)).toBe('23503')
 
     const panel = await db.query.panels.findFirst({ where: eq(panels.id, panelB) })
     expect(panel?.currentVersionId).toBeNull()

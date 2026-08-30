@@ -1,7 +1,8 @@
+import type { ModelPin, ModelPinValidation } from '@labelloop/contracts'
 import { sql } from 'drizzle-orm'
 import { boolean, check, integer, pgTable, real, text, uniqueIndex } from 'drizzle-orm/pg-core'
 import { createdBy } from './authored.ts'
-import { createdAt, id, idCheck, judgePolarity, judgeType } from './columns.ts'
+import { createdAt, id, idCheck, jsonbColumn, judgePolarity, judgeType } from './columns.ts'
 import { judges } from './judges.ts'
 
 /**
@@ -50,8 +51,36 @@ export const judgeVersions = pgTable(
     required: boolean('required').notNull().default(false),
     /** The binary question put to the model. Prompts live in versioned configs, not code. */
     question: text('question').notNull(),
-    /** Which model answers it. Null for `code` judges, which call nothing. */
+    /**
+     * Which model answers it — route-qualified, `<route>:<native-id>` (ADR-0022). Null for
+     * `code` judges, which call nothing. The prefix names the ACCESS PATH, not just the
+     * model, because the same model is not the same capability surface reached two ways.
+     */
     model: text('model'),
+    /**
+     * **What this judge is actually frozen against** (ADR-0022, ADR-0025): the properties
+     * an endpoint must HAVE to serve it, not the name of an endpoint. Required capabilities,
+     * the data-collection stance (ADR-0023), acceptable quantizations, and the reasoning
+     * effort — translated into the provider's routing controls on every call.
+     *
+     * A bare model name would leave the judge's real capability decided by routing, at call
+     * time, by someone who is not us: measured 2026-08-28, `anthropic/claude-sonnet-5`
+     * exposed nine endpoints and three could not do structured output at all, while the
+     * model-level capability list advertised it because that field is a UNION across
+     * endpoints. Judge output is a parsed contract, so that failure is unusable rather than
+     * merely degraded.
+     */
+    modelPin: jsonbColumn<ModelPin>('model_pin'),
+    /**
+     * What one real call observed when this pin was validated, before the row froze:
+     * `{validated_at, available_endpoints, served_by}`.
+     *
+     * **Its own column, not a field inside the pin** (ADR-0026). The pin is a CONSTRAINT
+     * translated onto the wire; this is a MEASUREMENT taken once. Merging them would ship
+     * non-request data inside the request body. Nullable because the four M0-seeded `fake:`
+     * judges predate any validation and there was nothing to route.
+     */
+    modelPinValidation: jsonbColumn<ModelPinValidation>('model_pin_validation'),
     /** Who authored this row. See `authored.ts` for why it is `user`. */
     createdBy: createdBy(),
     createdAt: createdAt(),
@@ -80,6 +109,15 @@ export const judgeVersions = pgTable(
       'judge_versions_model_matches_type',
       sql`(${table.type} = 'code' AND ${table.model} IS NULL)
           OR (${table.type} = 'llm' AND ${table.model} IS NOT NULL)`,
+    ),
+    // The clean MIRROR of the rule above, which is why every `llm` judge carries a pin
+    // even where it constrains nothing — a `fake:` route has no endpoints to route among
+    // (ADR-0025). A route-conditional rule would have to be re-reasoned at every read;
+    // this one is the same shape as the model rule and needs reading once.
+    check(
+      'judge_versions_pin_matches_type',
+      sql`(${table.type} = 'code' AND ${table.modelPin} IS NULL)
+          OR (${table.type} = 'llm' AND ${table.modelPin} IS NOT NULL)`,
     ),
   ],
 )

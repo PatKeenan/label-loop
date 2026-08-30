@@ -1,7 +1,7 @@
 import type { IdPrefix } from '@labelloop/contracts'
 import { newId, ULID_CHARS } from '@labelloop/contracts'
 import { sql } from 'drizzle-orm'
-import { check, customType, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
+import { check, jsonb, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
 
 /**
  * The column shapes every table shares, in one place so a new table cannot quietly
@@ -50,29 +50,23 @@ export const idCheck = (table: string, column: PgColumn, prefix: IdPrefix) =>
 /**
  * A `jsonb` column that stores JSON, rather than a string that happens to contain JSON.
  *
- * Drizzle's own `jsonb()` calls `JSON.stringify` on the way to the driver, which is right
- * for a driver that wants text — and wrong for Bun's, which serializes objects to JSON
- * itself. The two compose into a double encoding: the object becomes a string, and the
- * string is then stored as a jsonb *string*. Every jsonb column in this schema was
- * affected, and the failure is close to invisible, because Drizzle parses the value back
- * on read and hands you the object you expected.
+ * **This used to be a hand-written custom type, and its deletion is the point** (ADR-0031).
+ * Under Bun's driver, Drizzle's own `jsonb()` composed into a DOUBLE encoding — Drizzle
+ * called `JSON.stringify` on the way out and Bun's driver serialized the resulting string
+ * again, so Postgres stored a jsonb *string*. The workaround was identity in both
+ * directions, leaving the encoding to the driver.
  *
- * What it silently breaks is everything that is not Drizzle. `raw_response->>'model'`
- * returns nothing, `jsonb_typeof` says `string`, a GIN index has one opaque scalar to
- * index, and the dataset exports M6 builds out of these payloads get a wall of escaped
- * quotes. For columns whose whole purpose is to be queried later — the raw provider
- * payload, the taxonomy codes on a verdict — that is the difference between an auditable
- * record and a blob.
+ * Under `node-postgres` that workaround became the bug it was written against, and worse:
+ * a pass-through hands `pg` a raw JS array, which it serializes as a Postgres ARRAY
+ * literal — `{a,b}` — that a jsonb column rejects outright. Drizzle's stock behaviour is
+ * simply correct here, because `pg` sends text as text.
  *
- * Identity in both directions, therefore: the driver is left to do the encoding it is
- * already doing correctly. `jsonb-encoding.test.ts` asserts what Postgres actually holds.
+ * So this is now a thin alias kept for its NAME and its type parameter. It stays rather
+ * than being inlined because the call sites read better and because
+ * `jsonb-encoding.test.ts` — which asserts what Postgres actually holds, in SQL — is
+ * anchored to this one seam.
  */
-export const jsonbColumn = <TData>(name: string) =>
-  customType<{ data: TData; driverData: TData }>({
-    dataType: () => 'jsonb',
-    toDriver: (value) => value,
-    fromDriver: (value) => value,
-  })(name)
+export const jsonbColumn = <TData>(name: string) => jsonb(name).$type<TData>()
 
 /**
  * Timestamps are `timestamptz` and named with an `_at` suffix (CONVENTIONS.md "API

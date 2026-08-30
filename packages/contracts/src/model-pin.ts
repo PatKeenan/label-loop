@@ -153,6 +153,47 @@ export const DEFAULT_FAKE_PIN: ModelPin = {
   reasoning: { effort: 'none' },
 }
 
+/**
+ * What one real call OBSERVED when a pin was validated, immediately before the `jdv_`
+ * froze (ADR-0026).
+ *
+ * **Stored in its own column, never inside the pin.** The pin is a constraint translated
+ * onto the wire; this is a measurement taken once. Merging them would put non-request data
+ * into the request body — and worse, would make a frozen constraint look like it contained
+ * a fact about the world on a particular afternoon.
+ *
+ * `available_endpoints` is the one nothing static can predict, and the reason ADR-0022
+ * requires recording it: measured 2026-08-29, `anthropic/claude-sonnet-5` had 5 endpoints
+ * of 9 under the full pin and `openai/gpt-5.6-sol` had **1 of 5** — a judge with no
+ * failover is fragile in a way one with four spares is not, and that is knowable only here.
+ */
+export const modelPinValidationSchema = z
+  .object({
+    validated_at: z.iso.datetime().openapi({
+      description: 'When the validating call was made. UTC ISO-8601, like every timestamp.',
+      example: '2026-08-30T12:00:00.000Z',
+    }),
+    available_endpoints: z
+      .number()
+      .int()
+      .min(0)
+      .openapi({
+        description:
+          'How many endpoints survived the pin. Zero would mean the judge cannot be ' +
+          'served at all, which is why validation happens before the version freezes.',
+        example: 5,
+      }),
+    served_by: z.string().openapi({
+      description:
+        'The dated id of the endpoint that answered the validating call — not the ' +
+        'alias, because the dated snapshot is the identity that actually served it.',
+      example: 'anthropic/claude-sonnet-5-20260630',
+    }),
+  })
+  .openapi('ModelPinValidation')
+
+export type ModelPinValidation = z.infer<typeof modelPinValidationSchema>
+
 /** A model reference split into the half that dispatches and the half that is sent. */
 export type ModelRef = {
   /** Which adapter answers for this model. The registry dispatches on exactly this. */

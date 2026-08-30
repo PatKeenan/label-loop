@@ -1,3 +1,4 @@
+import type { ModelPin } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
 import { eq } from 'drizzle-orm'
@@ -28,6 +29,12 @@ export type PanelJudge = {
   question: string
   /** Null for `code` judges, which call nothing. */
   model: string | null
+  /**
+   * The routing constraints frozen onto this version (ADR-0022). Null exactly when `model`
+   * is — the CHECK enforces the pairing, so a judge with one and not the other cannot be
+   * read because it cannot be written.
+   */
+  modelPin: ModelPin | null
 }
 
 export type LivePanel = {
@@ -68,6 +75,10 @@ export const findLivePanel = async (
                   required: true,
                   question: true,
                   model: true,
+                  // Selected because it goes onto the wire on every judge call. A pin read
+                  // from the row is the only thing that makes the frozen version mean
+                  // anything at request time.
+                  modelPin: true,
                 },
                 with: { judge: { columns: { id: true, slug: true } } },
               },
@@ -99,6 +110,7 @@ export const findLivePanel = async (
         polarity: judgeVersion.polarity,
         weight: judgeVersion.weight,
         required: judgeVersion.required,
+        modelPin: judgeVersion.modelPin,
         question: judgeVersion.question,
         model: judgeVersion.model,
       }))

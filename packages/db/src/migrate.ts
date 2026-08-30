@@ -1,6 +1,6 @@
-import { SQL } from 'bun'
-import { drizzle } from 'drizzle-orm/bun-sql'
-import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { migrate } from 'drizzle-orm/node-postgres/migrator'
+import { createSqlClient } from './sql-client.ts'
 
 /**
  * Runs the forward-only migration stream as the MIGRATOR role. The app role holds no DDL
@@ -16,9 +16,9 @@ import { migrate } from 'drizzle-orm/bun-sql/migrator'
 export const MIGRATIONS_FOLDER = new URL('../migrations', import.meta.url).pathname
 
 export const runMigrations = async (migrationUrl: string): Promise<void> => {
-  const client = new SQL({ url: migrationUrl, max: 1 })
+  const client = createSqlClient({ url: migrationUrl, max: 1 })
   try {
-    await migrate(drizzle({ client }), { migrationsFolder: MIGRATIONS_FOLDER })
+    await migrate(drizzle({ client: client.pool }), { migrationsFolder: MIGRATIONS_FOLDER })
   } finally {
     await client.close()
   }

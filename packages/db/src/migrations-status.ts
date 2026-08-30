@@ -1,5 +1,5 @@
-import type { SQL } from 'bun'
 import journal from '../migrations/meta/_journal.json' with { type: 'json' }
+import type { SqlClient } from './sql-client.ts'
 
 /**
  * "Are the migrations current?" — the second half of `/readyz` (CONVENTIONS.md "Health &
@@ -32,7 +32,7 @@ export const expectedMigrations = (): { count: number; newest: number } => ({
   newest: latestJournalEntry()?.when ?? 0,
 })
 
-export const migrationStatus = async (client: SQL): Promise<MigrationStatus> => {
+export const migrationStatus = async (client: SqlClient): Promise<MigrationStatus> => {
   const expected = journal.entries.length
   const latest = latestJournalEntry()
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { newId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, type ModelPin, newId } from '@labelloop/contracts'
 import { appClient } from '../test-support.ts'
 
 /**
@@ -22,9 +22,9 @@ const rejection = async (query: Promise<unknown>): Promise<unknown> => {
   return outcome.error
 }
 
-const errnoOf = (error: unknown): string | undefined =>
-  typeof error === 'object' && error !== null && 'errno' in error
-    ? String((error as { errno: unknown }).errno)
+const sqlStateOf = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code: unknown }).code)
     : undefined
 
 const orgId = newId('org_')
@@ -55,14 +55,87 @@ const insertJudgeVersion = (fields: {
   polarity: 'passes' | 'fails' | 'does_not_score'
   weight: number | null
   model: string | null
-}) =>
-  db`
-    INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question, model)
+  /**
+   * Omitted means the PAIRED value — an `llm` fixture gets the default pin, a `code` one
+   * gets null — so every existing case keeps testing what it was written to test. Pass it
+   * explicitly only to violate the pairing on purpose.
+   */
+  modelPin?: ModelPin | null
+}) => {
+  // Bound as an object. Pre-stringifying would store a jsonb STRING rather than an object,
+  // because Bun's SQL driver serializes objects itself (see jsonb-encoding.test.ts).
+  const modelPin =
+    fields.modelPin === undefined
+      ? fields.type === 'llm'
+        ? DEFAULT_FAKE_PIN
+        : null
+      : fields.modelPin
+  return db`
+    INSERT INTO judge_versions
+      (id, judge_id, version, type, polarity, weight, question, model, model_pin)
     VALUES (
       ${newId('jdv_')}, ${judgeId}, ${fields.version}, ${fields.type}::judge_type,
-      ${fields.polarity}::judge_polarity, ${fields.weight}, 'Is this a fixture?', ${fields.model}
+      ${fields.polarity}::judge_polarity, ${fields.weight}, 'Is this a fixture?', ${fields.model},
+      ${modelPin}::jsonb
     )
   `
+}
+
+describe('a pin is paired with the type, exactly like the model is (ADR-0022)', () => {
+  /**
+   * The mirror of `judge_versions_model_matches_type`, and mirrored deliberately: a
+   * route-conditional rule — pins only for real routes — would have to be re-reasoned at
+   * every read, so a `fake:` judge carries a pin that constrains nothing (ADR-0025).
+   *
+   * Asserted against Postgres rather than trusted, because this is the column ADR-0003
+   * freezes forever. A judge written without a pin cannot be fixed later by editing it;
+   * the only remedy is a new version, which is precisely the cost the constraint prevents.
+   */
+  test('a `code` judge with a pin is REJECTED — it calls nothing, so it constrains nothing', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 40,
+        type: 'code',
+        polarity: 'fails',
+        weight: 1,
+        model: null,
+        modelPin: DEFAULT_FAKE_PIN,
+      }),
+    )
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('an `llm` judge with NO pin is rejected — the capability contract is not optional', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 41,
+        type: 'llm',
+        polarity: 'fails',
+        weight: 1,
+        model: 'fake:deterministic',
+        modelPin: null,
+      }),
+    )
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('the paired combinations are both accepted', async () => {
+    await insertJudgeVersion({
+      version: 42,
+      type: 'llm',
+      polarity: 'fails',
+      weight: 1,
+      model: 'fake:deterministic',
+    })
+    await insertJudgeVersion({
+      version: 43,
+      type: 'code',
+      polarity: 'fails',
+      weight: 1,
+      model: null,
+    })
+  })
+})
 
 describe('polarity is three-valued, and weight has to agree with it', () => {
   /**
@@ -102,7 +175,7 @@ describe('polarity is three-valued, and weight has to agree with it', () => {
         model: 'frontier:sonnet',
       }),
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('a scoring judge WITHOUT a weight is rejected', async () => {
@@ -115,7 +188,7 @@ describe('polarity is three-valued, and weight has to agree with it', () => {
         model: 'frontier:sonnet',
       }),
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('polarity outside the three values is not even representable', async () => {
@@ -126,7 +199,7 @@ describe('polarity is three-valued, and weight has to agree with it', () => {
       `,
     )
     // 22P02 = invalid_text_representation: the enum rejects it before any check runs.
-    expect(errnoOf(error)).toBe('22P02')
+    expect(sqlStateOf(error)).toBe('22P02')
   })
 })
 
@@ -141,14 +214,14 @@ describe('a judge type has to agree with whether it names a model', () => {
         model: 'frontier:sonnet',
       }),
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('an llm judge naming no model is rejected', async () => {
     const error = await rejection(
       insertJudgeVersion({ version: 7, type: 'llm', polarity: 'fails', weight: 0.5, model: null }),
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('a code judge with no model is accepted', async () => {
@@ -167,14 +240,14 @@ describe('ids carry their prefix, enforced by the database', () => {
     const error = await rejection(
       db`INSERT INTO panels (id, org_id, slug, name) VALUES (${newId('jud_')}, ${orgId}, 'x', 'X')`,
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('an id that is not a ULID at all is rejected', async () => {
     const error = await rejection(
       db`INSERT INTO panels (id, org_id, slug, name) VALUES ('pnl_nope', ${orgId}, 'y', 'Y')`,
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 })
 
@@ -189,7 +262,7 @@ describe('versions are unique and monotonic per parent', () => {
         model: 'frontier:sonnet',
       }),
     )
-    expect(errnoOf(error)).toBe(UNIQUE_VIOLATION)
+    expect(sqlStateOf(error)).toBe(UNIQUE_VIOLATION)
   })
 
   test('version zero is rejected — versions start at 1', async () => {
@@ -202,7 +275,7 @@ describe('versions are unique and monotonic per parent', () => {
         model: 'frontier:sonnet',
       }),
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 })
 
@@ -214,7 +287,7 @@ describe('a panel version pins its threshold, and the threshold is a share', () 
         VALUES (${newId('pnv_')}, ${panelId}, 1, 1.5)
       `,
     )
-    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
   test('a panel version has no mutable configuration column to update', async () => {
