@@ -34,6 +34,12 @@ All figures: `bun run verify:pin`, real key, one fixed ~2,700-input-token artifa
 | `openai/gpt-5.4-mini` | none | 0.75 / 4.50 | 1434 ms | 3 | $0.001753 | 0 | ok |
 | `google/gemini-3.7-flash` | low | 0.75 / 3.75 | 3173 ms | 2 | $0.002186 | 109 | ok |
 | `google/gemini-3.5-flash-lite` | minimal | 0.30 / 2.50 | 847 / 960 / 972 ms | 2 | $0.000766 avg | 0 | ok |
+| `google/gemini-3.5-flash-lite` | low | 0.30 / 2.50 | 977 ms | 2 | $0.000779 | 0 | ok |
+| `google/gemini-3.5-flash-lite` | medium | 0.30 / 2.50 | 1083 ms | 2 | $0.000921 | 93 | ok |
+| `google/gemini-3.5-flash-lite` | high | 0.30 / 2.50 | 1679 ms | 2 | $0.001364 | 269 | ok |
+| `openai/gpt-5.6-luna` | **xhigh** | 0.20 / 1.20 | 3471 ms | 3 | $0.000637 | 69 | ok |
+| `openai/gpt-5.6-luna` | **max** | 0.20 / 1.20 | 2501 ms | 3 | $0.000699 | 117 | ok |
+| `z-ai/glm-5.3-flash` | **max** (its default) | 0.07 / 0.25 | 2634 ms | **13** | $0.000419 | 203 | ok |
 
 ## Findings
 
@@ -92,7 +98,58 @@ schema could not express. It is now pinned and measured — see 3a.
 Curiosity, single sample, not a conclusion: at `low` it burned **more** reasoning tokens
 (109) than at `medium` (84), and ran slower. Worth re-checking before anyone reasons from it.
 
-### 4. Latency varies far more across models than within one
+### 4. The effort knob is real, monotonic, and this is ADR-0022's drift argument in numbers
+`gemini-3.5-flash-lite` measured across its whole range, one model, one probe:
+
+| Effort | Reasoning tokens | Cost | Latency |
+|---|---|---|---|
+| minimal | 0 / 0 / 0 | $0.00077 | 847–972 ms |
+| low | 0 | $0.00078 | 977 ms |
+| medium | 93 | $0.00092 | 1083 ms |
+| high | 269 | $0.00136 | 1679 ms |
+
+**1.8x cost and 1.7x latency between the ends of one model's own dial**, with reasoning
+tokens going 0 → 269. That is the whole of ADR-0022's case, made concrete: a pin that
+omitted `effort` would let a frozen `jdv_` silently become 1.8x more expensive and
+materially slower the day the provider moved its default — with no version change, nothing
+to roll back, and M6 hunting for model drift that was a config change. The rule that the
+effort is written in as a literal is doing real work, and now there is a number on it.
+
+Note also that `minimal` and `low` are indistinguishable on this model (0 reasoning tokens
+both). Distinct in the vocabulary, identical in effect here — so the picker should not
+promise a difference it cannot demonstrate per model.
+
+### 5. `xhigh` and `max` work, and the pin's endpoint count is verifiably CORRECT
+Both tiers were exercised on `openai/gpt-5.6-luna` (same generation as the seeded
+`gpt-5.6-sol`, supports both) and on `z-ai/glm-5.3-flash`, whose own default is `max`. All
+passed key order and the output contract. Curiosity, single samples: `max` produced more
+reasoning tokens than `xhigh` (117 vs 69) yet ran *faster* (2501 vs 3471 ms).
+
+The more valuable result is the endpoint count. `z-ai/glm-5.3-flash` reported
+`availableEndpoints: 13`, and the endpoints API independently says it has **20 endpoints of
+which exactly 13 support structured output**. The numbers match. That is ADR-0026's
+"record how many endpoints survived the pin" shown to be *correct*, not merely populated —
+`require_parameters: true` demonstrably did the filtering, on a real model, end to end.
+
+### 6. Quantization variance is real — and mostly UNDECLARED, which cuts against constraining it
+`z-ai/glm-5.3-flash` is the open-weights case ADR-0022 cites, and the endpoints API confirms
+the concern: across its 20 endpoints, quantization is **fp4 ×1, fp8 ×12, unstated ×7**. A
+judge pinned here without a quantization constraint can be served at different precisions on
+consecutive calls — exactly the "unexplained swing between two runs of a frozen version"
+that ADR-0022 warns will send someone hunting for model drift.
+
+But the fix is worse than it looks, and this is the new information. Among the **13**
+endpoints that survive the capability pin, quantization is **fp8 ×6 and unstated ×7**. So
+pinning `quantizations: ['fp8']` would cut the pool from 13 to 6 — discarding seven
+endpoints that are *probably* fp8 and merely do not say. The constraint cannot distinguish
+"known to differ" from "did not declare", and it pays for that in failover.
+
+This strengthens ADR-0025's decision that `quantizations` is optional and omitted means
+unconstrained: constraining it is a real availability cost, justified only where a measured
+swing exists. It also gives M4 something honest to show — the precision spread and how many
+endpoints would be lost — rather than a toggle with no consequence attached.
+
+### 7. Latency varies far more across models than within one
 Haiku's 15092ms — on the model advertised as the fast one — exceeds the 10s per-attempt
 timeout. This corrected the timeout justification committed earlier the same day, which had
 claimed comfortable headroom on the basis of three samples of one model. The value did not
@@ -110,10 +167,20 @@ change; the reasoning did. M2's k6 baseline should measure a distribution **acro
   actually matters to a caller.
 - Do not warn "this model always reasons" from `reasoning.mandatory` alone. It was true for
   `gemini-3.7-flash` and false for `gemini-3.5-flash-lite` at `minimal` (see 3a).
+- The effort control needs a **cost and latency preview per model**, not a bare dropdown:
+  one model's own range spanned 1.8x cost and 1.7x latency (4), and two of its efforts were
+  indistinguishable. Neither is predictable from the catalogue.
+- Where quantization is offerable, show **what constraining it costs in failover** — 13
+  endpoints down to 6 on the one open-weights model measured, most of the loss being
+  endpoints that simply do not declare a precision (6).
 - Do not present cross-lab tiers as equivalent. They are not.
 
 ## Not done
-Nothing here was seeded, and M1's four seed judges are unchanged. The `xhigh`/`max` tiers
-are unmeasured, as is `gemini-3.5-flash-lite` at any effort above `minimal`. Judge QUALITY is unmeasured entirely — every
-model above answered this one probe `true`, which says nothing about agreement with a human,
-and that is M6's question, not this document's.
+Nothing here was seeded, and M1's four seed judges are unchanged. No quantization-pinned
+call was made — the `quantizations` field is exercised by unit tests only, and finding 6 is
+read off the endpoints API rather than measured through a request.
+
+**Judge QUALITY is unmeasured entirely.** Every model above answered this one probe `true`,
+including the ones costing a tenth of the others. That says nothing whatsoever about
+agreement with a human, and reading "flash-lite is as good as Sonnet" out of this table
+would be exactly the mistake the whole project exists to prevent. It is M6's question.
