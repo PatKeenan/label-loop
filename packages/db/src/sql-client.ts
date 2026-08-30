@@ -34,8 +34,21 @@ const isIdentifier = (value: unknown): value is Identifier =>
  * A table or column name, which cannot be a bound parameter — Postgres will not accept
  * `FROM $1`. So it is inlined, and therefore quoted: doubling any embedded quote is what
  * stops a name from closing its own identifier and becoming SQL.
+ *
+ * **Split on dots first.** A schema-qualified name is two identifiers, and quoting it whole
+ * produces `"drizzle.__drizzle_migrations"` — a single table whose name contains a dot, in
+ * the default schema, which does not exist. That is not hypothetical: it is how `/readyz`
+ * broke on the driver swap, silently enough that only the composed stack caught it.
+ *
+ * The trade is that a name containing a literal dot cannot be expressed. Schema
+ * qualification is overwhelmingly the commoner case, and it is the trade the previous
+ * driver made too.
  */
-const quoteIdentifier = (name: string): string => `"${name.replaceAll('"', '""')}"`
+const quoteIdentifier = (name: string): string =>
+  name
+    .split('.')
+    .map((part) => `"${part.replaceAll('"', '""')}"`)
+    .join('.')
 
 export type SqlClient = {
   <T = SqlRow>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>

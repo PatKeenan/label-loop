@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { Glob } from 'bun'
 import journal from '../migrations/meta/_journal.json' with { type: 'json' }
+import { expectedMigrations, migrationStatus } from './migrations-status.ts'
+import { appClient } from './test-support.ts'
 
 /**
  * Properties of the migration stream itself. These need no database: they are assertions
@@ -68,6 +70,21 @@ describe('the generated SQL is executable as written', () => {
     const privileges = await Bun.file(`${MIGRATIONS_DIR}/0000_privileges.sql`).text()
     expect(privileges).toContain('ALTER DEFAULT PRIVILEGES')
     expect(privileges).not.toContain('CREATE TABLE')
+  })
+
+  test('migrationStatus reads the real migration table and reports current', async () => {
+    // The gap that let a driver bug reach CI: nothing exercised this against a database,
+    // so a schema-qualified identifier quoted as ONE name — `"drizzle.__drizzle_migrations"`
+    // rather than `"drizzle"."__drizzle_migrations"` — passed every unit test and then
+    // failed `/readyz`, which is the check compose gates the whole stack on.
+    const client = appClient()
+    try {
+      const status = await migrationStatus(client)
+      expect(status.current).toBe(true)
+      expect(status.applied).toBe(expectedMigrations().count)
+    } finally {
+      await client.close()
+    }
   })
 
   test('the append-only revoke names audit_events and only audit_events', async () => {

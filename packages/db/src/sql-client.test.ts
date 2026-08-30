@@ -67,6 +67,19 @@ describe('the tagged template', () => {
     expect(params).toEqual(['org_1'])
   })
 
+  test('a SCHEMA-QUALIFIED identifier is quoted per part, not as one name', () => {
+    const { text } = buildQuery(
+      Object.assign(['SELECT count(*) FROM ', ''], {
+        raw: ['SELECT count(*) FROM ', ''],
+      }) as unknown as TemplateStringsArray,
+      [client('drizzle.__drizzle_migrations')],
+    )
+    // `"drizzle"."__drizzle_migrations"`, never `"drizzle.__drizzle_migrations"` — the
+    // latter is one table with a dot in its name, in the default schema, and it is how
+    // `/readyz` broke on the driver swap.
+    expect(text).toBe('SELECT count(*) FROM "drizzle"."__drizzle_migrations"')
+  })
+
   test('an identifier containing a quote cannot close its own identifier', () => {
     const { text } = buildQuery(
       Object.assign(['SELECT * FROM ', ''], {
