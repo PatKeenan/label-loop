@@ -28,6 +28,35 @@ export type RetryPolicy = {
  * Conservative on purpose. A judge call sits inside someone else's agent loop, so the
  * worst case a caller can experience — three attempts plus their backoff plus the final
  * timeout — has to stay inside a latency budget a human is waiting on.
+ *
+ * **`timeoutMs` is measured, not inherited** (M1 plan, Decision 14). The original 10s was
+ * chosen against a fake provider, which is to say against nothing. Re-derived on
+ * 2026-08-30 with `bun run verify:pin` against a ~2,700-input-token artifact, the size
+ * ADR-0023's cost estimate assumes:
+ *
+ * | Model | Effort | Latency |
+ * |---|---|---|
+ * | `anthropic/claude-sonnet-5` | none | 5304 / 3829 / 4092 ms |
+ * | `google/gemini-3.7-flash` | medium (mandatory) | 2337 ms |
+ * | `openai/gpt-5.6-sol` | none | 1877 ms |
+ *
+ * **The measurement CONFIRMED 10s rather than moving it**, and the number is now evidenced
+ * instead of inherited, which was the whole point. Two constraints bracket it and 10s is
+ * the only value satisfying both:
+ *
+ * - From below, the slowest observed call, 5304ms — cleared with 1.9x headroom. Erring
+ *   high matters more than it looks, because the failure modes are asymmetric: a timeout
+ *   set too high costs one slow request, while one set too low KILLS calls that would have
+ *   succeeded and pays for them again on retry, turning a slow provider into an expensive
+ *   outage.
+ * - From above, the worst case a caller can experience — `maxAttempts * timeoutMs` plus
+ *   backoff — which the test beside this file caps at 31s. At three attempts that puts the
+ *   ceiling at 10.23s, so 10s is very nearly the largest value the budget permits. Going
+ *   higher is not a tuning decision; it means renegotiating that budget or spending a
+ *   retry attempt, and nothing measured here justifies either.
+ *
+ * Three samples of one model measure a median and say little about a tail. M2's k6 baseline
+ * inherits this number and should replace them with a distribution.
  */
 export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxAttempts: 3,

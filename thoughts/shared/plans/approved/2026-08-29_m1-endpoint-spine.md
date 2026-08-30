@@ -179,7 +179,7 @@ Files (all inside `apps/api/src/llm/`, which is the fence — ADR-0016):
       logger and an in-memory span exporter against a 400 carrying `flagged_input` (D7)
 - [x] `architecture.test.ts` is green with the hostname added, and still catches a planted
       `fetch(` in `apps/api/src/services/`
-- [ ] The per-attempt timeout is **re-derived, not inherited**: run `verify:pin` against a
+- [x] The per-attempt timeout is **re-derived, not inherited**: run `verify:pin` against a
       ~2,000-token artifact on all three seed models, record the latencies in this plan's
       deviations, and set `DEFAULT_RETRY_POLICY.timeoutMs` to a value the slowest clears with
       headroom. M2's k6 work inherits whatever this phase writes down.
@@ -541,6 +541,48 @@ Recorded as they happened; these are decision provenance too.
    `./llm/openrouter-provider.ts`. `(?!\.)` restricts the rule to third-party packages,
    which is what it was always about; verified to still catch a planted
    `@openrouter/sdk` import in `services/`.
+
+4. **The per-attempt timeout was re-derived and the measurement CONFIRMED 10s (Decision 14).**
+   Measured 2026-08-30
+   with `verify:pin` against a ~2,700-input-token artifact, three real models, a real key:
+
+   | Model | Effort | Latency | Endpoints | Cost | Reasoning tokens |
+   |---|---|---|---|---|---|
+   | `anthropic/claude-sonnet-5` | none | 5304 / 3829 / 4092 ms | **5** | $0.007244 | 0 |
+   | `google/gemini-3.7-flash` | **medium** | 2337 ms | 2 | $0.002115 | **84** |
+   | `openai/gpt-5.6-sol` | none | 1877 ms | 3 | $0.005366 | 0 |
+
+   The value does not move, and that is the honest outcome rather than a missed change: it
+   is now evidenced instead of inherited from a number chosen against a fake. Two
+   constraints bracket it. From below, the slowest observed call at 5304ms, cleared with
+   1.9x headroom — and erring high matters because the failure modes are asymmetric: too
+   high costs one slow request, too low KILLS calls that would have succeeded and pays for
+   them again. From above, `retry.test.ts` caps the caller's worst case
+   (`maxAttempts * timeoutMs` + backoff) at 31s, which at three attempts puts the ceiling
+   at **10.23s**. 10s is very nearly the largest value that budget permits.
+
+   Worth recording as process: an initial 12s was written and the budget test rejected it.
+   That test encodes a product commitment about what a caller waits, so the right response
+   was to accept the constraint rather than raise the bound to fit a number picked by feel.
+   Going above 10s is not tuning — it means renegotiating that budget or spending a retry
+   attempt, and nothing measured here justifies either. M2's k6 work should replace three
+   samples with a distribution.
+
+   Three things the live run confirmed that no stub could:
+   - Sonnet's pin leaves **5 endpoints**, matching ADR-0023's independently measured "5 of 9".
+   - Key order was correct on all three, and `served_by` returned the DATED id via
+     `selected` — the field the vendor types surfaced (ADR-0030).
+   - Gemini's reasoning tokens are **84** while the other two are 0 — the
+     pinned-versus-mandatory distinction, visible in data, which P5's manual verification
+     asks for and which is now confirmed ahead of it.
+
+5. **`google/gemini-3.7-flash` has `reasoning.default_effort: "medium"`**, read from the
+   models API on **2026-08-30**. That is the literal Decision 17 requires P5 to write into
+   its pin — not an absent field. Recorded here so a later provider-side change to that
+   default is a visible divergence rather than a silent one. Confirmed the hard way first:
+   at effort `none` the model returns a 400, *"Reasoning is mandatory for this endpoint and
+   cannot be disabled"*, which the adapter classified as **`misconfigured`** and did not
+   retry — the failure table's 400-without-moderation row, exercised live.
 
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1
