@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { APP_ROLE, MIGRATOR_ROLE } from './roles.ts'
-import { appClient, errnoOf, migratorClient } from './test-support.ts'
+import { appClient, migratorClient, sqlStateOf } from './test-support.ts'
 
 /**
  * The migrator/app privilege split (CONVENTIONS.md "Data rules"): a migrator that owns DDL
@@ -58,12 +58,12 @@ describe('the app role holds DML and no DDL', () => {
 
   test('it cannot CREATE a table in public', async () => {
     const error = await rejection(app`CREATE TABLE app_should_not_manage (id text)`)
-    expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
   })
 
   test('it cannot CREATE a schema', async () => {
     const error = await rejection(app`CREATE SCHEMA app_should_not_manage`)
-    expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
   })
 })
 

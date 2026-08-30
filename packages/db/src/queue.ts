@@ -1,6 +1,6 @@
-import { SQL } from 'bun'
 import { PgBoss } from 'pg-boss'
 import { APP_ROLE } from './roles.ts'
+import { createSqlClient } from './sql-client.ts'
 
 /**
  * The queue's schema, installed by the MIGRATOR and never at application runtime
@@ -79,7 +79,7 @@ export const installQueueSchema = async (migrationUrl: string): Promise<void> =>
     await boss.stop({ graceful: false })
   }
 
-  const migrator = new SQL({ url: migrationUrl, max: 1 })
+  const migrator = createSqlClient({ url: migrationUrl, max: 1 })
   try {
     await migrator.unsafe(grantsSql(QUEUE_SCHEMA))
   } finally {

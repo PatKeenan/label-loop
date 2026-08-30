@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { newId } from '@labelloop/contracts'
-import { appClient, errnoOf, migratorClient } from './test-support.ts'
+import { appClient, migratorClient, sqlStateOf } from './test-support.ts'
 
 /**
  * The append-only guarantee, asserted by trying to break it (CONVENTIONS.md "Data rules").
@@ -58,7 +58,7 @@ describe('audit_events is append-only, enforced by Postgres', () => {
     const error = await rejection(app`UPDATE audit_events SET action = 'tampered' WHERE id = ${id}`)
     // Asserting the privilege code, not merely that it threw: a bare "it threw" would
     // also pass on a typo in the statement, which would leave the guarantee untested.
-    expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
 
     const rows = (await app`SELECT action FROM audit_events WHERE id = ${id}`) as Array<{
       action: string
@@ -69,14 +69,14 @@ describe('audit_events is append-only, enforced by Postgres', () => {
   test('the app role CANNOT DELETE', async () => {
     const id = await seedEvent()
     const error = await rejection(app`DELETE FROM audit_events WHERE id = ${id}`)
-    expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
 
     const rows = await app`SELECT id FROM audit_events WHERE id = ${id}`
     expect(rows).toHaveLength(1)
   })
 
   test('TRUNCATE is refused too — the obvious way around a missing DELETE', async () => {
-    expect(errnoOf(await rejection(app`TRUNCATE audit_events`))).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(sqlStateOf(await rejection(app`TRUNCATE audit_events`))).toBe(INSUFFICIENT_PRIVILEGE)
   })
 
   test('the grant itself is INSERT and SELECT and nothing else', async () => {

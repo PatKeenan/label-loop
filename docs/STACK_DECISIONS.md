@@ -1,6 +1,6 @@
 # STACK_DECISIONS.md — technology choices (stakeholder-owned)
 
-REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29; D16 added 2026-08-30). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
+REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29; D16 added 2026-08-30; D3 amended 2026-08-30). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
 once made, gets a short ADR recording the why. Options listed are starting points, not
 a menu limit.
 
@@ -8,7 +8,7 @@ a menu limit.
 |---|-------|----------------|----------|-----|
 | D1 | API language + framework | — | **DECIDED: Bun + Hono + TypeScript.** Public `/v1` = versioned REST via OpenAPIHono (Zod-driven spec); internal console surface = Hono RPC. | 0004 |
 | D2 | Web framework (console + annotator) | — | **DECIDED: React SPA on Vite + TanStack Router + TanStack Query.** No SSR framework. | 0005 |
-| D3 | Database + migrations | — | **DECIDED: Postgres + Drizzle**, forward-only migrations. | 0006 |
+| D3 | Database + migrations | — | **DECIDED: Postgres + Drizzle**, forward-only migrations. Amended 2026-08-30: the Drizzle driver is **`node-postgres`** over a `pg.Pool`, not Bun's native `SQL`. The original saving ("driver is the runtime, not a dependency") was already spent — `pg` is in the tree via pg-boss — and the Drizzle + Bun-SQL pairing silently double-encoded jsonb twice in one afternoon; under `pg` that bug is unrepresentable. | 0006, 0031 |
 | D4 | Async queue | — | **DECIDED: pg-boss (Postgres-backed). No Redis until the k6 breaking-point doc proves the need.** | 0006 |
 | D5 | Integration surface | — | **DECIDED: no SDK.** OpenAPI spec + Scalar docs at `/docs` + fetch/curl snippets. | 0002 |
 | D6 | Observability stack | — | **DECIDED: OpenTelemetry (manual instrumentation via Hono middleware + the `llm/` module) → self-hosted Grafana stack in containers; Sentry (free tier) for error reporting.** | 0007 |

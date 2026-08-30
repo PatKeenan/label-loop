@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { newId } from '@labelloop/contracts'
-import { appClient, errnoOf, migratorClient } from '../test-support.ts'
+import { appClient, migratorClient, sqlStateOf } from '../test-support.ts'
 
 /**
  * `pnv_` and `jdv_` rows are immutable, and Postgres is what makes that true (ADR-0003).
@@ -39,12 +39,12 @@ describe('the app role cannot rewrite an immutable version', () => {
   for (const table of ['panel_versions', 'judge_versions'] as const) {
     test(`${table}: UPDATE is refused`, async () => {
       const error = await rejection(app`UPDATE ${app(table)} SET version = version WHERE false`)
-      expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+      expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
     })
 
     test(`${table}: DELETE is refused`, async () => {
       const error = await rejection(app`DELETE FROM ${app(table)} WHERE false`)
-      expect(errnoOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+      expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
     })
 
     test(`${table}: INSERT and SELECT still work — versions are still created`, async () => {

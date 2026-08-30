@@ -1,5 +1,5 @@
-import { SQL } from 'bun'
 import { APP_ROLE, MIGRATOR_ROLE } from './roles.ts'
+import { createSqlClient } from './sql-client.ts'
 
 /**
  * The one privileged step: creating the two roles. Everything else — tables, grants,
@@ -41,7 +41,7 @@ export const bootstrapRoles = async ({
   const appPassword = passwordFrom(appUrl, 'DATABASE_URL')
   const migratorPassword = passwordFrom(migrationUrl, 'DATABASE_MIGRATION_URL')
 
-  const admin = new SQL({ url: adminUrl, max: 1 })
+  const admin = createSqlClient({ url: adminUrl, max: 1 })
   try {
     await admin.unsafe(rolesSql)
     // Separate from the SQL file on purpose: it keeps every credential out of a committed

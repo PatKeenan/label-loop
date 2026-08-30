@@ -1,4 +1,4 @@
-import { SQL } from 'bun'
+import { createSqlClient } from './sql-client.ts'
 
 /**
  * Connections for the database-backed tests.
@@ -22,15 +22,20 @@ const required = (name: string): string => {
 }
 
 /** The role the API connects with: DML only, no DDL, no UPDATE/DELETE on audit_events. */
-export const appClient = () => new SQL({ url: required('DATABASE_URL'), max: 2 })
+export const appClient = () => createSqlClient({ url: required('DATABASE_URL'), max: 2 })
 
 /** The role that owns the schema. Used only to set up fixtures a test then acts on. */
-export const migratorClient = () => new SQL({ url: required('DATABASE_MIGRATION_URL'), max: 2 })
+export const migratorClient = () =>
+  createSqlClient({ url: required('DATABASE_MIGRATION_URL'), max: 2 })
 
-/** A Postgres error code (`42501` = insufficient_privilege), for asserting on the cause. */
-export const errnoOf = (error: unknown): string | undefined =>
-  typeof error === 'object' && error !== null && 'errno' in error
-    ? String((error as { errno: unknown }).errno)
+/**
+ * The SQLSTATE off a driver error (`42501` = insufficient_privilege), for asserting on the
+ * cause rather than on a message. `node-postgres` exposes it as `code`; the previous driver
+ * called it `errno`, which is what made this a rename rather than a no-op (ADR-0031).
+ */
+export const sqlStateOf = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code: unknown }).code)
     : undefined
 
 /**

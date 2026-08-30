@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { QUEUE_SCHEMA, QUEUES } from './queue.ts'
-import { appClient, errnoOf, migratorClient, rejection } from './test-support.ts'
+import { appClient, migratorClient, rejection, sqlStateOf } from './test-support.ts'
 
 /**
  * The queue's schema is the one part of this database a library wrote, which makes it the
@@ -56,11 +56,11 @@ describe('the queue schema (installed by the migrator, worked by the app role)',
   test('the app role CANNOT install or alter the queue schema — this is the whole point', async () => {
     // If this ever passes, pg-boss's default `migrate: true` would silently work at app
     // runtime and the migrator/app split would be decoration.
-    expect(errnoOf(await rejection(app`CREATE TABLE pgboss.should_not_exist (id text)`))).toBe(
+    expect(sqlStateOf(await rejection(app`CREATE TABLE pgboss.should_not_exist (id text)`))).toBe(
       INSUFFICIENT_PRIVILEGE,
     )
     expect(
-      errnoOf(await rejection(app`ALTER TABLE pgboss.queue ADD COLUMN should_not_exist text`)),
+      sqlStateOf(await rejection(app`ALTER TABLE pgboss.queue ADD COLUMN should_not_exist text`)),
     ).toBe(INSUFFICIENT_PRIVILEGE)
   })
 

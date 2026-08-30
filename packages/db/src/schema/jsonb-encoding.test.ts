@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { DEFAULT_FAKE_PIN, newId } from '@labelloop/contracts'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/bun-sql'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import { appClient } from '../test-support.ts'
 import * as schema from './index.ts'
 
@@ -21,7 +21,7 @@ import * as schema from './index.ts'
  */
 
 const client = appClient()
-const db = drizzle({ client, schema })
+const db = drizzle({ client: client.pool, schema })
 
 const orgId = newId('org_')
 const panelId = newId('pnl_')

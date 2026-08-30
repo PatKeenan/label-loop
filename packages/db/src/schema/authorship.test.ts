@@ -42,12 +42,12 @@ afterAll(async () => {
  * matters here: "it threw" would also pass if the statement failed for a typo, and this
  * test's whole claim is about WHICH constraint stopped it.
  */
-const errnoOf = (error: unknown): string | undefined => {
+const sqlStateOf = (error: unknown): string | undefined => {
   const seen = new Set<unknown>()
   let current: unknown = error
   while (current !== null && typeof current === 'object' && !seen.has(current)) {
     seen.add(current)
-    if ('errno' in current) return String((current as { errno: unknown }).errno)
+    if ('code' in current) return String((current as { code: unknown }).code)
     current = (current as { cause?: unknown }).cause
   }
   return undefined
@@ -114,7 +114,7 @@ describe('authorship outlives membership', () => {
     // which is checked immediately, and 23503 for NO ACTION, which defers to the end of
     // the statement and can be sidestepped inside a transaction. This confirms which one
     // is actually in place rather than merely that something objected.
-    expect(errnoOf(error)).toBe('23001')
+    expect(sqlStateOf(error)).toBe('23001')
   })
 
   test('anonymising the author keeps the ledger link intact', async () => {

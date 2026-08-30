@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { newId } from '@labelloop/contracts'
-import { drizzle } from 'drizzle-orm/bun-sql'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import { appClient } from '../test-support.ts'
 import * as schema from './index.ts'
 
@@ -16,7 +16,7 @@ import * as schema from './index.ts'
  */
 
 const client = appClient()
-const db = drizzle({ client, schema })
+const db = drizzle({ client: client.pool, schema })
 
 const orgId = newId('org_')
 const panelId = newId('pnl_')
@@ -95,11 +95,11 @@ describe('cost_usd is numeric, and that is load-bearing', () => {
       FROM trace_verdicts WHERE trace_id = ${traceId}
     `
     // `::text` so this is Postgres's own rendering, not the driver's idea of a number.
-    expect(row.cost).toBe(REAL_COST)
-    expect(row.input_tokens).toBe(1730)
-    expect(row.output_tokens).toBe(319)
-    expect(row.reasoning_tokens).toBe(203)
-    expect(row.cost_priced).toBe(true)
+    expect(row?.cost).toBe(REAL_COST)
+    expect(row?.input_tokens).toBe(1730)
+    expect(row?.output_tokens).toBe(319)
+    expect(row?.reasoning_tokens).toBe(203)
+    expect(row?.cost_priced).toBe(true)
   })
 
   test('the column is numeric, not a float type — asked of the catalog directly', async () => {
@@ -108,9 +108,9 @@ describe('cost_usd is numeric, and that is load-bearing', () => {
       FROM information_schema.columns
       WHERE table_name = 'trace_verdicts' AND column_name = 'cost_usd'
     `
-    expect(column.data_type).toBe('numeric')
-    expect(column.numeric_precision).toBe(16)
-    expect(column.numeric_scale).toBe(10)
+    expect(column?.data_type).toBe('numeric')
+    expect(column?.numeric_precision).toBe(16)
+    expect(column?.numeric_scale).toBe(10)
   })
 
   test('sums exactly across many rows — which is what M2 will actually do to it', async () => {
@@ -133,7 +133,7 @@ describe('cost_usd is numeric, and that is load-bearing', () => {
       FROM trace_verdicts WHERE trace_id = ${traceId}
     `
     // Exact, and at the column's declared scale of 10 — no drift, no trailing float noise.
-    expect(summed.total).toBe('0.0000003000')
+    expect(summed?.total).toBe('0.0000003000')
   })
 })
 
@@ -155,12 +155,12 @@ describe('a verdict that never ran has no bill', () => {
     `
     // Null rather than zero, deliberately. A zero here would be summed by metering as a
     // free call rather than as no call, and the two are different facts.
-    expect(row.input_tokens).toBeNull()
-    expect(row.output_tokens).toBeNull()
-    expect(row.reasoning_tokens).toBeNull()
-    expect(row.cost_usd).toBeNull()
+    expect(row?.input_tokens).toBeNull()
+    expect(row?.output_tokens).toBeNull()
+    expect(row?.reasoning_tokens).toBeNull()
+    expect(row?.cost_usd).toBeNull()
     // NOT NULL with a false default: the absence of a claim is itself the honest default.
-    expect(row.cost_priced).toBe(false)
+    expect(row?.cost_priced).toBe(false)
   })
 
   test('an evaluated verdict may still report no reasoning — absent is not zero', async () => {
@@ -183,7 +183,7 @@ describe('a verdict that never ran has no bill', () => {
       WHERE trace_id = ${traceId}
     `
     // The provider said nothing about deliberation, which is not the same as saying none.
-    expect(row.reasoning_tokens).toBeNull()
-    expect(row.cost).toBe('0.0072440000')
+    expect(row?.reasoning_tokens).toBeNull()
+    expect(row?.cost).toBe('0.0072440000')
   })
 })
