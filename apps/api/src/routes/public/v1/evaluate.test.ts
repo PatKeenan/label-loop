@@ -4,6 +4,7 @@ import {
   type Evaluation,
   errorEnvelopeSchema,
   evaluateResponseSchema,
+  type ModelPin,
   newId,
 } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
@@ -14,6 +15,9 @@ import { createRecordingErrorReporter } from '../../../adapters/noop-error-repor
 import { createApp } from '../../../app.ts'
 import { loadConfig } from '../../../config.ts'
 import { createFakeProvider, createModelGateway, FAKE_SENTINELS } from '../../../llm/index.ts'
+import { createOpenRouterProvider } from '../../../llm/openrouter-provider.ts'
+import type { ModelProvider } from '../../../llm/provider.port.ts'
+import { createProviderRegistry } from '../../../llm/provider-registry.ts'
 import { sha256Hex } from '../../../middleware/api-key-auth.ts'
 import { fakeAuth } from '../../../testing/fake-auth.ts'
 import { fakeQueue } from '../../../testing/fake-queue.ts'
@@ -53,6 +57,27 @@ const OTHER_PANEL_KEY = newId('key_')
 const PLAINTEXT = `llk_test_${'a'.repeat(64)}`
 const REVOKED_PLAINTEXT = `llk_test_${'b'.repeat(64)}`
 const OTHER_PANEL_PLAINTEXT = `llk_test_${'c'.repeat(64)}`
+
+/**
+ * A panel of its own, for the one claim that needs a real routed model: that the pin
+ * frozen on a `jdv_` reaches the provider's request body. It is separate rather than added
+ * to the main panel because every other test here asserts on that panel's judge count and
+ * score, and a third judge would quietly rewrite all of them.
+ */
+const PINNED_PANEL = newId('pnl_')
+const PINNED_PANEL_VERSION = newId('pnv_')
+const PINNED_JUDGE = newId('jud_')
+const PINNED_JUDGE_VERSION = newId('jdv_')
+const PINNED_KEY = newId('key_')
+const PINNED_PLAINTEXT = `llk_test_${'d'.repeat(64)}`
+
+/** Deliberately unlike the default: every field must be shown to survive the round trip. */
+const ROUTED_PIN: ModelPin = {
+  capabilities: ['structured_outputs'],
+  data_collection: 'deny',
+  quantizations: ['bf16', 'fp8'],
+  reasoning: { effort: 'medium' },
+}
 
 /**
  * Two judges, chosen to exercise the two halves of the polarity rule with one call: a
@@ -117,7 +142,45 @@ const seedFixtures = async () => {
     .set({ currentVersionId: PANEL_VERSION })
     .where(eq(schema.panels.id, PANEL))
 
+  await db
+    .insert(schema.panels)
+    .values({ id: PINNED_PANEL, orgId: ORG, slug: 'pinned', name: 'Pinned' })
+  await db
+    .insert(schema.panelVersions)
+    .values({ id: PINNED_PANEL_VERSION, panelId: PINNED_PANEL, version: 1, threshold: 0.5 })
+  await db
+    .insert(schema.judges)
+    .values({ id: PINNED_JUDGE, panelId: PINNED_PANEL, slug: 'is-routed', name: 'Is routed' })
+  await db.insert(schema.judgeVersions).values({
+    id: PINNED_JUDGE_VERSION,
+    judgeId: PINNED_JUDGE,
+    version: 1,
+    type: 'llm',
+    polarity: 'fails',
+    weight: 1,
+    required: false,
+    question: 'Does this report describe something behaving incorrectly?',
+    model: 'openrouter:anthropic/claude-sonnet-5',
+    modelPin: ROUTED_PIN,
+  })
+  await db.insert(schema.panelVersionJudges).values({
+    panelVersionId: PINNED_PANEL_VERSION,
+    judgeVersionId: PINNED_JUDGE_VERSION,
+  })
+  await db
+    .update(schema.panels)
+    .set({ currentVersionId: PINNED_PANEL_VERSION })
+    .where(eq(schema.panels.id, PINNED_PANEL))
+
   await db.insert(schema.apiKeys).values([
+    {
+      id: PINNED_KEY,
+      orgId: ORG,
+      panelId: PINNED_PANEL,
+      name: 'Pinned panel',
+      hash: sha256Hex(PINNED_PLAINTEXT),
+      last4: PINNED_PLAINTEXT.slice(-4),
+    },
     {
       id: KEY,
       orgId: ORG,
@@ -183,7 +246,7 @@ let queue: ReturnType<typeof fakeQueue>
 const noopTracer = trace.getTracer('test')
 
 /** The real app, with the real database, and the provider swapped through the same seam. */
-const appWith = (provider = createFakeProvider()) =>
+const appWith = (provider: ModelProvider = createFakeProvider()) =>
   createApp({
     config,
     clock: createFixedClock(),
@@ -361,6 +424,119 @@ describe('the trace that gets written (ADR-0001)', () => {
       expect(verdict.costUsd).toBeNull()
       expect(verdict.costPriced).toBe(false)
     }
+  })
+})
+
+describe('the pin frozen on a jdv_ reaches the provider (ADR-0022)', () => {
+  /**
+   * The claim P4 exists to make, asserted where it can actually be wrong: a real HTTP
+   * request, a real database read, the real registry dispatching on the model's route
+   * prefix, and only `fetch` stubbed.
+   *
+   * Everything upstream of this can be correct and the judge still unpinned — the column
+   * can hold the right jsonb, the CHECK can enforce it, `validatePin` can pass, and the
+   * pin can simply never be put on the wire. Then a frozen version's capability surface
+   * goes back to being decided by routing at call time, which is the entire defect
+   * ADR-0022 was written against, with every test still green.
+   */
+  const routedApp = () => {
+    const sent: Array<Record<string, unknown>> = []
+    const fetch = ((_url: string, init: RequestInit = {}) => {
+      sent.push(JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'gen-1',
+            object: 'chat.completion',
+            created: 1,
+            model: 'anthropic/claude-sonnet-5',
+            system_fingerprint: null,
+            choices: [
+              {
+                index: 0,
+                finish_reason: 'stop',
+                message: {
+                  role: 'assistant',
+                  content:
+                    '{"rationale":"No expected behaviour is stated.","reasons":["a"],"verdict":true,"confidence":0.9}',
+                },
+              },
+            ],
+            usage: { prompt_tokens: 40, completion_tokens: 20, total_tokens: 60, cost: 0.0004 },
+            openrouter_metadata: {
+              attempt: 1,
+              is_byok: false,
+              region: null,
+              requested: 'anthropic/claude-sonnet-5',
+              strategy: 'default',
+              summary: 'routed',
+              endpoints: {
+                total: 9,
+                available: [
+                  {
+                    model: 'anthropic/claude-sonnet-5-20260630',
+                    provider: 'Anthropic',
+                    selected: true,
+                  },
+                ],
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const registry = createProviderRegistry({
+      providers: {
+        fake: createFakeProvider(),
+        openrouter: createOpenRouterProvider({ apiKey: 'test-key', fetch }),
+      },
+    })
+    return { app: appWith(registry), sent }
+  }
+
+  test('the request body carries THAT judge’s pin, field for field', async () => {
+    const { app, sent } = routedApp()
+    const res = await app.request(
+      evaluateRequest({ artifact: ARTIFACT }, { key: PINNED_PLAINTEXT, panel: PINNED_PANEL }),
+    )
+    expect(res.status).toBe(200)
+
+    expect(sent).toHaveLength(1)
+    // Read off the row, not off a default: `quantizations` and `medium` appear nowhere in
+    // the code path, so they can only have come from the frozen version.
+    expect(sent[0]?.provider).toEqual({
+      require_parameters: true,
+      data_collection: 'deny',
+      quantizations: ['bf16', 'fp8'],
+    })
+    expect(sent[0]?.reasoning).toEqual({ effort: 'medium' })
+    expect(sent[0]?.model).toBe('anthropic/claude-sonnet-5')
+  })
+
+  test('and the endpoint that answered is recorded on the verdict, dated', async () => {
+    const { app } = routedApp()
+    const res = await app.request(
+      evaluateRequest({ artifact: ARTIFACT }, { key: PINNED_PLAINTEXT, panel: PINNED_PANEL }),
+    )
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    const [verdict] = await db.query.traceVerdicts.findMany({
+      where: eq(schema.traceVerdicts.traceId, data.trace_id),
+    })
+    expect(verdict?.servedBy).toBe('anthropic/claude-sonnet-5-20260630')
+    expect(verdict?.costUsd).not.toBeNull()
+    expect(Number(verdict?.costUsd)).toBeCloseTo(0.0004, 10)
+  })
+
+  test('a fake judge on another panel still routes to the fake — dispatch is per model', async () => {
+    const { app, sent } = routedApp()
+    const res = await app.request(evaluateRequest({ artifact: ARTIFACT }))
+
+    expect(res.status).toBe(200)
+    // The seeded panel's judges are `fake:`, so nothing should have gone over HTTP at all.
+    expect(sent).toHaveLength(0)
   })
 })
 

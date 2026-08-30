@@ -265,16 +265,16 @@ Files:
 - `apps/api/src/services/evaluate.ts` — `runJudge` passes the pin into `gateway.judge`.
 - `packages/db/src/schema/immutable-versions.test.ts` / `constraints.test.ts` — new cases.
 
-- [ ] A `code` judge with a non-null `model_pin` is **rejected by Postgres**
-- [ ] An `llm` judge with a null `model_pin` is rejected by Postgres
-- [ ] The migration applies cleanly to a database holding the four M0-seeded judges, and
+- [x] A `code` judge with a non-null `model_pin` is **rejected by Postgres**
+- [x] An `llm` judge with a null `model_pin` is rejected by Postgres
+- [x] The migration applies cleanly to a database holding the four M0-seeded judges, and
       they come out with the default fake pin
-- [ ] `validatePin` returns the endpoint count for a satisfiable pin, and a named reason for
+- [x] `validatePin` returns the endpoint count for a satisfiable pin, and a named reason for
       an unsatisfiable one, without throwing
-- [ ] `validatePin` on a `fake:` model makes no HTTP call
-- [ ] The pin from the row reaches the adapter's request body — asserted end-to-end through
+- [x] `validatePin` on a `fake:` model makes no HTTP call
+- [x] The pin from the row reaches the adapter's request body — asserted end-to-end through
       `evaluate()` with a stubbed `fetch`
-- [ ] A frozen `jdv_` still cannot be UPDATEd (the existing immutability test covers the new
+- [x] A frozen `jdv_` still cannot be UPDATEd (the existing immutability test covers the new
       columns too)
 
 **Automated verification**
@@ -592,6 +592,16 @@ Recorded as they happened; these are decision provenance too.
    at effort `none` the model returns a 400, *"Reasoning is mandatory for this endpoint and
    cannot be disabled"*, which the adapter classified as **`misconfigured`** and did not
    retry — the failure table's 400-without-moderation row, exercised live.
+
+6. **The Drizzle driver moved to `node-postgres` mid-phase (ADR-0031).** Not planned work,
+   and taken deliberately: the double-encoding defect the M0 `jsonbColumn` workaround was
+   written against recurred in P4's brand-new `model_pin`, written while documenting the
+   warning. `${JSON.stringify(pin)}::jsonb` stored a jsonb STRING and nothing complained,
+   because the CHECK only asks whether the column is null; it would have surfaced at M4 as
+   a picker unable to read back the pin it had just written. Probed both drivers against a
+   real database — under `pg` both spellings are correct, so the bug is unrepresentable
+   rather than merely fixed. `jsonbColumn` is deleted, SQLSTATE moved from `.errno` to
+   `.code`, and queries are eager rather than lazy. Stakeholder decision, 2026-08-30.
 
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1

@@ -35,6 +35,35 @@ const rejection = async (query: Promise<unknown>): Promise<unknown> => {
   return outcome.error
 }
 
+describe('the pin freezes with the row it is written on (ADR-0022)', () => {
+  /**
+   * The table-level grant already covers these columns, so this is not a second mechanism
+   * — it is a named assertion about the two that matter most.
+   *
+   * `model_pin` is the column ADR-0003 freezes forever, and the entire capability-contract
+   * design rests on it not moving: a judge whose pin could be edited in place would have a
+   * capability surface that changes without a version change, which is exactly the drift
+   * the pin exists to prevent. Worth stating outright rather than inheriting from a rule
+   * about `version`, because a column added later is precisely the one someone assumes is
+   * exempt.
+   */
+  test('model_pin cannot be UPDATEd — a judge cannot be re-pinned in place', async () => {
+    const error = await rejection(app`UPDATE judge_versions SET model_pin = model_pin WHERE false`)
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+  })
+
+  test('model_pin_validation cannot be UPDATEd either — it is an observation, once', async () => {
+    // Recorded at creation and never refreshed (ADR-0026). If it could be rewritten, the
+    // endpoint count would drift into meaning "whenever someone last looked" rather than
+    // "what was true when this judge was frozen", and a count with no fixed date answers
+    // no question worth asking.
+    const error = await rejection(
+      app`UPDATE judge_versions SET model_pin_validation = NULL WHERE false`,
+    )
+    expect(sqlStateOf(error)).toBe(INSUFFICIENT_PRIVILEGE)
+  })
+})
+
 describe('the app role cannot rewrite an immutable version', () => {
   for (const table of ['panel_versions', 'judge_versions'] as const) {
     test(`${table}: UPDATE is refused`, async () => {
