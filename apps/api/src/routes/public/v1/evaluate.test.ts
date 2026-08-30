@@ -311,6 +311,52 @@ describe('the trace that gets written (ADR-0001)', () => {
     // envelope, which is what makes the trace rerunnable rather than parser-dependent.
     expect(gate?.rawResponse).toMatchObject({ provider: 'fake', model: 'fake:deterministic' })
   })
+
+  test('an evaluated verdict carries its tokens and its bill', async () => {
+    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    const verdicts = await db.query.traceVerdicts.findMany({
+      where: eq(schema.traceVerdicts.traceId, data.trace_id),
+    })
+    for (const verdict of verdicts) {
+      expect(verdict.status).toBe('evaluated')
+      expect(verdict.inputTokens).toBeGreaterThan(0)
+      expect(verdict.outputTokens).toBeGreaterThan(0)
+      // The fake is genuinely free AND genuinely priced — which is the whole distinction
+      // `cost_priced` exists to carry. A zero here is a measurement, not a gap.
+      expect(verdict.costUsd).not.toBeNull()
+      expect(Number(verdict.costUsd)).toBe(0)
+      expect(verdict.costPriced).toBe(true)
+      // The fake reports no deliberation, and absent is not zero.
+      expect(verdict.reasoningTokens).toBeNull()
+    }
+  })
+
+  test('a verdict that never ran carries nulls and cost_priced = false', async () => {
+    // The sentinel drives every judge into a failure that COMPLETED nothing, so there is
+    // no bill to write — and a zero here would be summed by M2's metering as a free call
+    // rather than as no call. The error envelope carries no `tr_`, which is exactly why
+    // every trace stores the `request_id` of the execution that produced it (ADR-0010).
+    const res = await appWith().request(
+      evaluateRequest({ artifact: `${FAKE_SENTINELS.unavailable} no bill` }),
+    )
+    const { request_id } = (await res.json()) as { request_id: string }
+
+    const trace = await db.query.traces.findFirst({
+      where: eq(schema.traces.requestId, request_id),
+      with: { verdicts: true },
+    })
+    expect(trace?.verdicts.length).toBeGreaterThan(0)
+    for (const verdict of trace?.verdicts ?? []) {
+      expect(verdict.status).not.toBe('evaluated')
+      expect(verdict.inputTokens).toBeNull()
+      expect(verdict.outputTokens).toBeNull()
+      expect(verdict.reasoningTokens).toBeNull()
+      expect(verdict.costUsd).toBeNull()
+      expect(verdict.costPriced).toBe(false)
+    }
+  })
 })
 
 describe('the follow-up job the evaluation enqueues', () => {

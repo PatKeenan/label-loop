@@ -217,14 +217,14 @@ Files:
 - `apps/api/src/services/evaluate.ts` — `toVerdictRows` writes them; they are null for every
   status but `evaluated`, the same rule the existing nullable columns already follow.
 
-- [ ] `costOf` returns the reported figure with `priced: true` when given one
-- [ ] It falls back to the table, and still reports `priced: false` for an unpriced model —
+- [x] `costOf` returns the reported figure with `priced: true` when given one
+- [x] It falls back to the table, and still reports `priced: false` for an unpriced model —
       the state the code deliberately reports rather than guesses around
-- [ ] The migration applies forward-only on a database seeded by the previous migration
-- [ ] An evaluated verdict row carries non-null tokens and `cost_usd`; a failed/errored one
+- [x] The migration applies forward-only on a database seeded by the previous migration
+- [x] An evaluated verdict row carries non-null tokens and `cost_usd`; a failed/errored one
       carries nulls and `cost_priced = false`
-- [ ] `cost_usd` reads back as an exact decimal, not a float approximation
-- [ ] The judge span carries `labelloop.reasoning_tokens` when the provider reported any
+- [x] `cost_usd` reads back as an exact decimal, not a float approximation
+- [x] The judge span carries `labelloop.reasoning_tokens` when the provider reported any
 
 **Automated verification**
 ```bash

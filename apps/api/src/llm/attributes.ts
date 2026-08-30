@@ -34,6 +34,16 @@ export const ATTR_COST_USD = 'labelloop.cost_usd'
  * same claim when M2 turns these spans into an invoice.
  */
 export const ATTR_COST_PRICED = 'labelloop.cost_priced'
+/**
+ * Billed deliberation the provider reported. `labelloop.`-namespaced because no OTel
+ * convention names it — `gen_ai.usage.*` covers input and output only — and this file's
+ * stated rule is that ours are namespaced so a later convention cannot collide.
+ *
+ * Worth a span attribute of its own rather than folding into output tokens: it is the part
+ * of a bill nobody can read back. Measured 2026-08-30, one model's own effort dial moved it
+ * 0 → 269 tokens and its cost 1.8x, with nothing else about the request changing.
+ */
+export const ATTR_REASONING_TOKENS = 'labelloop.reasoning_tokens'
 /** How many times the provider was actually called. A success after two retries is not a
  * healthy call, and a span that only records the outcome would say it was. */
 export const ATTR_ATTEMPTS = 'labelloop.attempts'

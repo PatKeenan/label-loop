@@ -213,6 +213,19 @@ const toVerdictRows = (results: JudgeResult[], evaluation: Evaluation): TraceVer
       servedBy: verdict?.served_by ?? null,
       latencyMs: outcome.latencyMs,
       attempts: outcome.attempts,
+      // Tokens and money, and ONLY for a judge that actually ran. Every other status wrote
+      // no bill, and a zero here would be summed by M2's metering as a free call rather
+      // than as no call — the same rule the nullable answer columns above already follow.
+      inputTokens: outcome.status === 'evaluated' ? outcome.cost.inputTokens : null,
+      outputTokens: outcome.status === 'evaluated' ? outcome.cost.outputTokens : null,
+      reasoningTokens:
+        outcome.status === 'evaluated' ? (outcome.cost.reasoningTokens ?? null) : null,
+      // Stringified rather than passed as a number: `cost_usd` is `numeric`, and handing
+      // the driver a float would reintroduce exactly the precision loss the column type
+      // was chosen to avoid (ADR-0027).
+      costUsd: outcome.status === 'evaluated' ? String(outcome.cost.costUsd) : null,
+      // False for every status but `evaluated` — nothing was priced because nothing ran.
+      costPriced: outcome.status === 'evaluated' && outcome.cost.priced,
       // The provider's own payload, kept beside the normalised columns so a trace is
       // rerunnable and auditable rather than only as good as today's parser.
       rawResponse:

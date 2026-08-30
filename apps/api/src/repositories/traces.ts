@@ -39,6 +39,16 @@ export type TraceVerdictRow = {
   servedBy: string | null
   latencyMs: number
   attempts: number
+  inputTokens: number | null
+  outputTokens: number | null
+  reasoningTokens: number | null
+  /**
+   * A decimal STRING, not a number. `numeric` is arbitrary-precision in Postgres and the
+   * driver hands it back as text for exactly that reason; parsing it into a float here
+   * would throw away the precision the column type was chosen to keep (ADR-0027).
+   */
+  costUsd: string | null
+  costPriced: boolean
   /** The provider's untouched payload, stored beside the normalised columns above. */
   rawResponse: unknown
 }

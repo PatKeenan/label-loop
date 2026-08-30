@@ -150,6 +150,38 @@ describe('a judge whose answer was unusable', () => {
   })
 })
 
+describe('a judge whose model deliberated', () => {
+  test('carries labelloop.reasoning_tokens — and omits it when nothing was reported', async () => {
+    const deliberating: ModelProvider = {
+      name: 'thinker',
+      evaluate: () =>
+        Promise.resolve({
+          output: { rationale: 'because', reasons: [], verdict: true, confidence: 0.9 },
+          usage: { input: 1720, output: 339, reasoning: 269 },
+          servedBy: 'google/gemini-3.5-flash-lite-20260721',
+          raw: {},
+          costUsd: 0.0013635,
+        }),
+    }
+    await gatewayFor(deliberating).judge(CALL, IDENTITY)
+
+    const [judge] = spans.named('judge is-bug')
+    // The part of the bill nobody can read back, so it gets its own attribute rather than
+    // being folded into output tokens.
+    expect(judge?.attributes['labelloop.reasoning_tokens']).toBe(269)
+    expect(judge?.attributes['gen_ai.usage.output_tokens']).toBe(339)
+    // The provider's own figure, preferred over any table we keep (ADR-0027).
+    expect(judge?.attributes['labelloop.cost_usd']).toBe(0.0013635)
+    expect(judge?.attributes['labelloop.cost_priced']).toBe(true)
+
+    spans.reset()
+    // The fake reports no deliberation at all. Absent, not zero — a span asserting zero
+    // would make invisible reasoning look measured.
+    await gatewayFor().judge(CALL, IDENTITY)
+    expect(spans.named('judge is-bug')[0]?.attributes['labelloop.reasoning_tokens']).toBeUndefined()
+  })
+})
+
 describe('a judge the provider will never accept', () => {
   test('leaves ONE attempt span, named as misconfigured — the alert query M3 needs', async () => {
     const provider: ModelProvider = {
