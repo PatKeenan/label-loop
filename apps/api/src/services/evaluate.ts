@@ -107,6 +107,10 @@ const runJudge = async (
       question: judge.question,
       artifact: request.artifact,
       ...(request.context === undefined ? {} : { context: request.context }),
+      // The frozen pin, onto the wire. Without this line the version's capability contract
+      // would be a row nobody reads, and the judge's real capability would go back to being
+      // decided by routing at call time — which is the whole defect ADR-0022 exists against.
+      ...(judge.modelPin === null ? {} : { pin: judge.modelPin }),
     },
     // The judge's identity is passed for the telemetry, not for the provider: it is what
     // turns "a model call was slow" into "the needs-human judge at jdv_… was slow", and a

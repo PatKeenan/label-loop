@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { newId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, type ModelPin, newId } from '@labelloop/contracts'
 import { appClient } from '../test-support.ts'
 
 /**
@@ -55,14 +55,87 @@ const insertJudgeVersion = (fields: {
   polarity: 'passes' | 'fails' | 'does_not_score'
   weight: number | null
   model: string | null
-}) =>
-  db`
-    INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question, model)
+  /**
+   * Omitted means the PAIRED value — an `llm` fixture gets the default pin, a `code` one
+   * gets null — so every existing case keeps testing what it was written to test. Pass it
+   * explicitly only to violate the pairing on purpose.
+   */
+  modelPin?: ModelPin | null
+}) => {
+  // Bound as an object. Pre-stringifying would store a jsonb STRING rather than an object,
+  // because Bun's SQL driver serializes objects itself (see jsonb-encoding.test.ts).
+  const modelPin =
+    fields.modelPin === undefined
+      ? fields.type === 'llm'
+        ? DEFAULT_FAKE_PIN
+        : null
+      : fields.modelPin
+  return db`
+    INSERT INTO judge_versions
+      (id, judge_id, version, type, polarity, weight, question, model, model_pin)
     VALUES (
       ${newId('jdv_')}, ${judgeId}, ${fields.version}, ${fields.type}::judge_type,
-      ${fields.polarity}::judge_polarity, ${fields.weight}, 'Is this a fixture?', ${fields.model}
+      ${fields.polarity}::judge_polarity, ${fields.weight}, 'Is this a fixture?', ${fields.model},
+      ${modelPin}::jsonb
     )
   `
+}
+
+describe('a pin is paired with the type, exactly like the model is (ADR-0022)', () => {
+  /**
+   * The mirror of `judge_versions_model_matches_type`, and mirrored deliberately: a
+   * route-conditional rule — pins only for real routes — would have to be re-reasoned at
+   * every read, so a `fake:` judge carries a pin that constrains nothing (ADR-0025).
+   *
+   * Asserted against Postgres rather than trusted, because this is the column ADR-0003
+   * freezes forever. A judge written without a pin cannot be fixed later by editing it;
+   * the only remedy is a new version, which is precisely the cost the constraint prevents.
+   */
+  test('a `code` judge with a pin is REJECTED — it calls nothing, so it constrains nothing', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 40,
+        type: 'code',
+        polarity: 'fails',
+        weight: 1,
+        model: null,
+        modelPin: DEFAULT_FAKE_PIN,
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('an `llm` judge with NO pin is rejected — the capability contract is not optional', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 41,
+        type: 'llm',
+        polarity: 'fails',
+        weight: 1,
+        model: 'fake:deterministic',
+        modelPin: null,
+      }),
+    )
+    expect(errnoOf(error)).toBe(CHECK_VIOLATION)
+  })
+
+  test('the paired combinations are both accepted', async () => {
+    await insertJudgeVersion({
+      version: 42,
+      type: 'llm',
+      polarity: 'fails',
+      weight: 1,
+      model: 'fake:deterministic',
+    })
+    await insertJudgeVersion({
+      version: 43,
+      type: 'code',
+      polarity: 'fails',
+      weight: 1,
+      model: null,
+    })
+  })
+})
 
 describe('polarity is three-valued, and weight has to agree with it', () => {
   /**

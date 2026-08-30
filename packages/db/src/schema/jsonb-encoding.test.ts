@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { newId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, newId } from '@labelloop/contracts'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { appClient } from '../test-support.ts'
@@ -48,8 +48,14 @@ beforeAll(async () => {
     VALUES (${judgeId}, ${panelId}, 'is-jsonb', 'Is jsonb')
   `
   await client`
-    INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question, model)
-    VALUES (${judgeVersionId}, ${judgeId}, 1, 'llm', 'fails', 1, 'A question?', 'fake:deterministic')
+    INSERT INTO judge_versions
+      (id, judge_id, version, type, polarity, weight, question, model, model_pin)
+    VALUES (
+      ${judgeVersionId}, ${judgeId}, 1, 'llm', 'fails', 1, 'A question?', 'fake:deterministic',
+      -- The CHECK pairs a pin with an llm type, so a fixture without one is now invalid.
+      -- Bound as an object, which is the thing under test two blocks below.
+      ${DEFAULT_FAKE_PIN}::jsonb
+    )
   `
 
   // Written through the QUERY BUILDER, deliberately: raw SQL would bypass the codec that
@@ -99,9 +105,37 @@ describe('jsonb columns hold JSON, not a string containing JSON', () => {
       'SELECT jsonb_typeof(reasons) AS t FROM trace_verdicts WHERE trace_id = $1',
       'array',
     ],
+    // The pin, added at P4. It joined this list because it was written WRONG first: the
+    // seed pre-stringified it before binding, Bun's driver serialized that string again,
+    // and Postgres stored a jsonb string. Nothing downstream complained — the CHECK only
+    // asks whether the column is null — and it would have surfaced at M4 as a picker that
+    // could not read back the pin it had just written.
+    [
+      'judge_versions.model_pin',
+      'SELECT jsonb_typeof(model_pin) AS t FROM judge_versions WHERE id = $1',
+      'object',
+    ],
   ])('%s is a jsonb %s', async (_column, query, expected) => {
-    const [row] = await client.unsafe(query, [traceId])
+    // The pin lives on `judge_versions`, everything else on the trace pair.
+    const key = query.includes('judge_versions') ? judgeVersionId : traceId
+    const [row] = await client.unsafe(query, [key])
     expect((row as { t: string }).t).toBe(expected)
+  })
+
+  test('the pin is addressable by SQL, which is how M4 will gate a picker on it', async () => {
+    const [row] = await client`
+      SELECT model_pin->>'data_collection' AS collection,
+             model_pin->'reasoning'->>'effort' AS effort,
+             model_pin->'capabilities'->>0 AS first_capability
+      FROM judge_versions WHERE id = ${judgeVersionId}
+    `
+    // Against a double-encoded pin every one of these returns null rather than failing,
+    // which is exactly why the assertion is here and not left to a round-trip.
+    expect(row).toMatchObject({
+      collection: 'deny',
+      effort: 'none',
+      first_capability: 'structured_outputs',
+    })
   })
 
   test('the stored payload is addressable by SQL — the point of storing it at all', async () => {

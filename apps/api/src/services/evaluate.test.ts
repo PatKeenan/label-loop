@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { evaluationSchema, newId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, evaluationSchema, newId } from '@labelloop/contracts'
 import type { JudgeCallOutcome } from '../llm/index.ts'
 import type { PanelJudge } from '../repositories/panels.ts'
 import { aggregate } from './evaluate.ts'
@@ -22,6 +22,7 @@ const judge = (overrides: Partial<PanelJudge> & { slug: string }): PanelJudge =>
   required: false,
   question: 'A binary question.',
   model: 'fake:deterministic',
+  modelPin: DEFAULT_FAKE_PIN,
   ...overrides,
 })
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { createAuth } from '@labelloop/api/auth'
-import { type IdPrefix, isId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, type IdPrefix, isId } from '@labelloop/contracts'
 import { createDatabase, type Database } from '@labelloop/db'
 import { envOr, requireEnv } from './env.ts'
 
@@ -142,10 +142,18 @@ const seed = async () => {
     `
     await client`
       INSERT INTO judge_versions
-        (id, judge_id, version, type, polarity, weight, required, question, model)
+        (id, judge_id, version, type, polarity, weight, required, question, model, model_pin)
       VALUES (
         ${judgeVersionId}, ${judgeId}, 1, 'llm', ${judge.polarity}::judge_polarity,
-        ${judge.weight}, ${judge.required}, ${judge.question}, 'fake:deterministic'
+        ${judge.weight}, ${judge.required}, ${judge.question}, 'fake:deterministic',
+        -- Every llm judge carries a pin, fake: ones included (ADR-0025), so the CHECK
+        -- can be the clean mirror of the model/type rule. Real models arrive at P5.
+        --
+        -- Bound as an OBJECT, never JSON.stringify'd first. Bun's SQL driver serializes
+        -- objects itself, so pre-stringifying sends a JSON string and the ::jsonb cast
+        -- then stores a jsonb STRING rather than an object -- the same double-encoding
+        -- that jsonb-encoding.test.ts exists to catch. Verified with jsonb_typeof.
+        ${DEFAULT_FAKE_PIN}::jsonb
       )
       ON CONFLICT (id) DO NOTHING
     `

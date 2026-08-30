@@ -56,8 +56,13 @@ beforeAll(async () => {
     VALUES (${judgeId}, ${panelId}, 'is-costly', 'Is costly')
   `
   await client`
-    INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question, model)
-    VALUES (${judgeVersionId}, ${judgeId}, 1, 'llm', 'fails', 1, 'A question?', 'fake:deterministic')
+    INSERT INTO judge_versions
+      (id, judge_id, version, type, polarity, weight, question, model, model_pin)
+    VALUES (
+      ${judgeVersionId}, ${judgeId}, 1, 'llm', 'fails', 1, 'A question?', 'fake:deterministic',
+      -- The CHECK pairs a pin with an llm type, so a fixture without one is now invalid.
+      '{"capabilities":["structured_outputs"],"data_collection":"deny","reasoning":{"effort":"none"}}'::jsonb
+    )
   `
 })
 

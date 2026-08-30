@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import {
+  DEFAULT_FAKE_PIN,
   type Evaluation,
   errorEnvelopeSchema,
   evaluateResponseSchema,
@@ -100,6 +101,10 @@ const seedFixtures = async () => {
       required: judge.required,
       question: judge.question,
       model: 'fake:deterministic',
+      // Every `llm` judge carries a pin, `fake:` ones included (ADR-0025) — and the CHECK
+      // added at P4 is what turns that from a convention into something a fixture cannot
+      // forget. This is also what the end-to-end test below asserts reaches the wire.
+      modelPin: DEFAULT_FAKE_PIN,
     })
     await db
       .insert(schema.panelVersionJudges)
