@@ -527,8 +527,10 @@ Recorded as they happened; these are decision provenance too.
    owns making it **required in production** via the `superRefine`.
 2. **`@openrouter/sdk` adopted for response decoding — a new dependency the plan said it
    would not introduce.** Stakeholder decision, 2026-08-30, recorded as **ADR-0030** and
-   **STACK_DECISIONS D16**. The plan's "no new npm dependency is introduced at all" is
-   therefore no longer true, and the reason is worth the amendment: the hand-written
+   **STACK_DECISIONS D16**. The plan's "no new npm dependency is introduced at all" was an
+   observation about this plan's expected shape, not a policy — CONVENTIONS' bar is limited
+   dependencies, never zero — so this is a plan-scoped deviation and not a rule being
+   broken. The reason it was worth taking: the hand-written
    `OpenRouterResponse` had already produced a real bug. `served_by` read
    `available[0].model` where the endpoint that actually answered is the one flagged
    `selected` — a plausible wrong answer in the field ADR-0022 says routing-drift queries
