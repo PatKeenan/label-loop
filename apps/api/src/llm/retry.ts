@@ -44,19 +44,24 @@ export type RetryPolicy = {
  * instead of inherited, which was the whole point. Two constraints bracket it and 10s is
  * the only value satisfying both:
  *
- * - From below, the slowest observed call, 5304ms — cleared with 1.9x headroom. Erring
- *   high matters more than it looks, because the failure modes are asymmetric: a timeout
- *   set too high costs one slow request, while one set too low KILLS calls that would have
- *   succeeded and pays for them again on retry, turning a slow provider into an expensive
- *   outage.
+ * - From below, the slowest of those three at 5304ms. **Do not read that as comfortable
+ *   headroom.** A later sweep of the cheap tier caught `anthropic/claude-haiku-4.5` at
+ *   **15092ms** on the same probe (3078 / 5839 / 15092 across three runs) — half again
+ *   this timeout, on a model advertised as the fast one. Latency varies far more ACROSS
+ *   the catalogue than within one model, so three samples of one model do not bound it.
+ *   Erring high matters because the failure modes are asymmetric: a timeout set too high
+ *   costs one slow request, while one set too low KILLS calls that would have succeeded
+ *   and pays for them again on retry.
  * - From above, the worst case a caller can experience — `maxAttempts * timeoutMs` plus
  *   backoff — which the test beside this file caps at 31s. At three attempts that puts the
  *   ceiling at 10.23s, so 10s is very nearly the largest value the budget permits. Going
  *   higher is not a tuning decision; it means renegotiating that budget or spending a
  *   retry attempt, and nothing measured here justifies either.
  *
- * Three samples of one model measure a median and say little about a tail. M2's k6 baseline
- * inherits this number and should replace them with a distribution.
+ * So the caller-latency budget, not the measurement, is what actually fixes this number —
+ * and a slow model is expected to time out and be retried rather than to widen it. M2's k6
+ * baseline inherits this and should replace these samples with a distribution across
+ * models, which is the axis that turned out to matter.
  */
 export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxAttempts: 3,

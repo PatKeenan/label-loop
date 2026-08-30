@@ -561,6 +561,15 @@ Recorded as they happened; these are decision provenance too.
    (`maxAttempts * timeoutMs` + backoff) at 31s, which at three attempts puts the ceiling
    at **10.23s**. 10s is very nearly the largest value that budget permits.
 
+   **Corrected the same day, and the correction matters more than the number.** A sweep of
+   the cheap tier caught `anthropic/claude-haiku-4.5` at **15092ms** on the same probe
+   (3078 / 5839 / 15092 across three runs) — half again the timeout, on the model advertised
+   as the fast one. So "1.9x headroom" was an artefact of sampling three frontier models:
+   latency varies far more ACROSS the catalogue than within one model, and three samples of
+   one model do not bound it. The value still does not move, because the caller-latency
+   budget is what fixes it, but the justification is now the budget rather than a headroom
+   claim the data does not support. A slow model is expected to time out and be retried.
+
    Worth recording as process: an initial 12s was written and the budget test rejected it.
    That test encodes a product commitment about what a caller waits, so the right response
    was to accept the constraint rather than raise the bound to fit a number picked by feel.
