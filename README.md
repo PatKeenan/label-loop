@@ -608,13 +608,27 @@ OpenRouter key and three variables swaps in three real frontier models on the sa
 path — there is no branch in the seed on whether a key exists, which is what keeps the free
 path and the paid path the same lines.
 
+Compose forwards all four **from your shell**, so set them there and not in `.env`, which
+compose does not read:
+
 ```bash
-OPENROUTER_API_KEY=sk-or-... \
-SEED_MODEL_A=openrouter:anthropic/claude-sonnet-5 \
-SEED_MODEL_B=openrouter:openai/gpt-5.6-sol \
-SEED_MODEL_C=openrouter:google/gemini-3.7-flash \
-  bun run db:seed
+export OPENROUTER_API_KEY=sk-or-...
+export SEED_MODEL_A=openrouter:anthropic/claude-sonnet-5
+export SEED_MODEL_B=openrouter:openai/gpt-5.6-sol
+export SEED_MODEL_C=openrouter:google/gemini-3.7-flash
 ```
+
+**Throw the old data away first, or nothing will change.** The seed is idempotent by judge
+id, and a `jdv_` is immutable (ADR-0003) — so a judge already seeded as `fake:deterministic`
+stays fake no matter what you set. That is the immutability working, not a bug: models are
+frozen per version, and switching one means a new version.
+
+```bash
+docker compose -f infra/docker-compose.yml down -v && \
+  docker compose -f infra/docker-compose.yml up -d --wait --build
+```
+
+The migrate one-shot then prints what it pinned:
 
 ```
   judges
@@ -624,21 +638,28 @@ SEED_MODEL_C=openrouter:google/gemini-3.7-flash \
     needs-human  openrouter:anthropic/claude-sonnet-5   effort none    5 endpoints
 ```
 
-Three labs answer one request. The **endpoint count** is the pool that survived that
-judge's pin, measured by one real call before the version froze (ADR-0022) — a judge with
-two spares is fragile in a way one with five is not, and no catalogue field predicts it.
-The **effort** column is why `gemini-3.7-flash` is in the list: its reasoning is mandatory,
-so it cannot be pinned to `none` like the others, and its pin carries its own default
-effort written in as a literal. That difference is visible in the data rather than asserted
-— on the run above, Gemini spent **106 reasoning tokens** and the other two spent zero.
+Now [the walkthrough's first curl](#the-walkthrough) returns three labs' verdicts on one
+request, and `served_by` carries three dated model ids rather than one fake.
+
+The **endpoint count** is the pool that survived that judge's pin, measured by one real call
+before the version froze (ADR-0022) — a judge with two spares is fragile in a way one with
+five is not, and no catalogue field predicts it. The **effort** column is why
+`gemini-3.7-flash` is in the list: its reasoning is mandatory, so it cannot be pinned to
+`none` like the others, and its pin carries its own default effort written in as a literal.
+That difference shows up in the data rather than being asserted — on the run above, Gemini
+spent **106 reasoning tokens** and the other two spent zero.
 
 A panel run over the four judges costs about **$0.006**. Seeding costs one validating call
-per judge, once — re-running the seed is free and makes no network call, because a frozen
+per judge, once; re-running the seed is free and makes no network call, because a frozen
 `jdv_` has a pin that can never change and a validation that can never be made more true.
 
-**The seed fails outright if a pin does not route**, naming the judge, and there is no
-switch to turn that off. A judge frozen against a pin that routes nowhere is permanently
-broken, so a seed that refuses is better than a panel that returns `503` on every call.
+**The seed fails outright if a pin does not route**, naming the judge, and there is no switch
+to turn that off. A judge frozen against a pin that routes nowhere is permanently broken, so
+a seed that refuses is better than a panel that returns `503` on every call.
+
+Both the `api` and `migrate` services read the key, and both omit it when your shell has
+none — so `docker compose up` with nothing exported is still the zero-secret command it was,
+and every judge is fake again.
 
 ### Seeing the trace
 

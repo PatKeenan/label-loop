@@ -653,6 +653,36 @@ Recorded as they happened; these are decision provenance too.
    `tsconfig.scripts.json` is added and `bun run typecheck` runs it after the packages; it
    immediately caught two real type errors in the new tests.
 
+10. **Compose now forwards `OPENROUTER_API_KEY` and `SEED_MODEL_A/B/C`.** Not in P5's file
+    list, and caught only because the README section written for P5 documented a path that
+    did not work: it said setting a key and three variables "swaps in three real frontier
+    models", while compose — the README's own one-command path — passed neither to the `api`
+    nor the `migrate` service. The seed would have pinned real models and the API, holding no
+    key, would have answered `unavailable` on every one of them.
+
+    The plan's "CI's `stack` job is untouched and still free" is about CI staying free, not
+    about compose being off limits, and a passthrough that is absent when unset keeps it
+    exactly as free — verified below.
+
+    **The spelling is load-bearing.** `OPENROUTER_API_KEY:` (map-null) resolves from the host
+    and omits the variable when unset; `${OPENROUTER_API_KEY:-}` resolves to the EMPTY
+    STRING, which `z.string().min(1).optional()` rejects — so the tidier form would make
+    every zero-secret `docker compose up` fail at boot naming the field. Proved both ways in
+    a real container before committing to it.
+
+    Verified end to end on an isolated compose project (`-p ll-verify`, own ports and image
+    tag, so the running dev stack was never touched): with the four exported, the migrate
+    one-shot pinned three real models and a curl through the composed API returned three
+    dated `served_by` ids; with none exported, the seed produced four `fake:deterministic`
+    judges and the API logged `"routes":["fake"]`. **A stale image nearly hid the first
+    result** — `up` without `--build` reused the existing `labelloop-api:dev`, so the first
+    run exercised the old seed and printed the old output. Hence `--build` in the README.
+
+    The README also now says to `down -v` first: the seed is idempotent by judge id and a
+    `jdv_` is immutable, so a judge already seeded as `fake:deterministic` stays fake no
+    matter what is exported. That is ADR-0003 working, and it is the kind of thing that
+    reads as a broken feature if it is not written down.
+
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1
   exists to harden — error mapping (mid-stream failures arrive inside a 200) and cost
