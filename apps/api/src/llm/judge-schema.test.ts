@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { judgeOutputSchema } from '@labelloop/contracts'
+import { judgeOutputSchema, RATIONALE_MAX_LENGTH } from '@labelloop/contracts'
 import {
   hasContractKeyOrder,
   JUDGE_JSON_SCHEMA,
@@ -39,9 +39,12 @@ describe('the derived wire schema', () => {
 
   test('keeps the constraints that bound the answer, not just its shape', () => {
     const properties = JUDGE_JSON_SCHEMA.properties as Record<string, Record<string, unknown>>
-    // The rationale cap is a cost the caller pays in their own context window on every
-    // request, so it belongs on the wire rather than only in our parser.
-    expect(properties.rationale?.maxLength).toBe(280)
+    // Asserted against the CONSTANT, never a literal. A literal here is what let the wire
+    // schema and the parser drift apart in the first place — and the wire half is advisory
+    // anyway, since providers constrain shape rather than string length. It is still sent:
+    // a provider that ever does honour it costs us nothing, and the parser is the one that
+    // actually decides.
+    expect(properties.rationale?.maxLength).toBe(RATIONALE_MAX_LENGTH)
     expect(properties.confidence?.minimum).toBe(0)
     expect(properties.confidence?.maximum).toBe(1)
     expect(properties.verdict?.type).toBe('boolean')

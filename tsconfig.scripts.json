@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The operational scripts, which belong to no workspace and so were typechecked by
+  // nothing. That was tolerable while they were connection strings and INSERTs; it stopped
+  // being so at M1/P5, when `seed-judges.ts` started deciding which model each judge is
+  // frozen against and what its pin says. `bun run typecheck` runs this after the packages.
+  "extends": "./tsconfig.base.json",
+  "include": ["scripts/**/*.ts"]
+}

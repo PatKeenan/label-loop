@@ -23,11 +23,36 @@ import { idSchema } from './ids.ts'
 export const EVALUATE_ARTIFACT_MAX_LENGTH = 32_000
 
 /**
- * A rationale is one line for a human, not an essay. Judges are called from inside
- * someone else's agent loop, and every character comes back into that agent's context
- * window — so verbosity here is a cost the caller pays on every request.
+ * What we ASK a judge for: one line for a human, not an essay. Judges are called from
+ * inside someone else's agent loop, and every character comes back into that agent's
+ * context window — so verbosity here is a cost the caller pays on every request.
+ *
+ * It is stated in the prompt, because that is the only place a model can act on it.
  */
-export const RATIONALE_MAX_LENGTH = 280
+export const RATIONALE_TARGET_LENGTH = 280
+
+/**
+ * What we REFUSE above — a genuine essay, not a near miss.
+ *
+ * **These are two numbers because they answer two questions, and conflating them cost a
+ * working judge.** Until 2026-08-31 the target was also the bound: 280 was sent as
+ * `maxLength` under `strict: true`, never mentioned in the prompt, and enforced by
+ * rejecting the parse. Structured output does not enforce string length — providers
+ * constrain SHAPE, not size — so the cap was advisory on the wire and absolute on the way
+ * back in. Measured against the live API on 2026-08-30, `anthropic/claude-sonnet-5`
+ * produced rationale lengths of 274, 292, 296, 331 and 384 on an identical probe and so
+ * failed validation on 4 of 5 attempts, while `openai/gpt-5.6-sol` (153-239) and
+ * `google/gemini-3.7-flash` (111-153) passed 5 of 5. A model was never told the limit and
+ * was then refused for exceeding it.
+ *
+ * The failure modes are asymmetric, which is what fixes the number. Too high costs a few
+ * dozen tokens of verbosity on one response. Too low DISCARDS a correct verdict — the
+ * reasoning, the taxonomy codes and the answer are all fine and all thrown away over
+ * prose length — and bills for it again on the retry. So the target is what we ask for and
+ * this is the outer bound, set far enough above that tripping it means the model wrote an
+ * essay rather than a long sentence.
+ */
+export const RATIONALE_MAX_LENGTH = 1_000
 
 export const panelIdParamSchema = z.object({
   panel_id: idSchema('pnl_', 'The panel to run. The API key must be scoped to it.'),

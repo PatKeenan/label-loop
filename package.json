@@ -25,7 +25,7 @@
     "prepare": "bun run setup",
     "setup": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || echo 'setup: no git dir (tarball or image build) — skipping hook install'",
     "test": "bun test --pass-with-no-tests",
-    "typecheck": "bun run --filter '*' --if-present typecheck",
+    "typecheck": "bun run --filter '*' --if-present typecheck && tsc -p tsconfig.scripts.json",
     "verify:pin": "bun run scripts/verify-pin.ts"
   },
   "dependencies": {

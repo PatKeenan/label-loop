@@ -1,4 +1,9 @@
-import { judgeOutputSchema, type ModelPin, modelRefOf } from '@labelloop/contracts'
+import {
+  judgeOutputSchema,
+  type ModelPin,
+  modelRefOf,
+  RATIONALE_TARGET_LENGTH,
+} from '@labelloop/contracts'
 import { type ChatResult, chatResultFromJSON } from '@openrouter/sdk/models'
 import { hasContractKeyOrder, JUDGE_JSON_SCHEMA } from './judge-schema.ts'
 import {
@@ -90,7 +95,8 @@ const messages = (call: JudgeCall): Array<{ role: string; content: string }> => 
       role: 'system',
       content:
         'You judge one artifact against one binary question. Answer only with the ' +
-        'required JSON object, giving your reasoning before your verdict.',
+        'required JSON object, giving your reasoning before your verdict. Keep ' +
+        `rationale under ${RATIONALE_TARGET_LENGTH} characters — one or two sentences.`,
     },
     {
       role: 'user',

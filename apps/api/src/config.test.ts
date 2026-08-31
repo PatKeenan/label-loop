@@ -149,6 +149,9 @@ describe('config', () => {
           // P7 joins the same list, for a reason that is not provenance but is the same
           // shape: a committed default is fine locally and forgeable in production.
           'BETTER_AUTH_SECRET',
+          // M1/P5 joins it for a third reason: not a committed default but no default at
+          // all, and an API deployed to judge with no key cannot judge (ADR-0021).
+          'OPENROUTER_API_KEY',
         ])
       }
     })
@@ -160,6 +163,7 @@ describe('config', () => {
         APP_VERSION: '0.2.0',
         GIT_SHA: 'abc1234',
         BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
+        OPENROUTER_API_KEY: 'sk-or-not-a-real-key',
       })
       expect(config.APP_VERSION).toBe('0.2.0')
       expect(config.GIT_SHA).toBe('abc1234')
@@ -168,6 +172,49 @@ describe('config', () => {
     test('the same placeholders are fine outside production', () => {
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'development' })).not.toThrow()
       expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'test' })).not.toThrow()
+    })
+  })
+
+  /**
+   * The provider credential (ADR-0021, M1/P5). It is the one production-only requirement
+   * that is not about a committed default: there is nothing to substitute for it, so the
+   * check is presence.
+   */
+  describe('OPENROUTER_API_KEY', () => {
+    test('is optional outside production — zero-secret boot survives M1 (ADR-0009)', () => {
+      // The whole path still runs without it: the registry holds `fake:` alone, and the
+      // seed pins every judge to the deterministic fake. That is what keeps `docker
+      // compose up` free, and it is why this is not simply a required field.
+      expect(loadConfig({ DATABASE_URL }).OPENROUTER_API_KEY).toBeUndefined()
+      expect(loadConfig({ DATABASE_URL, NODE_ENV: 'test' }).OPENROUTER_API_KEY).toBeUndefined()
+    })
+
+    test('a production boot without it fails, naming the field', () => {
+      try {
+        loadConfig({
+          DATABASE_URL,
+          NODE_ENV: 'production',
+          APP_VERSION: '0.2.0',
+          GIT_SHA: 'abc1234',
+          BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
+        })
+        throw new Error('expected loadConfig to throw')
+      } catch (error) {
+        expect((error as ConfigError).fields).toEqual(['OPENROUTER_API_KEY'])
+        expect((error as ConfigError).message).toContain('OPENROUTER_API_KEY')
+      }
+    })
+
+    test('an empty string is not a key — it is the shape a blank env var takes', () => {
+      // `optional()` skips `undefined`, never `''`. A compose file or a CI step that
+      // forwards an unset variable produces the empty string, and a boot that accepted it
+      // would authenticate every judge call with nothing and fail one request at a time.
+      try {
+        loadConfig({ DATABASE_URL, OPENROUTER_API_KEY: '' })
+        throw new Error('expected loadConfig to throw')
+      } catch (error) {
+        expect((error as ConfigError).fields).toEqual(['OPENROUTER_API_KEY'])
+      }
     })
   })
 

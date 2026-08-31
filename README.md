@@ -601,6 +601,45 @@ why a gate should read it rather than `passed` alone.
 The number in these responses is the HTTP status; the body carries the taxonomy `code` as
 a string, never a number. `curl -i` shows both.
 
+### Pointing it at real models
+
+Everything above runs on the deterministic fake: no key, no network, no bill. Setting an
+OpenRouter key and three variables swaps in three real frontier models on the same code
+path — there is no branch in the seed on whether a key exists, which is what keeps the free
+path and the paid path the same lines.
+
+```bash
+OPENROUTER_API_KEY=sk-or-... \
+SEED_MODEL_A=openrouter:anthropic/claude-sonnet-5 \
+SEED_MODEL_B=openrouter:openai/gpt-5.6-sol \
+SEED_MODEL_C=openrouter:google/gemini-3.7-flash \
+  bun run db:seed
+```
+
+```
+  judges
+    is-bug       openrouter:anthropic/claude-sonnet-5   effort none    5 endpoints
+    is-feature   openrouter:openai/gpt-5.6-sol          effort none    3 endpoints
+    is-question  openrouter:google/gemini-3.7-flash     effort medium  2 endpoints
+    needs-human  openrouter:anthropic/claude-sonnet-5   effort none    5 endpoints
+```
+
+Three labs answer one request. The **endpoint count** is the pool that survived that
+judge's pin, measured by one real call before the version froze (ADR-0022) — a judge with
+two spares is fragile in a way one with five is not, and no catalogue field predicts it.
+The **effort** column is why `gemini-3.7-flash` is in the list: its reasoning is mandatory,
+so it cannot be pinned to `none` like the others, and its pin carries its own default
+effort written in as a literal. That difference is visible in the data rather than asserted
+— on the run above, Gemini spent **106 reasoning tokens** and the other two spent zero.
+
+A panel run over the four judges costs about **$0.006**. Seeding costs one validating call
+per judge, once — re-running the seed is free and makes no network call, because a frozen
+`jdv_` has a pin that can never change and a validation that can never be made more true.
+
+**The seed fails outright if a pin does not route**, naming the judge, and there is no
+switch to turn that off. A judge frozen against a pin that routes nowhere is permanently
+broken, so a seed that refuses is better than a panel that returns `503` on every call.
+
 ### Seeing the trace
 
 `request_id` is not *like* a trace id — it **is** the W3C trace id of the span that served
