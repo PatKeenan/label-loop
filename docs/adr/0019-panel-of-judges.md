@@ -1,6 +1,7 @@
 # ADR-0019: The product is a panel of judges, not a classifier
 
-**Status:** Accepted · **Date:** 2026-08-22
+**Status:** Accepted (narrowed 2026-08-31 by ADR-0034: polarity is two-valued and
+classification leaves the product) · **Date:** 2026-08-22
 **Amends:** ADR-0001 (what we are the gateway *for*), ADR-0003 (what is versioned)
 
 ## Decision
@@ -65,6 +66,12 @@ judge's raw answer, and the field an annotator agrees with or corrects — and `
 that answer under the judge's polarity, which is what the score sums. Informational judges
 return `passed: null` and `weight: null` and are absent from **both** the numerator and
 the denominator.
+
+**Superseded by ADR-0034 (2026-08-31): `does_not_score` is removed and every judge
+scores.** The reasoning below stands for the `fails`/`passes` distinction, which is
+unchanged and still load-bearing; what did not survive is the third value. The judge
+pipeline — open coding to failure taxonomy to one judge per category — cannot produce a
+non-scoring judge, so the only ones that ever existed were hand-written fixtures.
 
 The practical consequence is that a panel can mix modes honestly. A triage panel is mostly
 informational judges (`is-bug`, `is-feature`, `is-question`) plus perhaps one real gate
