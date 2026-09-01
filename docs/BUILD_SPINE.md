@@ -103,7 +103,18 @@ retries+jitter, idempotency header; language/registry per STACK_DECISIONS.md D5)
 Annotator surface (screen: annotator-session): one trace at a time, agree/correct,
 failure note, session goal. Sampling queues: random, low-confidence. Every annotation
 row carries annotator_id + judge_version + dataset-version linkage (ADR-0003).
-Dogfooding tenant live: this repo's GitHub issues judged by a panel via the production API.
+Dogfooding tenant live via the production API — **but WHAT it judges is reopened by
+ADR-0034.** "This repo's GitHub issues judged by a panel" is the classification shape: an
+inbound issue is not something an agentic system produced, and `is-bug`-style judges no
+longer exist. The tenant has to judge something this repo's own agents emit, against
+failure modes a real error-analysis pass surfaces.
+**Prerequisite, and it lands before any annotation row does:** ADR-0034 makes judge polarity
+two-valued. That is a `judge_polarity` enum migration (Postgres does not drop enum values,
+so the type is recreated and the column swapped), a rewritten
+`judge_versions_weight_matches_polarity` CHECK, four sites in `evaluate.ts`, the `passed`
+null-semantics in the contract, and a replacement for the seeded panel — three of whose four
+judges stop being expressible. Cheap now, while every database is disposable; expensive once
+annotations FK to judge versions (ADR-0003).
 Showcase tenant candidate: a prompt-injection-detection judge (adversarial eval
 set; natural fine-tune target for M7; demonstrates AI-security fluency via product).
 **Demo moment:** annotate 20 real traces in under 5 minutes on camera.
