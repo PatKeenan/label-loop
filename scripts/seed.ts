@@ -1,8 +1,12 @@
 #!/usr/bin/env bun
 import { createAuth } from '@labelloop/api/auth'
-import { DEFAULT_FAKE_PIN, type IdPrefix, isId } from '@labelloop/contracts'
+import { type IdPrefix, isId, type ModelPinValidation, modelRefOf } from '@labelloop/contracts'
 import { createDatabase, type Database } from '@labelloop/db'
+import { createFakeProvider } from '../apps/api/src/llm/fake-provider.ts'
+import { createOpenRouterProvider } from '../apps/api/src/llm/openrouter-provider.ts'
+import { createProviderRegistry } from '../apps/api/src/llm/provider-registry.ts'
 import { envOr, requireEnv } from './env.ts'
+import { resolveSeededJudges, type SeededJudge, validateSeededPins } from './seed-judges.ts'
 
 /**
  * Deterministic seed data (plan D-L). Every id and the dev API key are FIXED rather than
@@ -12,10 +16,9 @@ import { envOr, requireEnv } from './env.ts'
  * Idempotent: re-running it is a no-op rather than an error or a duplicate, so it can sit
  * in the compose one-shot at P8 and run on every `docker compose up`.
  *
- * The seeded panel is the one PRODUCT.md names as tenant #1 — issue triage — because it is
- * the case that exercises all three polarities. Three of its judges are informational
- * labels with no valence, and one is a real gate; a panel of a single scoring judge would
- * have demonstrated none of that.
+ * WHICH judges, which models and which pins is `seed-judges.ts`; this file is the writing
+ * of them. The split is so that everything decidable without a database — and everything
+ * that can cost money — is testable without one.
  */
 
 const db = createDatabase({ url: requireEnv('DATABASE_URL'), max: 2 })
@@ -66,55 +69,37 @@ const SEED_USER_NAME = 'Demo Operator'
 
 const sha256 = (value: string) => new Bun.CryptoHasher('sha256').update(value).digest('hex')
 
-type JudgeSeed = {
-  slug: string
-  name: string
-  question: string
-  polarity: 'passes' | 'fails' | 'does_not_score'
-  weight: number | null
-  required: boolean
+/**
+ * What the four judges are, decided from the environment before anything is opened or
+ * written. It throws naming the variable when one is wrong, which is why it runs here
+ * rather than inside the loop that would otherwise discover it halfway through a write.
+ */
+const judges = resolveSeededJudges()
+
+/**
+ * The same registry the API composes (`server.ts`), for the same reason: pin validation is
+ * an ordinary `evaluate()` call (ADR-0026), so it should go down the real dispatch path
+ * rather than a second one written for the seed. The OpenRouter adapter is registered only
+ * when a key is present — and `resolveSeededJudges` has already refused any configuration
+ * that would need one and not have it, so an absent adapter here is never reachable.
+ */
+const provider = createProviderRegistry({
+  providers: {
+    fake: createFakeProvider(),
+    ...(process.env.OPENROUTER_API_KEY === undefined || process.env.OPENROUTER_API_KEY === ''
+      ? {}
+      : { openrouter: createOpenRouterProvider({ apiKey: process.env.OPENROUTER_API_KEY }) }),
+  },
+})
+
+type SeededJudgeRow = SeededJudge & {
+  judgeId: string
+  judgeVersionId: string
+  /** Read back rather than carried forward, so a re-run prints the frozen row's own. */
+  validation: ModelPinValidation | null
 }
 
-const JUDGES: JudgeSeed[] = [
-  {
-    slug: 'is-bug',
-    name: 'Is a bug report',
-    question: 'Does this issue report something behaving incorrectly?',
-    // A label with no valence: it is neither a pass nor a failure, so it scores nothing
-    // and is absent from both the numerator and the denominator (ADR-0019).
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-  },
-  {
-    slug: 'is-feature',
-    name: 'Is a feature request',
-    question: 'Does this issue ask for behaviour that does not exist yet?',
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-  },
-  {
-    slug: 'is-question',
-    name: 'Is a question',
-    question: 'Is this issue asking how to do something, rather than reporting a problem?',
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-  },
-  {
-    slug: 'needs-human',
-    name: 'Needs a human',
-    question: 'Does this issue need a maintainer to read it before any automated reply?',
-    // The one real gate on the panel. Answering `true` FAILS, and it is required — a veto,
-    // which is how `weighted_threshold` expresses that policy without a second code path.
-    polarity: 'fails',
-    weight: 1,
-    required: true,
-  },
-]
-
-const seed = async () => {
+const seed = async (): Promise<SeededJudgeRow[]> => {
   const client = db.client
 
   await client`
@@ -132,28 +117,55 @@ const seed = async () => {
     ON CONFLICT (id) DO NOTHING
   `
 
-  for (const [index, judge] of JUDGES.entries()) {
-    const judgeId = seedId('jud_', `SEEDJDG${index}`)
-    const judgeVersionId = seedId('jdv_', `SEEDJDGV${index}`)
+  const rows = judges.map((judge, index) => ({
+    ...judge,
+    judgeId: seedId('jud_', `SEEDJDG${index}`),
+    judgeVersionId: seedId('jdv_', `SEEDJDGV${index}`),
+  }))
+  const versionIds = rows.map((row) => row.judgeVersionId)
+
+  // **Idempotency is what makes this affordable.** A `jdv_` is frozen (ADR-0003), so a row
+  // that exists has a pin that can never change and a validation that can never be made
+  // more true — re-probing it would buy a fact already on the row, on every `docker compose
+  // up`, forever. So the rows that exist are read first and only the missing ones are
+  // validated, which is also what keeps the second run silent and offline.
+  const frozen = new Set(
+    (
+      await client<{ id: string }>`
+        SELECT id FROM judge_versions WHERE id = ANY(${versionIds}::text[])
+      `
+    ).map((row) => row.id),
+  )
+  const validations = await validateSeededPins({
+    judges: rows.filter((row) => !frozen.has(row.judgeVersionId)),
+    provider,
+    now: () => new Date(),
+  })
+
+  for (const judge of rows) {
     await client`
       INSERT INTO judges (id, panel_id, slug, name)
-      VALUES (${judgeId}, ${PANEL}, ${judge.slug}, ${judge.name})
+      VALUES (${judge.judgeId}, ${PANEL}, ${judge.slug}, ${judge.name})
       ON CONFLICT (id) DO NOTHING
     `
     await client`
       INSERT INTO judge_versions
-        (id, judge_id, version, type, polarity, weight, required, question, model, model_pin)
+        (id, judge_id, version, type, polarity, weight, required, question, model,
+         model_pin, model_pin_validation)
       VALUES (
-        ${judgeVersionId}, ${judgeId}, 1, 'llm', ${judge.polarity}::judge_polarity,
-        ${judge.weight}, ${judge.required}, ${judge.question}, 'fake:deterministic',
-        -- Every llm judge carries a pin, fake: ones included (ADR-0025), so the CHECK
-        -- can be the clean mirror of the model/type rule. Real models arrive at P5.
+        ${judge.judgeVersionId}, ${judge.judgeId}, 1, 'llm', ${judge.polarity}::judge_polarity,
+        ${judge.weight}, ${judge.required}, ${judge.question}, ${judge.model},
+        -- Every llm judge carries a pin, fake: ones included (ADR-0025), so the CHECK can
+        -- be the clean mirror of the model/type rule.
         --
-        -- Bound as an OBJECT, never JSON.stringify'd first. Bun's SQL driver serializes
-        -- objects itself, so pre-stringifying sends a JSON string and the ::jsonb cast
-        -- then stores a jsonb STRING rather than an object -- the same double-encoding
-        -- that jsonb-encoding.test.ts exists to catch. Verified with jsonb_typeof.
-        ${DEFAULT_FAKE_PIN}::jsonb
+        -- Bound as an OBJECT, never JSON.stringify'd first. Under node-postgres (ADR-0031)
+        -- both spellings are in fact correct, which is the point of that driver swap: the
+        -- double-encoding jsonb-encoding.test.ts exists to catch is unrepresentable here
+        -- rather than merely avoided.
+        ${judge.pin}::jsonb,
+        -- Null on a re-run, and never overwritten -- the ON CONFLICT below means the
+        -- observation on a frozen row stays the one taken when it froze.
+        ${validations.get(judge.slug) ?? null}::jsonb
       )
       ON CONFLICT (id) DO NOTHING
     `
@@ -161,7 +173,7 @@ const seed = async () => {
     // makes its immutability mean anything.
     await client`
       INSERT INTO panel_version_judges (panel_version_id, judge_version_id)
-      VALUES (${PANEL_VERSION}, ${judgeVersionId})
+      VALUES (${PANEL_VERSION}, ${judge.judgeVersionId})
       ON CONFLICT DO NOTHING
     `
   }
@@ -183,6 +195,18 @@ const seed = async () => {
   `
 
   await seedConsoleUser(client)
+
+  // Read back rather than reported from memory. On a re-run nothing was validated, and the
+  // honest thing to print is what the frozen row actually holds — which is also the only
+  // way the output distinguishes "validated just now" from "validated in June".
+  const observed = new Map(
+    (
+      await client<{ id: string; model_pin_validation: ModelPinValidation | null }>`
+        SELECT id, model_pin_validation FROM judge_versions WHERE id = ANY(${versionIds}::text[])
+      `
+    ).map((row) => [row.id, row.model_pin_validation] as const),
+  )
+  return rows.map((row) => ({ ...row, validation: observed.get(row.judgeVersionId) ?? null }))
 }
 
 /**
@@ -226,7 +250,7 @@ const seedConsoleUser = async (client: Database['client']) => {
   `
 }
 
-await seed()
+const seeded = await seed()
 await db.close()
 
 // Rendered exactly once at creation is the RULE for real keys (ADR-0003); this one is
@@ -235,6 +259,25 @@ await db.close()
 // only the hash — which is why `api_keys` has no column that could hold it.
 console.log(`seeded org ${ORG}`)
 console.log(`  panel  ${PANEL} (issue-triage), live @ ${PANEL_VERSION}, threshold 0.5`)
-console.log(`  judges ${JUDGES.map((judge) => judge.slug).join(', ')}`)
 console.log(`  key    ${DEV_KEY_PLAINTEXT}`)
 console.log(`  login  ${SEED_USER_EMAIL} / ${SEED_USER_PASSWORD} (the console)`)
+console.log('  judges')
+for (const judge of seeded) {
+  // The model and the effort are what the row is FROZEN against, and the endpoint count is
+  // what a real call observed when it froze. Printing all three is what makes a paid seed
+  // legible — three labs, three prices, three different amounts of failover.
+  //
+  // A `fake:` route says so rather than reporting `0 endpoints`. The zero is the honest
+  // number in the column — there is nothing to route among — but printed as a count it
+  // reads like a routing failure, which is the opposite of what it means.
+  const routing =
+    modelRefOf(judge.model)?.route === 'fake'
+      ? 'offline, no endpoints to route among'
+      : judge.validation === null
+        ? 'not validated'
+        : `${judge.validation.available_endpoints} endpoints`
+  console.log(
+    `    ${judge.slug.padEnd(12)} ${judge.model.padEnd(38)} ` +
+      `effort ${judge.pin.reasoning.effort.padEnd(7)} ${routing}`,
+  )
+}

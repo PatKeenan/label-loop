@@ -92,6 +92,22 @@ services:
       DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_SUPERUSER_PASSWORD:-localdev}@postgres:5432/labelloop
       SEED_USER_EMAIL: ${SEED_USER_EMAIL:-demo@labelloop.test}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-localdev-password}
+      # M1: forwarded from YOUR SHELL, and absent unless you set them there.
+      #
+      # The bare `KEY:` form is load-bearing and is NOT interchangeable with
+      # `${KEY:-}`. Compose resolves a null value from the host environment and omits the
+      # variable entirely when it is unset; the default form resolves to the EMPTY STRING,
+      # and `config.ts` types this key as `z.string().min(1).optional()` — which skips
+      # `undefined` and rejects `''`. So the tidier-looking spelling would make every
+      # zero-secret `docker compose up` fail at boot naming the field (ADR-0009). Verified
+      # against a real container, both ways round.
+      #
+      # Unset, the seed pins every judge to `fake:deterministic` and the stack stays free,
+      # which is what keeps CI's k6 smoke costing nothing.
+      OPENROUTER_API_KEY:
+      SEED_MODEL_A:
+      SEED_MODEL_B:
+      SEED_MODEL_C:
     depends_on:
       postgres:
         # Not "the container started" — initdb runs first, and migrating against a
@@ -115,6 +131,12 @@ services:
       # Over the compose network now, not the published port: inside the stack the
       # collector is a hostname, and 4318 is its own port rather than the host's mapping.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Forwarded from your shell, absent when unset — see the note on the migrate service
+      # for why the bare form matters. Without it the registry holds `fake:` alone, so a
+      # judge the seed pinned to a real model would answer `unavailable` on every call.
+      # Seeding real models and NOT giving the API the key is the one broken combination,
+      # which is why both services read the same variable.
+      OPENROUTER_API_KEY:
       # Both of these are origins as the BROWSER sees them, which is the host's view — the
       # published ports — not the compose network's.
       API_BASE_URL: http://localhost:${API_PORT:-3000}

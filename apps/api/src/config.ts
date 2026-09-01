@@ -6,9 +6,11 @@ import { z } from 'zod'
  * a runtime surprise three hours later (CONVENTIONS.md "Config").
  *
  * Every value has a working local default, so a fresh clone boots with zero secrets
- * (ADR-0009). The exceptions are the two build-provenance fields, which are *required in
- * production only*: shipping an image that cannot say which version it is defeats
- * ADR-0011's whole chain from release-please to `/healthz` and `service.version`.
+ * (ADR-0009). Four are *required in production only*, and the `superRefine` at the bottom
+ * is where that lives: the two build-provenance fields, because an image that cannot say
+ * which version it is defeats ADR-0011's whole chain from release-please to `/healthz`
+ * and `service.version`; the session secret, because its default is committed; and the
+ * provider key, because an API deployed to judge without one cannot judge.
  */
 
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
@@ -112,9 +114,11 @@ const configSchema = z
      * boot and seed with no secrets at all: without it the registry holds only the `fake:`
      * adapter, and every seeded judge is a `fake:` judge, so the whole path still runs.
      *
-     * P5 makes it REQUIRED in production, beside the build-provenance guards — an API
-     * deployed to judge with no key is not a degraded system, it is a broken one, and boot
-     * is where that should be said.
+     * REQUIRED in production, by the `superRefine` below and beside the build-provenance
+     * guards. An API deployed to judge with no key is not a degraded system, it is a broken
+     * one: every `openrouter:` judge on it answers `unavailable` for as long as it runs, and
+     * a panel of them returns a `503` per call. Boot is where that should be said, because
+     * the alternative is discovering it from a customer's first request.
      */
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     /**
@@ -175,6 +179,18 @@ const configSchema = z
     for (const [field, value, placeholder, message] of placeholders) {
       if (value !== placeholder) continue
       ctx.addIssue({ code: 'custom', path: [field], message })
+    }
+    // Not a placeholder rule but the same shape of one: absent is legal everywhere except
+    // the one environment where it makes the product not work. There is no committed
+    // default that could stand in for it, so the check is presence rather than identity.
+    if (config.OPENROUTER_API_KEY === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OPENROUTER_API_KEY'],
+        message:
+          'must be set in production — without it no `openrouter:` judge can be served ' +
+          '(ADR-0021), and every panel holding one returns 503 per call',
+      })
     }
   })
 

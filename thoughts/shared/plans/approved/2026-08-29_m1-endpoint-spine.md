@@ -323,18 +323,18 @@ Files:
 - `README.md` — the fresh-clone walkthrough stays free and offline; a short section says what
   setting the three variables plus a key changes, and what it costs (~$0.005 a panel run).
 
-- [ ] `bun run db:seed` with no key set produces four `fake:deterministic` judges, each with
+- [x] `bun run db:seed` with no key set produces four `fake:deterministic` judges, each with
       the default pin, and makes **zero** HTTP calls
-- [ ] With a key and the three models set, it produces four pinned judges, each with a
+- [x] With a key and the three models set, it produces four pinned judges, each with a
       recorded `available_endpoints`, and prints them
-- [ ] The Gemini judge's pin carries a concrete effort literal equal to that model's
+- [x] The Gemini judge's pin carries a concrete effort literal equal to that model's
       `reasoning.default_effort` as read on the day it was seeded — **not** an absent field —
       and the value is recorded in this plan's deviations, so a later provider-side change to
       that default is a visible divergence rather than a silent one
-- [ ] It is still idempotent — a second run changes nothing and does not re-validate
-- [ ] Seeding a model whose pin cannot route **fails loudly**, naming the judge
-- [ ] `NODE_ENV=production` without `OPENROUTER_API_KEY` fails at boot naming the field
-- [ ] CI's `stack` job is untouched and still free: compose runs `NODE_ENV=development` with
+- [x] It is still idempotent — a second run changes nothing and does not re-validate
+- [x] Seeding a model whose pin cannot route **fails loudly**, naming the judge
+- [x] `NODE_ENV=production` without `OPENROUTER_API_KEY` fails at boot naming the field
+- [x] CI's `stack` job is untouched and still free: compose runs `NODE_ENV=development` with
       fake models, so k6 costs nothing
 
 **Automated verification**
@@ -602,6 +602,86 @@ Recorded as they happened; these are decision provenance too.
    real database — under `pg` both spellings are correct, so the bug is unrepresentable
    rather than merely fixed. `jsonbColumn` is deleted, SQLSTATE moved from `.errno` to
    `.code`, and queries are eager rather than lazy. Stakeholder decision, 2026-08-30.
+
+7. **`RATIONALE_MAX_LENGTH` was split into a target and a bound, and the limit is now stated
+   in the prompt. P5 could not be completed without it.** Not P5's scope — it is P2's
+   `judge-schema.ts` and `openrouter-provider.ts` — but the seed cannot validate a real pin
+   while the flagship model fails validation, so it is a prerequisite rather than a
+   digression.
+
+   The defect: 280 was sent as `maxLength` under `strict: true`, **never mentioned in the
+   prompt**, and enforced by rejecting the parse. Structured output does not constrain
+   string length — providers constrain shape — so the cap was advisory on the wire and
+   absolute on the way back. Measured 2026-08-30 on an identical probe:
+
+   | Model | Validated | Rationale lengths |
+   |---|---|---|
+   | `anthropic/claude-sonnet-5` | **1 / 5** | 296, 292, 274, 331, 384 |
+   | `openai/gpt-5.6-sol` | 5 / 5 | 175, 153, 202, 171, 239 |
+   | `google/gemini-3.7-flash` | 5 / 5 | 138, 153, 131, 111, 129 |
+
+   A model was never told the limit and was then refused for exceeding it. The fix is two
+   changes: `RATIONALE_TARGET_LENGTH` (280) is stated in the system message, and
+   `RATIONALE_MAX_LENGTH` (1000) is the outer bound that rejects an essay rather than a long
+   sentence. **The instruction did nearly all the work** — re-measured 2026-08-31, Sonnet
+   returned 134-158 and passed 5 of 5, and `claude-haiku-4.5`, which deviation 4 recorded at
+   ~570 characters on 4 of 4 probes, returned 185-296 and passed 5 of 5. The raised bound is
+   a margin, not the mechanism.
+
+   Why raising the bound rather than truncating: the failure modes are asymmetric. Too high
+   costs a few dozen tokens on one response; too low DISCARDS a correct verdict — reasoning,
+   taxonomy codes and answer all fine, thrown away over prose length — and bills for it again
+   on the retry. Truncation was rejected because a stored rationale that is not what the model
+   said breaks "raw provider payloads stored alongside normalized fields".
+
+   **Timing is not incidental.** ADR-0033 makes the prompt scaffold immutable once a judge
+   freezes against it. M1 has no production tenant and no real customer judges, so this is the
+   last moment the change is free; after M4 the same fix is a new template version.
+
+8. **A misnamed test was corrected rather than renumbered.**
+   `validate-pin.test.ts` carried "a model that answers OUT OF ORDER fails validation — the
+   live Haiku case", whose fixture was a 600-character rationale — over-length, not
+   out-of-order. Ordering is properly covered in `judge-schema.test.ts`. It is now two honest
+   tests: a rationale between the target and the bound VALIDATES (the regression guard for
+   deviation 7), and an essay above the bound still fails. `judge-schema.test.ts` now asserts
+   `maxLength` against the exported constant rather than a literal `280`, since a literal is
+   what let the wire schema and the parser drift apart.
+
+9. **`scripts/` was typechecked by nothing, and now is.** No workspace `tsconfig` covered it,
+   which was tolerable while the scripts were connection strings and INSERTs and stopped
+   being so when `seed-judges.ts` began deciding which model each judge is frozen against.
+   `tsconfig.scripts.json` is added and `bun run typecheck` runs it after the packages; it
+   immediately caught two real type errors in the new tests.
+
+10. **Compose now forwards `OPENROUTER_API_KEY` and `SEED_MODEL_A/B/C`.** Not in P5's file
+    list, and caught only because the README section written for P5 documented a path that
+    did not work: it said setting a key and three variables "swaps in three real frontier
+    models", while compose — the README's own one-command path — passed neither to the `api`
+    nor the `migrate` service. The seed would have pinned real models and the API, holding no
+    key, would have answered `unavailable` on every one of them.
+
+    The plan's "CI's `stack` job is untouched and still free" is about CI staying free, not
+    about compose being off limits, and a passthrough that is absent when unset keeps it
+    exactly as free — verified below.
+
+    **The spelling is load-bearing.** `OPENROUTER_API_KEY:` (map-null) resolves from the host
+    and omits the variable when unset; `${OPENROUTER_API_KEY:-}` resolves to the EMPTY
+    STRING, which `z.string().min(1).optional()` rejects — so the tidier form would make
+    every zero-secret `docker compose up` fail at boot naming the field. Proved both ways in
+    a real container before committing to it.
+
+    Verified end to end on an isolated compose project (`-p ll-verify`, own ports and image
+    tag, so the running dev stack was never touched): with the four exported, the migrate
+    one-shot pinned three real models and a curl through the composed API returned three
+    dated `served_by` ids; with none exported, the seed produced four `fake:deterministic`
+    judges and the API logged `"routes":["fake"]`. **A stale image nearly hid the first
+    result** — `up` without `--build` reused the existing `labelloop-api:dev`, so the first
+    run exercised the old seed and printed the old output. Hence `--build` in the README.
+
+    The README also now says to `down -v` first: the seed is idempotent by judge id and a
+    `jdv_` is immutable, so a judge already seeded as `fake:deterministic` stays fake no
+    matter what is exported. That is ADR-0003 working, and it is the kind of thing that
+    reads as a broken feature if it is not written down.
 
 ## Explicitly NOT doing
 - **Streaming, in all three of its senses (D5).** Into the adapter it costs the two things M1

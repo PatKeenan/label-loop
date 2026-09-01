@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_FAKE_PIN, type ModelPin } from '@labelloop/contracts'
+import {
+  DEFAULT_FAKE_PIN,
+  type ModelPin,
+  RATIONALE_MAX_LENGTH,
+  RATIONALE_TARGET_LENGTH,
+} from '@labelloop/contracts'
 import { createFakeProvider, FAKE_MODEL } from './fake-provider.ts'
 import { createOpenRouterProvider } from './openrouter-provider.ts'
 import { type ModelProvider, ProviderError } from './provider.port.ts'
@@ -171,12 +176,43 @@ describe('a pin that cannot be satisfied', () => {
     }
   })
 
-  test('a model that answers OUT OF ORDER fails validation — the live Haiku case', async () => {
-    // Measured 2026-08-30: `claude-haiku-4.5` advertises structured_outputs, is sent
-    // maxLength 280 under strict mode, and overran it 4 times out of 4. Catalogue
-    // metadata cannot gate this; only a real call can.
-    const overlong = JSON.stringify({
-      rationale: 'x'.repeat(600),
+  test('a rationale between the target and the bound VALIDATES — the regression guard', async () => {
+    // The bug this file previously encoded. Until 2026-08-31 the target WAS the bound, so a
+    // 296-character rationale — a long sentence, with a correct verdict, correct reasons and
+    // correct key order behind it — was thrown away whole. Measured against the live API on
+    // 2026-08-30, that rejected `claude-sonnet-5` on 4 of 5 identical probes.
+    const longSentence = JSON.stringify({
+      rationale: 'x'.repeat(RATIONALE_TARGET_LENGTH + 16),
+      reasons: [],
+      verdict: true,
+      confidence: 0.9,
+    })
+    const provider = createOpenRouterProvider({
+      apiKey: 'k',
+      fetch: countingFetch(200, {
+        ...OK_BODY,
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'stop',
+            message: { role: 'assistant', content: longSentence },
+          },
+        ],
+      }).fetch,
+    })
+
+    const result = await validateWith(provider, 'openrouter:anthropic/claude-sonnet-5')
+    expect(result.ok).toBe(true)
+  })
+
+  test('an ESSAY still fails validation — the bound is raised, not removed', async () => {
+    // The test that used to live here was named for answering out of order and actually
+    // exercised over-length; ordering is covered properly in `judge-schema.test.ts`. This
+    // keeps the half that was real. Measured 2026-08-30, `claude-haiku-4.5` returned ~570
+    // characters on 4 of 4 probes when never told a limit; told one, it returned 185-296 on
+    // 5 of 5 (re-measured 2026-08-31). The bound is what catches a model that ignores it.
+    const essay = JSON.stringify({
+      rationale: 'x'.repeat(RATIONALE_MAX_LENGTH + 1),
       reasons: [],
       verdict: true,
       confidence: 0.9,
@@ -184,7 +220,7 @@ describe('a pin that cannot be satisfied', () => {
     const body = {
       ...OK_BODY,
       choices: [
-        { index: 0, finish_reason: 'stop', message: { role: 'assistant', content: overlong } },
+        { index: 0, finish_reason: 'stop', message: { role: 'assistant', content: essay } },
       ],
     }
     const provider = createOpenRouterProvider({
