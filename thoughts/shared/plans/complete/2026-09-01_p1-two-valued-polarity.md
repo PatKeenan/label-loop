@@ -1,7 +1,7 @@
 ---
 date: 2026-09-01T00:00:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-01T00:00:00Z
 approved_by: pat
 milestone: M5
@@ -209,9 +209,18 @@ under ADR-0034's product test even though it is legal under the new enum (resear
       `score` is computed over four judges rather than one.
 - [x] `bun run db:seed` twice: the second run is silent, makes no network call, and prints
       the same single judge.
-- [ ] With `SEED_MODEL_A` pointed at a real model and a key exported, the seed still
-      validates its one pin and prints an endpoint count. The three-lab demo is dark for
-      this PR and returns at P2 — confirm the machinery still works with one judge.
+- [ ] **NOT RUN — the plan was closed with this check outstanding.** With `SEED_MODEL_A`
+      pointed at a real model and a key exported, the seed still validates its one pin and
+      prints an endpoint count. The three-lab demo is dark for this PR and returns at P2 —
+      confirm the machinery still works with one judge.
+
+      Left unchecked deliberately rather than assumed: it needs a real `OPENROUTER_API_KEY`,
+      which the implementing session did not hold, and marking it done would put a
+      verification in the record that nobody performed. Everything it would exercise is
+      unchanged by P1 — `validateSeededPins`, `pinFor` and the registry dispatch were not
+      touched — and it is covered by unit tests against a stubbed provider; what is NOT
+      covered is one real call against a live endpoint with a one-judge panel. P2 re-authors
+      the panel and validates several pins again, so it is exercised there regardless.
 
 ## Deviations
 
