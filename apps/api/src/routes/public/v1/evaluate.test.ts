@@ -80,16 +80,17 @@ const ROUTED_PIN: ModelPin = {
 }
 
 /**
- * Two judges, chosen to exercise the two halves of the polarity rule with one call: a
- * label that scores nothing, and a required gate whose `true` is a failure.
+ * Two judges pointing in OPPOSITE directions, which is what exercises the whole polarity
+ * rule in one call: a `passes` judge whose `true` is good news, and a required `fails` gate
+ * whose `true` is bad news. Both score — there is no other kind (ADR-0034).
  */
 const JUDGES = [
   {
-    slug: 'is-bug',
-    polarity: 'does_not_score' as const,
-    weight: null,
+    slug: 'on-brand',
+    polarity: 'passes' as const,
+    weight: 1,
     required: false,
-    question: 'Does this issue report something behaving incorrectly?',
+    question: 'Does this reply follow the project’s tone of voice?',
   },
   {
     slug: 'needs-human',
@@ -292,7 +293,7 @@ describe('a successful evaluation', () => {
     expect(parsed.success).toBe(true)
     const evaluation = parsed.data?.data as Evaluation
 
-    expect(Object.keys(evaluation.judges).sort()).toEqual(['is-bug', 'needs-human'])
+    expect(Object.keys(evaluation.judges).sort()).toEqual(['needs-human', 'on-brand'])
     expect(evaluation.aggregation.panel_version).toBe(PANEL_VERSION)
     expect(evaluation.threshold).toBe(0.5)
     expect(evaluation.complete).toBe(true)
@@ -303,18 +304,19 @@ describe('a successful evaluation', () => {
     const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
-    const label = data.judges['is-bug']
+    const positive = data.judges['on-brand']
     const gate = data.judges['needs-human']
-    if (label === undefined || gate === undefined) throw new Error('expected both judges')
+    if (positive === undefined || gate === undefined) throw new Error('expected both judges')
 
-    // A label has no valence: it answers, and it scores nothing.
-    expect(label.status).toBe('evaluated')
-    expect(label.passed).toBeNull()
-    expect(label.weight).toBeNull()
-
-    // The gate's `true` is a failure, so `passed` is its verdict inverted — never a copy.
+    // Same booleans, opposite meanings — which is the whole reason polarity is a column.
+    // The `passes` judge copies its verdict; the `fails` gate inverts it.
+    expect(positive.status).toBe('evaluated')
+    expect(positive.passed).toBe(positive.verdict)
     expect(gate.passed).toBe(!gate.verdict)
-    expect(gate.weight).toBe(1)
+
+    // Both score, and their shares sum to 1 (ADR-0034, ADR-0035).
+    expect(positive.weight).toBe(0.5)
+    expect(gate.weight).toBe(0.5)
     expect(gate.served_by).toBe('fake:deterministic')
     expect(gate.attempts).toBe(1)
     expect(gate.rationale).toBeTruthy()

@@ -64,19 +64,23 @@ describe('polarity', () => {
     expect(evaluation.judges['on-brand']?.passed).toBe(true)
   })
 
-  test('an informational judge scores nothing: no `passed`, no weight, no denominator', () => {
+  test('every judge that answered has a `passed` and a weight — there is no third case', () => {
+    // ADR-0034: `passed` is null for exactly one reason, and it is not this one. A judge
+    // that ran always applied its polarity and always took a share of the score.
     const evaluation = run(
       [
-        [judge({ slug: 'is-bug', polarity: 'does_not_score', weight: null }), answered(true)],
-        [judge({ slug: 'needs-human' }), answered(false)],
+        [judge({ slug: 'mis-routed', polarity: 'fails' }), answered(true)],
+        [judge({ slug: 'on-brand', polarity: 'passes' }), answered(true)],
       ],
       0.5,
     )
-    expect(evaluation.judges['is-bug']?.verdict).toBe(true)
-    expect(evaluation.judges['is-bug']?.passed).toBeNull()
-    expect(evaluation.judges['is-bug']?.weight).toBeNull()
-    // One scoring judge, and it passed: a label with no valence changed nothing.
-    expect(evaluation.score).toBe(1)
+    for (const verdict of Object.values(evaluation.judges)) {
+      expect(verdict.passed).not.toBeNull()
+      expect(verdict.weight).not.toBeNull()
+    }
+    expect(evaluation.judges['mis-routed']?.passed).toBe(false)
+    expect(evaluation.judges['on-brand']?.passed).toBe(true)
+    expect(evaluation.score).toBe(0.5)
   })
 })
 
@@ -160,22 +164,6 @@ describe('a judge that did not run', () => {
     expect(evaluation.judges.b?.verdict).toBeNull()
     expect(evaluation.judges.b?.rationale).toBeNull()
   })
-
-  test('an informational judge failing does not make the panel incomplete', () => {
-    const evaluation = run(
-      [
-        [judge({ slug: 'a' }), answered(false)],
-        [
-          judge({ slug: 'label', polarity: 'does_not_score', weight: null }),
-          errored('PROVIDER_TIMEOUT'),
-        ],
-      ],
-      0.5,
-    )
-    // `complete` is about the SCORE's denominator. A label was lost, and the score is
-    // still the whole of what the score was ever going to be.
-    expect(evaluation.complete).toBe(true)
-  })
 })
 
 describe('a required judge is a veto', () => {
@@ -209,7 +197,7 @@ describe('the shape of the answer', () => {
     const evaluation = run(
       [
         [judge({ slug: 'a' }), answered(false)],
-        [judge({ slug: 'b', polarity: 'does_not_score', weight: null }), answered(true)],
+        [judge({ slug: 'b', polarity: 'passes' }), answered(true)],
       ],
       0.7,
     )
@@ -220,15 +208,5 @@ describe('the shape of the answer', () => {
     })
     expect(evaluation.threshold).toBe(0.7)
     expect(evaluation.trace_id).toBe(TRACE)
-  })
-
-  test('a panel of nothing but labels makes no claim to fail', () => {
-    const evaluation = run(
-      [[judge({ slug: 'a', polarity: 'does_not_score', weight: null }), answered(true)]],
-      0.9,
-    )
-    expect(evaluation.passed).toBe(true)
-    expect(evaluation.complete).toBe(true)
-    expect(evaluation.score).toBe(0)
   })
 })

@@ -22,8 +22,14 @@ const WEB = (__ENV.WEB_BASE_URL || 'http://web:8080').replace(/\/+$/, '')
 const PANEL = __ENV.PANEL_ID || 'pnl_000000000000000000SEEDPANE'
 const KEY = __ENV.API_KEY || `llk_test_${'0'.repeat(64)}`
 
-/** The seeded panel's judges, in the order the seed declares them. */
-const JUDGES = ['is-bug', 'is-feature', 'is-question', 'needs-human']
+/**
+ * The seeded panel's judges, in the order the seed declares them.
+ *
+ * One judge, because ADR-0034 deleted the three `does_not_score` labels and P1 authored
+ * nothing to replace them — `scripts/seed-judges.ts` says why. P2 re-authors the panel and
+ * this list grows back with it.
+ */
+const JUDGES = ['needs-human']
 
 /**
  * `http_req_failed` counts any 4xx or 5xx as a failure, and two of the checks below EXPECT

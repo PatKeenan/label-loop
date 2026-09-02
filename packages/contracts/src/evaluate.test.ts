@@ -117,15 +117,6 @@ describe('verdict', () => {
     })
   })
 
-  test('an informational judge scores nothing — a label is not a grade', () => {
-    // is-bug: answering YES is neither good nor bad. It is a classification, and folding
-    // it into a pass/fail score would be meaningless.
-    const informational = verdictSchema.parse({ ...verdict, passed: null, weight: null })
-    expect(informational.passed).toBeNull()
-    expect(informational.weight).toBeNull()
-    expect(informational.verdict).toBe(true)
-  })
-
   test('a judge that did not answer is never a pass, whatever the reason', () => {
     for (const status of ['skipped_sampling', 'failed', 'error'] as const) {
       const absent = verdictSchema.parse({
@@ -143,27 +134,6 @@ describe('verdict', () => {
       expect(absent.verdict, status).toBeNull()
       expect(absent.confidence, status).toBeNull()
     }
-  })
-
-  test('status disambiguates the two reasons passed can be null', () => {
-    // Both have passed: null and they mean completely different things. Without
-    // `status` a caller cannot tell "this judge is a label" from "this judge never ran".
-    const informational = verdictSchema.parse({ ...verdict, passed: null, weight: null })
-    const skipped = verdictSchema.parse({
-      ...verdict,
-      status: 'skipped_sampling',
-      rationale: null,
-      reasons: [],
-      verdict: null,
-      confidence: null,
-      passed: null,
-      weight: null,
-      served_by: null,
-    })
-    expect(informational.passed).toBe(skipped.passed)
-    expect(informational.status).not.toBe(skipped.status)
-    expect(informational.verdict).not.toBeNull()
-    expect(skipped.verdict).toBeNull()
   })
 
   test('failed and error are different things, and error names its cause', () => {
@@ -286,15 +256,15 @@ describe('evaluation response', () => {
     expect(parsed.score >= parsed.threshold).toBe(true)
   })
 
-  test('a mixed panel scores only its scoring judges — triage labels do not dilute a gate', () => {
-    // A triage panel: three labels that carry no valence, plus one real gate. If the
-    // labels were folded into the score, a correctly-labelled bug would drag the gate
-    // down for no reason.
+  test('a panel of judges pointing in opposite directions still sums to one score', () => {
+    // Four judges that all score (ADR-0034), two of each polarity. The `passes` judges
+    // pass on `true` and the `fails` judges pass on `false`, which is exactly why `passed`
+    // is not a copy of `verdict` — and why the weights, not the verdicts, are what sum.
     const base = {
       judge_id: newId('jud_'),
       status: 'evaluated' as const,
       error_code: null,
-      rationale: 'Classification only.',
+      rationale: 'A reason.',
       reasons: [],
       confidence: 0.9,
       served_by: 'frontier:sonnet',
@@ -306,17 +276,16 @@ describe('evaluation response', () => {
       passed: true,
       score: 1,
       judges: {
-        'is-bug': { ...base, verdict: true, passed: null, weight: null },
-        'is-feature': { ...base, verdict: false, passed: null, weight: null },
-        'is-question': { ...base, verdict: false, passed: null, weight: null },
-        'needs-human': { ...base, verdict: false, passed: true, weight: 1 },
+        'on-brand': { ...base, verdict: true, passed: true, weight: 0.25 },
+        'answers-the-question': { ...base, verdict: true, passed: true, weight: 0.25 },
+        'mis-routed': { ...base, verdict: false, passed: true, weight: 0.25 },
+        'is-missing-repro': { ...base, verdict: false, passed: true, weight: 0.25 },
       },
     })
     const scoring = Object.values(parsed.judges).filter((judge) => judge.weight !== null)
     expect(Object.keys(parsed.judges)).toHaveLength(4)
-    expect(scoring).toHaveLength(1)
-    // Weights across the SCORING judges sum to 1; the informational three contribute
-    // nothing to either side of the fraction.
+    // Every judge scores: there is no subset to filter out.
+    expect(scoring).toHaveLength(4)
     expect(scoring.reduce((total, judge) => total + (judge.weight ?? 0), 0)).toBe(1)
     expect(parsed.score).toBe(1)
   })

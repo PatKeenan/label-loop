@@ -64,6 +64,13 @@
       "when": 1788089262864,
       "tag": "0008_model_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788316289708,
+      "tag": "0009_two_valued_polarity",
+      "breakpoints": true
     }
   ]
 }

@@ -27,19 +27,21 @@ import { validatePin } from '../apps/api/src/llm/validate-pin.ts'
  * in the database as a pgEnum, and reaching for it here would pull the whole schema — and
  * a driver — into the one module in this pair that decides everything without a database.
  */
-export type JudgePolarity = 'passes' | 'fails' | 'does_not_score'
+export type JudgePolarity = 'passes' | 'fails'
 
 export type JudgeSeed = {
   slug: string
   name: string
   question: string
   polarity: JudgePolarity
-  weight: number | null
+  weight: number
   required: boolean
   /**
-   * The environment variable naming this judge's model. Two judges share `SEED_MODEL_A`
-   * on purpose — four judges across three labs is what makes the price and latency
-   * differences legible, and a fourth variable would have implied a fourth lab.
+   * The environment variable naming this judge's model. Three variables rather than one
+   * per judge: a judge set spread across several labs is what makes the price and latency
+   * differences legible. Only `SEED_MODEL_A` is read while the panel holds one judge; the
+   * other two are unused until P2 re-authors it, and are kept rather than churned out and
+   * back in.
    */
   modelVar: ModelVar
 }
@@ -57,47 +59,30 @@ export type ModelVar = (typeof MODEL_VARS)[number]
 export const DEFAULT_SEED_MODEL = 'fake:deterministic'
 
 /**
- * The seeded panel is the one PRODUCT.md names as tenant #1 — issue triage — because it is
- * the case that exercises all three polarities. Three of its judges are informational
- * labels with no valence, and one is a real gate; a panel of a single scoring judge would
- * have demonstrated none of that.
+ * **A one-judge placeholder panel, and nothing more** — read it as scaffolding, not as a
+ * product capability. The M0 four were hand-written fixtures that got mistaken for a
+ * feature, and this comment exists so the same thing does not happen to what is left of
+ * them.
+ *
+ * Three of those four were `does_not_score` labels and were deleted by ADR-0034. The
+ * fourth survives here only because a panel with no judges makes `evaluate` throw
+ * `NOT_FOUND`, and it is knowingly WRONG: `needs-human` asks a question that produces a
+ * fact the caller's system needs — their bot routes on the answer — rather than gating
+ * something their agent produced, which is work rather than evaluation (ADR-0036). It
+ * clears the polarity bar and fails the one that matters.
+ *
+ * P2 replaces the whole panel, this judge included, from a real open-coding pass. Nothing
+ * is authored to replace the deleted three: assigning them polarities to satisfy a
+ * constraint would ship rows that mean nothing, and inventing four new judges by hand is
+ * the exact mistake ADR-0034 diagnosed.
  */
 export const JUDGES: JudgeSeed[] = [
-  {
-    slug: 'is-bug',
-    name: 'Is a bug report',
-    question: 'Does this issue report something behaving incorrectly?',
-    // A label with no valence: it is neither a pass nor a failure, so it scores nothing
-    // and is absent from both the numerator and the denominator (ADR-0019).
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-    modelVar: 'SEED_MODEL_A',
-  },
-  {
-    slug: 'is-feature',
-    name: 'Is a feature request',
-    question: 'Does this issue ask for behaviour that does not exist yet?',
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-    modelVar: 'SEED_MODEL_B',
-  },
-  {
-    slug: 'is-question',
-    name: 'Is a question',
-    question: 'Is this issue asking how to do something, rather than reporting a problem?',
-    polarity: 'does_not_score',
-    weight: null,
-    required: false,
-    modelVar: 'SEED_MODEL_C',
-  },
   {
     slug: 'needs-human',
     name: 'Needs a human',
     question: 'Does this issue need a maintainer to read it before any automated reply?',
-    // The one real gate on the panel. Answering `true` FAILS, and it is required — a veto,
-    // which is how `weighted_threshold` expresses that policy without a second code path.
+    // Answering `true` FAILS, and it is required — a veto, which is how
+    // `weighted_threshold` expresses that policy without a second code path.
     polarity: 'fails',
     weight: 1,
     required: true,
@@ -163,7 +148,7 @@ export const pinFor = (model: string): ModelPin => {
 }
 
 /**
- * Read the environment and answer what the four judges are, or throw naming the variable
+ * Read the environment and answer what the seeded judges are, or throw naming the variable
  * that is wrong.
  *
  * It names the VARIABLE rather than the value, which is what CONVENTIONS' "crash at

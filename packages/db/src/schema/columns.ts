@@ -81,17 +81,22 @@ export const createdAt = () => timestampAt('created_at').notNull().defaultNow()
 export const updatedAt = () => timestampAt('updated_at').notNull().defaultNow()
 
 /**
- * A judge's polarity, and the reason it is three-valued rather than a boolean (ADR-0019).
- * `is-missing-repro: true` is a failure, `on-brand: true` is a success, and `is-bug: true`
- * is neither — it is a label with no valence. Modelling this as a boolean makes the panel
- * score uncomputable, because summing raw verdicts across judges that mean opposite things
- * produces a number that looks meaningful and is not.
+ * A judge's polarity: whether answering `true` is good news or bad news for the thing the
+ * judge examines. `is-missing-repro: true` is a failure; `on-brand: true` is a success.
+ * Without it the panel score is uncomputable, because summing raw verdicts across judges
+ * that mean opposite things produces a number that looks meaningful and is not.
+ *
+ * **Two-valued, and there is no third value** (ADR-0034). A `does_not_score` polarity was
+ * removed with the ability for a panel to carry a judge that contributes to nothing: every
+ * judge in the product's own creation pipeline comes from a category in a FAILURE taxonomy,
+ * and a failure mode is inherently pass/fail. A polarity nothing can generate means a code
+ * path nothing feeds.
  *
  * A Postgres enum rather than application-level validation: the constraint is a property
  * of the data, and the one thing that must still hold when a row arrives from a seed
  * script, a backfill, or a psql session.
  */
-export const judgePolarity = pgEnum('judge_polarity', ['passes', 'fails', 'does_not_score'])
+export const judgePolarity = pgEnum('judge_polarity', ['passes', 'fails'])
 
 /**
  * `code` judges are deterministic checks — a schema assertion or a regex — with near-zero

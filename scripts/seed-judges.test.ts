@@ -6,6 +6,8 @@ import { createProviderRegistry } from '../apps/api/src/llm/provider-registry.ts
 import {
   DEFAULT_SEED_MODEL,
   JUDGES,
+  MODEL_VARS,
+  type ModelVar,
   pinFor,
   resolveSeededJudges,
   type SeededJudge,
@@ -35,13 +37,8 @@ const bySlug = (judges: SeededJudge[], slug: string): SeededJudge => {
 describe('resolveSeededJudges', () => {
   test('with nothing set, every judge is the deterministic fake (ADR-0009)', () => {
     const judges = resolveSeededJudges({})
-    expect(judges).toHaveLength(4)
-    expect(judges.map((judge) => judge.model)).toEqual([
-      DEFAULT_SEED_MODEL,
-      DEFAULT_SEED_MODEL,
-      DEFAULT_SEED_MODEL,
-      DEFAULT_SEED_MODEL,
-    ])
+    expect(judges).toHaveLength(JUDGES.length)
+    expect(judges.map((judge) => judge.model)).toEqual(JUDGES.map(() => DEFAULT_SEED_MODEL))
     // The default pin, not a pin that happens to look like it: a `fake:` route has no
     // endpoints to constrain, and it carries one only so the CHECK can be the clean mirror
     // of the model/type rule (ADR-0025).
@@ -52,25 +49,28 @@ describe('resolveSeededJudges', () => {
     expect(resolveSeededJudges({ SEED_MODEL_A: '' })[0]?.model).toBe(DEFAULT_SEED_MODEL)
   })
 
-  test('the three variables pin four judges across three labs', () => {
-    const judges = resolveSeededJudges({
-      OPENROUTER_API_KEY: A_KEY,
-      SEED_MODEL_A: SONNET,
-      SEED_MODEL_B: 'openrouter:openai/gpt-5.6-sol',
-      SEED_MODEL_C: GEMINI,
-    })
-    expect(bySlug(judges, 'is-bug').model).toBe(SONNET)
-    expect(bySlug(judges, 'is-feature').model).toBe('openrouter:openai/gpt-5.6-sol')
-    expect(bySlug(judges, 'is-question').model).toBe(GEMINI)
-    // Two judges share SEED_MODEL_A on purpose — four judges, three labs.
+  // GONE FOR ONE PR, and recorded rather than silently dropped: "the three variables pin
+  // four judges across three labs" cannot be written against the one-judge placeholder
+  // panel ADR-0034 left behind, and `resolveSeededJudges` reads the module-level `JUDGES`
+  // so there is no seam to inject a multi-judge fixture without changing its signature.
+  // What is lost is narrow — that several judges resolve to several different models —
+  // and it returns at P2 with the replacement panel. The fallback, the empty-string case,
+  // the unqualified-value message and the missing-key refusal are all still covered below.
+
+  test('a configured variable is used verbatim, and only for the judge that names it', () => {
+    const judges = resolveSeededJudges({ OPENROUTER_API_KEY: A_KEY, SEED_MODEL_A: SONNET })
     expect(bySlug(judges, 'needs-human').model).toBe(SONNET)
   })
 
   test('a model that is not route-qualified fails naming the VARIABLE, not the value', () => {
     // `modelRefOf` answers `undefined` rather than a reason precisely so its caller — which
     // is the only thing that knows a variable name — can write the message.
-    expect(() => resolveSeededJudges({ SEED_MODEL_B: 'claude-sonnet-5' })).toThrow(/SEED_MODEL_B/)
-    expect(() => resolveSeededJudges({ SEED_MODEL_B: 'claude-sonnet-5' })).toThrow(
+    //
+    // Driven through `SEED_MODEL_A` because that is the variable the placeholder panel
+    // actually reads: a value set on a variable no judge names is not resolved at all, so
+    // pointing this at B or C would assert nothing. P2 widens it again.
+    expect(() => resolveSeededJudges({ SEED_MODEL_A: 'claude-sonnet-5' })).toThrow(/SEED_MODEL_A/)
+    expect(() => resolveSeededJudges({ SEED_MODEL_A: 'claude-sonnet-5' })).toThrow(
       /route-qualified/,
     )
   })
@@ -79,18 +79,20 @@ describe('resolveSeededJudges', () => {
     // Without this the registry would answer `unavailable` and validation would report
     // "no endpoint could serve this pin" — true about routing, and the wrong answer to why.
     try {
-      resolveSeededJudges({ SEED_MODEL_C: GEMINI })
+      resolveSeededJudges({ SEED_MODEL_A: GEMINI })
       throw new Error('expected resolveSeededJudges to throw')
     } catch (error) {
       expect((error as Error).message).toContain('OPENROUTER_API_KEY')
-      expect((error as Error).message).toContain('SEED_MODEL_C')
+      expect((error as Error).message).toContain('SEED_MODEL_A')
     }
   })
 
   test('every judge names one of the three variables — no fourth knob crept in', () => {
-    expect(new Set(JUDGES.map((judge) => judge.modelVar))).toEqual(
-      new Set(['SEED_MODEL_A', 'SEED_MODEL_B', 'SEED_MODEL_C']),
-    )
+    // A subset rather than an equality: the placeholder panel holds one judge, so not
+    // every variable is currently read. What must stay true is that no judge reaches for
+    // a knob outside the three (P2 restores the full spread).
+    const named = new Set<string>(JUDGES.map((judge) => judge.modelVar))
+    expect([...named].every((variable) => MODEL_VARS.includes(variable as ModelVar))).toBe(true)
   })
 })
 
@@ -154,11 +156,11 @@ describe('validateSeededPins', () => {
     })
 
     expect(calls).toBe(0)
-    expect(validations.size).toBe(4)
+    expect(validations.size).toBe(JUDGES.length)
     // Zero is the honest count for a route with no endpoints at all. Inventing a 1 would
     // put a fake measurement in the column that exists to hold real ones.
-    expect(validations.get('is-bug')?.available_endpoints).toBe(0)
-    expect(validations.get('is-bug')?.validated_at).toBe('2026-08-30T12:00:00.000Z')
+    expect(validations.get('needs-human')?.available_endpoints).toBe(0)
+    expect(validations.get('needs-human')?.validated_at).toBe('2026-08-30T12:00:00.000Z')
   })
 
   test('a pin that cannot route fails the whole seed, naming the judge', async () => {
@@ -183,12 +185,12 @@ describe('validateSeededPins', () => {
       },
     })
 
-    const judges = resolveSeededJudges({ OPENROUTER_API_KEY: A_KEY, SEED_MODEL_C: GEMINI })
+    const judges = resolveSeededJudges({ OPENROUTER_API_KEY: A_KEY, SEED_MODEL_A: GEMINI })
 
     // Awaited, deliberately: an unawaited `.rejects` assertion resolves after the test has
     // already passed, which is a test that cannot fail.
     await expect(validateSeededPins({ judges, provider, now: () => new Date() })).rejects.toThrow(
-      /is-question/,
+      /needs-human/,
     )
   })
 
