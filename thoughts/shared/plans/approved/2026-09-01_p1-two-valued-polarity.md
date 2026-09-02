@@ -242,6 +242,14 @@ plan's inventory of edit sites being slightly short of what the tree actually he
   first. The migration was still hand-finished — renamed from `0009_wild_dakota_north` in
   both the file and `_journal.json`, guard prepended, comments added — but nothing generated
   had to be reordered.
+- **`infra/k6/smoke.js` hardcodes the seeded panel's four judge slugs**, and the plan's
+  edit inventory did not reach outside `apps/`, `packages/` and `scripts/`. Its
+  `evaluate ran every seeded judge` and `every judge reasoned before it answered` checks
+  both failed on CI's first run of PR #35 while every other job passed — the one gate that
+  exercises the actual seeded panel end to end, and so the one that noticed. Narrowed to
+  `['needs-human']` with a comment naming P2 as where it grows back. Worth noting for P2:
+  this file is a THIRD place the seeded judge set is written down, after `seed-judges.ts`
+  and `relations.test.ts`, and none of the three references the others.
 - **One source file the plan did not enumerate: `packages/db/src/schema/trace-verdicts.ts`.**
   Both its `status` and `passed` doc comments assert the two-reasons-for-null semantics
   ADR-0034 removes. The COLUMN is untouched and stays nullable, correctly — a judge that
