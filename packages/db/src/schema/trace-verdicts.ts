@@ -34,9 +34,9 @@ export const traceVerdicts = pgTable(
       .notNull()
       .references(() => judgeVersions.id, { onDelete: 'restrict' }),
     /**
-     * Why this verdict is what it is. Only `evaluated` carries an answer; the rest exist
-     * so a caller is never handed a pass for a judge that never ran, and so the two
-     * reasons `passed` can be null stay distinguishable — informational, or absent.
+     * Why this verdict is what it is. Only `evaluated` carries an answer; the rest exist so
+     * a caller is never handed a pass for a judge that never ran, and so a null `passed`
+     * says WHICH way it went missing — skipped, unusable, or unreachable.
      */
     status: verdictStatus('status').notNull(),
     /**
@@ -45,8 +45,9 @@ export const traceVerdicts = pgTable(
      */
     verdict: boolean('verdict'),
     /**
-     * That answer under the judge's polarity — what the score sums. Null both for
-     * informational judges and for judges that never answered; `status` disambiguates.
+     * That answer under the judge's polarity — what the score sums. Null for exactly one
+     * reason: the judge never answered, which `status` names (ADR-0034). Every judge
+     * scores, so a judge that ran always has one.
      */
     passed: boolean('passed'),
     /** One capped line for a human, generated BEFORE the verdict (ADR-0019). */

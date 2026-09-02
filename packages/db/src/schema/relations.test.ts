@@ -32,12 +32,7 @@ describe('the relational query API can traverse the domain', () => {
     expect(panels.length).toBeGreaterThan(0)
     const panel = panels[0]
     expect(panel?.org.slug).toBe('demo')
-    expect(panel?.judges.map((judge) => judge.slug).sort()).toEqual([
-      'is-bug',
-      'is-feature',
-      'is-question',
-      'needs-human',
-    ])
+    expect(panel?.judges.map((judge) => judge.slug).sort()).toEqual(['needs-human'])
     // Each judge has exactly one immutable version at v1.
     expect(panel?.judges.every((judge) => judge.versions.length === 1)).toBe(true)
   })
@@ -53,15 +48,17 @@ describe('the relational query API can traverse the domain', () => {
     })
     const version = versions[0]
     expect(version?.panel.slug).toBe('issue-triage')
-    expect(version?.judgeVersions).toHaveLength(4)
+    expect(version?.judgeVersions).toHaveLength(1)
 
-    const pinned = version?.judgeVersions.map((row) => row.judgeVersion)
-    // Polarity survives the traversal, which is what the score will be computed from.
-    const scoring = pinned?.filter((jdv) => jdv.polarity !== 'does_not_score')
-    expect(scoring).toHaveLength(1)
-    expect(scoring?.[0]?.judge.slug).toBe('needs-human')
-    expect(scoring?.[0]?.required).toBe(true)
-    expect(scoring?.[0]?.weight).toBe(1)
+    const pinned = version?.judgeVersions.map((row) => row.judgeVersion) ?? []
+    // Polarity and weight survive the traversal, which is what the score is computed from.
+    // Every pinned judge scores (ADR-0034), so this is an assertion about all of them
+    // rather than about a scoring subset — there is no other kind.
+    expect(pinned.every((jdv) => jdv.weight !== null)).toBe(true)
+    expect(pinned.every((jdv) => ['passes', 'fails'].includes(jdv.polarity))).toBe(true)
+    expect(pinned[0]?.judge.slug).toBe('needs-human')
+    expect(pinned[0]?.required).toBe(true)
+    expect(pinned[0]?.weight).toBe(1)
   })
 
   test('an api key loads its org and the panel it is scoped to', async () => {

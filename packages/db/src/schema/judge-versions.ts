@@ -25,21 +25,29 @@ export const judgeVersions = pgTable(
      */
     type: judgeType('type').notNull(),
     /**
-     * THE column this table exists to get right, and the reason it is three-valued rather
-     * than a boolean (ADR-0019). It says what answering `true` means: `passes`,
-     * `fails`, or `does_not_score`. `is-missing-repro: true` is a failure. `on-brand:
-     * true` is a success. `is-bug: true` is neither — it is a label with no valence, and
-     * folding it into a pass/fail score produces a number that looks meaningful and is
-     * not. Without this the panel score is uncomputable.
+     * THE column this table exists to get right (ADR-0019). It says what answering `true`
+     * means for the thing this judge examines: `passes` or `fails`. `is-missing-repro:
+     * true` is a failure. `on-brand: true` is a success. Without this the panel score is
+     * uncomputable, because summing raw verdicts across judges that point in opposite
+     * directions produces a number that looks meaningful and is not.
+     *
+     * Two-valued, deliberately (ADR-0034): a judge that scores nothing is not a judge, and
+     * `passed` is therefore null for exactly one reason — the judge did not run.
      */
     polarity: judgePolarity('polarity').notNull(),
     /**
-     * Relative weight within the panel, normalised to sum to 1 across scoring judges when
-     * the score is computed. Null for judges whose polarity is `does_not_score`: an
-     * informational judge is absent from both the numerator and the denominator, so a
-     * weight would be a number with nothing to multiply.
+     * Relative weight within the panel, normalised to sum to 1 across the judges that
+     * actually ran when the score is computed.
+     *
+     * **NOT NULL, and a column constraint rather than a CHECK** (ADR-0035). Every judge
+     * scores, so a null is unrepresentable rather than merely unused — and the constraint
+     * flows into Drizzle's inferred types, which turns "the score is uncomputable" into a
+     * compile error rather than a runtime one. This is CONFIGURATION, and is not the same
+     * field as the `Verdict.weight` in the published contract: that one is the normalised
+     * share actually applied on one request, and is genuinely absent for a judge that
+     * never ran.
      */
-    weight: real('weight'),
+    weight: real('weight').notNull(),
     /**
      * A veto. A required judge that fails, is skipped, fails to answer or errors fails the
      * panel outright, whatever the score says — which is how `weighted_threshold` expresses
@@ -89,21 +97,14 @@ export const judgeVersions = pgTable(
     idCheck('judge_versions', table.id, 'jdv_'),
     uniqueIndex('judge_versions_judge_version_key').on(table.judgeId, table.version),
     check('judge_versions_version_positive', sql`${table.version} >= 1`),
-    // Weight and polarity are one rule, not two: a judge that does not score must not
-    // carry a weight, and a judge that scores must. Split across two nullable columns the
-    // invalid combinations are representable, so the check is what keeps them out.
-    //
-    // `weight IS NOT NULL` is not redundant with `weight > 0`. A CHECK constraint passes
-    // when it evaluates to NULL, and `NULL > 0` is NULL rather than false — so without the
-    // explicit null test a scoring judge with no weight slips straight through, which is
-    // precisely the row that makes the panel score uncomputable. Caught by the test that
-    // tried it; three-valued logic is the reason to assert a constraint rather than read it.
-    check(
-      'judge_versions_weight_matches_polarity',
-      sql`(${table.polarity} = 'does_not_score' AND ${table.weight} IS NULL)
-          OR (${table.polarity} <> 'does_not_score'
-              AND ${table.weight} IS NOT NULL AND ${table.weight} > 0)`,
-    ),
+    // Presence is the column's own NOT NULL (ADR-0035). This is the separate half of the
+    // rule: zero is perfectly representable and still meaningless, because a judge weighted
+    // zero takes no share of the score and cannot move it — an unreachable judge dressed as
+    // a configured one, which is the row that makes a panel quietly score less than it
+    // appears to. Named for what it asserts: the old name described a relationship to
+    // polarity that no longer exists, and a constraint whose name lies is worse than a
+    // verbose one.
+    check('judge_versions_weight_positive', sql`${table.weight} > 0`),
     // A `code` judge calls no model; an `llm` judge must name one.
     check(
       'judge_versions_model_matches_type',

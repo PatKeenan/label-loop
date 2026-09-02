@@ -21,9 +21,13 @@ export type PanelJudge = {
   /** The immutable `jdv_` every verdict, annotation and eval score FKs to. */
   judgeVersionId: string
   type: 'code' | 'llm'
-  polarity: 'passes' | 'fails' | 'does_not_score'
-  /** Null exactly when the judge does not score. Enforced by a CHECK, not by us. */
-  weight: number | null
+  polarity: 'passes' | 'fails'
+  /**
+   * The customer's declared importance for this judge, normalised across the judges that
+   * actually ran when the score is computed. Never null: every judge scores (ADR-0034),
+   * and the column's own NOT NULL is what makes that a type rather than a hope (ADR-0035).
+   */
+  weight: number
   /** A veto: failing, skipping or erroring fails the panel whatever the score says. */
   required: boolean
   question: string

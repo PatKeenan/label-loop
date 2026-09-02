@@ -11,6 +11,7 @@ import { appClient } from '../test-support.ts'
 const db = appClient()
 
 const CHECK_VIOLATION = '23514'
+const NOT_NULL_VIOLATION = '23502'
 const UNIQUE_VIOLATION = '23505'
 
 const rejection = async (query: Promise<unknown>): Promise<unknown> => {
@@ -52,7 +53,8 @@ afterAll(async () => {
 const insertJudgeVersion = (fields: {
   version: number
   type: 'code' | 'llm'
-  polarity: 'passes' | 'fails' | 'does_not_score'
+  polarity: 'passes' | 'fails'
+  /** Nullable HERE only so the not-null violation can be provoked on purpose. */
   weight: number | null
   model: string | null
   /**
@@ -137,13 +139,11 @@ describe('a pin is paired with the type, exactly like the model is (ADR-0022)', 
   })
 })
 
-describe('polarity is three-valued, and weight has to agree with it', () => {
+describe('polarity is two-valued, and every judge carries a weight', () => {
   /**
-   * The single most load-bearing constraint in the schema (ADR-0019). An informational
-   * judge carries no weight because it is absent from both the numerator and the
-   * denominator; a scoring judge must carry one or the score is uncomputable. Split across
-   * two nullable columns, the invalid combinations are representable — so the check is
-   * what keeps them out.
+   * The single most load-bearing constraint in the schema (ADR-0019, ADR-0034). Every judge
+   * scores, so every judge must carry a weight or the panel score is uncomputable — and a
+   * weight of zero is a judge that cannot move the number it is configured to move.
    */
   test('a scoring judge with a weight is accepted', async () => {
     await insertJudgeVersion({
@@ -155,30 +155,11 @@ describe('polarity is three-valued, and weight has to agree with it', () => {
     })
   })
 
-  test('an informational judge with no weight is accepted', async () => {
-    await insertJudgeVersion({
-      version: 2,
-      type: 'llm',
-      polarity: 'does_not_score',
-      weight: null,
-      model: 'frontier:sonnet',
-    })
-  })
-
-  test('an informational judge WITH a weight is rejected', async () => {
-    const error = await rejection(
-      insertJudgeVersion({
-        version: 3,
-        type: 'llm',
-        polarity: 'does_not_score',
-        weight: 0.5,
-        model: 'frontier:sonnet',
-      }),
-    )
-    expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
-  })
-
-  test('a scoring judge WITHOUT a weight is rejected', async () => {
+  test('a judge WITHOUT a weight is rejected — by the column, not by a check', async () => {
+    // A column-level NOT NULL rather than a CHECK, deliberately (ADR-0035): it is what
+    // flows into Drizzle's inferred types, so an unweighted judge is a compile error
+    // upstream of ever being a runtime one. `23502` rather than `23514` is that decision
+    // showing up in the SQLSTATE.
     const error = await rejection(
       insertJudgeVersion({
         version: 4,
@@ -188,17 +169,46 @@ describe('polarity is three-valued, and weight has to agree with it', () => {
         model: 'frontier:sonnet',
       }),
     )
+    expect(sqlStateOf(error)).toBe(NOT_NULL_VIOLATION)
+  })
+
+  test('a weight of zero is rejected — a judge that cannot move the score', async () => {
+    const error = await rejection(
+      insertJudgeVersion({
+        version: 5,
+        type: 'llm',
+        polarity: 'fails',
+        weight: 0,
+        model: 'frontier:sonnet',
+      }),
+    )
     expect(sqlStateOf(error)).toBe(CHECK_VIOLATION)
   })
 
-  test('polarity outside the three values is not even representable', async () => {
+  test('`does_not_score` is not even representable — the value does not come back', async () => {
+    /**
+     * The permanent regression guard for ADR-0034. `does_not_score` was a real value of
+     * this enum until migration 0009 removed it, and the product test that removed it lives
+     * in prose: only the type system can keep it from being re-added by someone reading the
+     * older comments. Postgres rejects it before any check runs.
+     */
     const error = await rejection(
       db`
         INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question)
-        VALUES (${newId('jdv_')}, ${judgeId}, 5, 'code', 'maybe', 0.5, 'q')
+        VALUES (${newId('jdv_')}, ${judgeId}, 6, 'code', 'does_not_score', 0.5, 'q')
       `,
     )
-    // 22P02 = invalid_text_representation: the enum rejects it before any check runs.
+    // 22P02 = invalid_text_representation.
+    expect(sqlStateOf(error)).toBe('22P02')
+  })
+
+  test('nor is any other value outside the two', async () => {
+    const error = await rejection(
+      db`
+        INSERT INTO judge_versions (id, judge_id, version, type, polarity, weight, question)
+        VALUES (${newId('jdv_')}, ${judgeId}, 7, 'code', 'maybe', 0.5, 'q')
+      `,
+    )
     expect(sqlStateOf(error)).toBe('22P02')
   })
 })

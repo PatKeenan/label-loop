@@ -53,17 +53,15 @@ export type EvaluateCommand = {
 
 /**
  * A judge's polarity applied to its raw answer — the single most important line in this
- * file (ADR-0019). `is-missing-repro: true` is a failure, `on-brand: true` is a success,
- * and `is-bug: true` is neither. Summing raw booleans across judges that mean opposite
- * things produces a number that looks meaningful and is not.
+ * file (ADR-0019). `is-missing-repro: true` is a failure and `on-brand: true` is a success,
+ * so summing raw booleans across judges that mean opposite things produces a number that
+ * looks meaningful and is not.
+ *
+ * Total, because polarity is two-valued (ADR-0034): a judge that answered always has a
+ * `passed`, and the only null left in the response is a judge that never answered.
  */
-const passedUnderPolarity = (
-  polarity: PanelJudge['polarity'],
-  verdict: boolean,
-): boolean | null => {
-  if (polarity === 'does_not_score') return null
-  return polarity === 'passes' ? verdict : !verdict
-}
+const passedUnderPolarity = (polarity: PanelJudge['polarity'], verdict: boolean): boolean =>
+  polarity === 'passes' ? verdict : !verdict
 
 /** Float sums drift; `score` is a contract field bounded at 0 and 1. Both are handled here. */
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, Math.round(value * 1e6) / 1e6))
@@ -131,25 +129,21 @@ export const aggregate = (
   { threshold, panelVersionId }: { threshold: number; panelVersionId: string },
   traceId: TraceId,
 ): Evaluation => {
-  const scoringConfigured = results.filter(({ judge }) => judge.polarity !== 'does_not_score')
-  const contributing = scoringConfigured.filter(({ outcome }) => outcome.status === 'evaluated')
+  const contributing = results.filter(({ outcome }) => outcome.status === 'evaluated')
 
   // Weights are normalised across the judges that ACTUALLY scored, not across the ones
   // configured to. A judge that errored is absent from the denominator, which is what
   // makes `score` a real number over a smaller set rather than a diluted one over the
   // full set — and what makes `complete` the field that matters when reading it.
-  const totalWeight = contributing.reduce((sum, { judge }) => sum + (judge.weight ?? 0), 0)
+  const totalWeight = contributing.reduce((sum, { judge }) => sum + judge.weight, 0)
 
   const verdicts: Record<string, Verdict> = {}
   let score = 0
   let requiredHeld = true
 
   for (const { judge, outcome } of results) {
-    const scoring = judge.polarity !== 'does_not_score'
     const share =
-      scoring && outcome.status === 'evaluated' && totalWeight > 0
-        ? (judge.weight ?? 0) / totalWeight
-        : null
+      outcome.status === 'evaluated' && totalWeight > 0 ? judge.weight / totalWeight : null
 
     const passed =
       outcome.status === 'evaluated'
@@ -185,14 +179,13 @@ export const aggregate = (
     }
   }
 
-  const complete = scoringConfigured.length === contributing.length
+  const complete = results.length === contributing.length
   const finalScore = clamp01(score)
 
   return {
-    // A panel with no scoring judges at all makes no claim to fail, so it passes on the
-    // strength of its required judges alone. A panel that HAS scoring judges but got
-    // nothing back from them does not reach this line — see `evaluate` below.
-    passed: requiredHeld && (scoringConfigured.length === 0 || finalScore >= threshold),
+    // A panel that got nothing back from any judge does not reach this line — see
+    // `evaluate` below, which refuses rather than reporting a score of zero.
+    passed: requiredHeld && finalScore >= threshold,
     score: finalScore,
     complete,
     threshold,
@@ -369,28 +362,25 @@ export const evaluate = async (
   await enqueueFollowUp(deps, traceId, command.requestId, logger)
 
   const evaluated = results.filter(({ outcome }) => outcome.status === 'evaluated')
-  const scoringConfigured = panel.judges.filter((judge) => judge.polarity !== 'does_not_score')
-  const scored = results.filter(
-    ({ judge, outcome }) => judge.polarity !== 'does_not_score' && outcome.status === 'evaluated',
-  )
 
   /**
    * The panel could not decide, and saying so is the honest answer.
    *
-   * A partial result is returned whenever SOME scoring judge answered: the published
-   * contract calls that "real but partial", and `complete: false` is how a caller sees it.
-   * When the denominator is empty there is no partial number to report — `score: 0` would
-   * read as "everything failed", and a gate acting on `passed: false` would block a
-   * perfectly good artifact because our provider was down. So an infrastructure failure
-   * with nothing to divide by fails the request, retryably, with the code that says why.
+   * A partial result is returned whenever SOME judge answered: the published contract calls
+   * that "real but partial", and `complete: false` is how a caller sees it. When the
+   * denominator is empty there is no partial number to report — `score: 0` would read as
+   * "everything failed", and a gate acting on `passed: false` would block a perfectly good
+   * artifact because our provider was down. So an infrastructure failure with nothing to
+   * divide by fails the request, retryably, with the code that says why.
+   *
+   * Every judge scores (ADR-0034), so "some judge answered" and "some judge scored" are the
+   * same set and this is one condition rather than two.
    *
    * The trace row is written FIRST, deliberately. The run happened, it is the run somebody
    * will want to look at, and the error envelope carries the `request_id` that the trace
    * row also stores — so the record is reachable even though the response has no `data`.
    */
-  const nothingUsable =
-    evaluated.length === 0 || (scoringConfigured.length > 0 && scored.length === 0)
-  const failure = nothingUsable ? infrastructureFailure(results) : undefined
+  const failure = evaluated.length === 0 ? infrastructureFailure(results) : undefined
   if (failure !== undefined) {
     logger.warn({ code: failure.code }, 'evaluation could not be completed')
     throw new AppError(failure.code, 'No judge on this panel could be reached.', {

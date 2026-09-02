@@ -15,9 +15,10 @@ import { idSchema } from './ids.ts'
  * ADR-0001's server-side trace capture true.
  *
  * A judge's polarity is part of its configuration, not of the artifact: each judge
- * declares whether answering `true` is a pass, a fail, or neither. Without that, the
- * panel score is uncomputable, because summing raw booleans across judges that point in
- * opposite directions is meaningless.
+ * declares whether answering `true` is a pass or a fail. Without that, the panel score is
+ * uncomputable, because summing raw booleans across judges that point in opposite
+ * directions is meaningless. There is no third option — every judge scores, participates
+ * in the score, and can fail the panel (ADR-0034).
  */
 
 export const EVALUATE_ARTIFACT_MAX_LENGTH = 32_000
@@ -195,12 +196,11 @@ export const verdictSchema = z
       .nullable()
       .openapi({
         description:
-          'Whether that answer counts as a PASS for this judge. Null in two distinct ' +
-          'cases, which `status` disambiguates: the judge is informational and does not ' +
-          'score (`status: evaluated`), or it never answered. NOT a duplicate of ' +
+          'Whether that answer counts as a PASS for this judge. Null for exactly one ' +
+          'reason: the judge never answered, which `status` names. NOT a duplicate of ' +
           '`verdict`: judges point in different directions. `is-missing-repro: true` is a ' +
-          'failure, `on-brand: true` is a success, and `is-bug: true` is neither — it is a ' +
-          'label. Each judge declares its own polarity, and this is that polarity applied.',
+          'failure and `on-brand: true` is a success. Each judge declares its own ' +
+          'polarity, and this is that polarity applied.',
         example: false,
       }),
     weight: z
@@ -211,8 +211,8 @@ export const verdictSchema = z
       .openapi({
         description:
           'This judge’s normalised share of the panel score, or null when it did not ' +
-          'contribute — informational, skipped, failed or errored. Weights across the ' +
-          'judges that DID score sum to 1, so a caller can recompute `score` themselves.',
+          'contribute — skipped, failed or errored. Weights across the judges that DID ' +
+          'score sum to 1, so a caller can recompute `score` themselves.',
         example: 0.1667,
       }),
     served_by: z
@@ -299,16 +299,15 @@ export const evaluationSchema = z
       .max(1)
       .openapi({
         description:
-          'The weighted share of scoring judges that passed, from 0 to 1. Six equally ' +
-          'weighted judges with three passing scores 0.5. Informational judges are absent ' +
-          'from both the numerator and the denominator — a label is not a grade — as are ' +
-          'skipped, failed and errored ones. Check `complete` before trusting this as a ' +
-          'whole-panel number.',
+          'The weighted share of judges that passed, from 0 to 1. Six equally weighted ' +
+          'judges with three passing scores 0.5. Skipped, failed and errored judges are ' +
+          'absent from both the numerator and the denominator. Check `complete` before ' +
+          'trusting this as a whole-panel number.',
         example: 0.5,
       }),
     complete: z.boolean().openapi({
       description:
-        'Whether every scoring judge on the panel actually ran. When false, some judge ' +
+        'Whether every judge on the panel actually ran. When false, some judge ' +
         'was skipped, failed or errored and `score` was computed over a SMALLER ' +
         'denominator — so the number is real but partial, and a gate reading `passed` ' +
         'alone would be acting on incomplete information. We return the partial result ' +
