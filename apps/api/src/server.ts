@@ -11,6 +11,7 @@ import { createOpenRouterProvider } from './llm/openrouter-provider.ts'
 import { createProviderRegistry } from './llm/provider-registry.ts'
 import { createRootLogger } from './middleware/logger.ts'
 import { startTelemetry } from './otel.ts'
+import { createRedisRateLimitStore } from './rate-limit/redis-store.ts'
 
 /**
  * The entrypoint, and the only file that touches the real world: it reads the real
@@ -101,6 +102,12 @@ const jobs = createPgBossQueue({
 await jobs.start()
 await registerJobHandlers(jobs, { db, clock: systemClock, errorReporter, logger })
 
+// The limiter's counters (ADR-0038). Composed once, beside the gateway and for the same
+// reason: it is stateful, and one rebuilt per request would hold a fresh full bucket every
+// time. The client connects lazily, so a Redis that is not up yet does not stop boot — the
+// limiter fails open per request and says so in the log (ADR-0040).
+const rateLimitStore = createRedisRateLimitStore({ url: config.REDIS_URL })
+
 // Configured at P3, mounted here at P7 (plan D-E). It takes the APP role's handle like
 // everything else: better-auth reads and writes its four tables and, with
 // `disableMigrations`, cannot reach for DDL it does not have the privilege to issue.
@@ -115,6 +122,7 @@ const app = createApp({
   jobs,
   tracer: telemetry.tracer,
   auth,
+  rateLimitStore,
 })
 
 const server = Bun.serve({ port: config.PORT, fetch: app.fetch })

@@ -9,6 +9,7 @@ import { type Config, loadConfig } from './config.ts'
 import { AppError } from './errors.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
+import { createMemoryRateLimitStore } from './rate-limit/memory-store.ts'
 import { validationHook } from './routes/public/v1/index.ts'
 import { fakeAuth } from './testing/fake-auth.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
@@ -60,6 +61,7 @@ beforeEach(() => {
     jobs: fakeQueue(),
     tracer: noopTracer,
     auth: fakeAuth(),
+    rateLimitStore: createMemoryRateLimitStore(),
   })
 })
 
@@ -204,6 +206,7 @@ describe('contract-validation auto-mapping', () => {
       jobs: fakeQueue(),
       tracer: noopTracer,
       auth: fakeAuth(),
+      rateLimitStore: createMemoryRateLimitStore(),
     })
     host.route('/probe-host', probe)
     return host
@@ -268,6 +271,7 @@ describe('/readyz', () => {
       jobs: fakeQueue(queue),
       tracer: noopTracer,
       auth: fakeAuth(),
+      rateLimitStore: createMemoryRateLimitStore(),
     })
 
   const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) => withDependencies(options)
