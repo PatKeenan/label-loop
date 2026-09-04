@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.3.0](https://github.com/PatKeenan/label-loop/compare/v0.2.0...v0.3.0) (2026-09-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **db:** every judge scores, and polarity becomes two-valued ([#35](https://github.com/PatKeenan/label-loop/issues/35))
+
+### Features
+
+* **db:** every judge scores, and polarity becomes two-valued ([#35](https://github.com/PatKeenan/label-loop/issues/35)) ([4d90658](https://github.com/PatKeenan/label-loop/commit/4d906587528ddb058c10d2f08c1ba41d4d5e907e))
+* **db:** freeze the capability pin onto judge_versions ([#29](https://github.com/PatKeenan/label-loop/issues/29)) ([f3683ff](https://github.com/PatKeenan/label-loop/commit/f3683ff602c70b322bd6aa532940a56f9cc79293))
+* **db:** put tokens and money on every persisted verdict ([#28](https://github.com/PatKeenan/label-loop/issues/28)) ([c7f8629](https://github.com/PatKeenan/label-loop/commit/c7f862969e4f2a1d741d2b1ba7632f0d39b7f9e7))
+* **llm:** add the OpenRouter adapter behind the existing port ([#27](https://github.com/PatKeenan/label-loop/issues/27)) ([55a7826](https://github.com/PatKeenan/label-loop/commit/55a78268bde9164db71615d33fb5494c2faed1b8))
+* **llm:** pin a capability contract, and give an unfixable provider failure its own kind ([#25](https://github.com/PatKeenan/label-loop/issues/25)) ([7c7d717](https://github.com/PatKeenan/label-loop/commit/7c7d7176899a98453fadca0080157d4f247341b1))
+* **seed:** pin three real models, and tell the judge how long a rationale is ([#31](https://github.com/PatKeenan/label-loop/issues/31)) ([523b1df](https://github.com/PatKeenan/label-loop/commit/523b1dfbdc73f3c16b6b40432913c5c3a35bc57e))
+
+
+### Bug Fixes
+
+* **llm:** keep the provider's payload out of log lines and spans ([#26](https://github.com/PatKeenan/label-loop/issues/26)) ([2debc14](https://github.com/PatKeenan/label-loop/commit/2debc149d882f7bf0999a19452d2a532f47e37dd))
+
+
+### Documentation
+
+* **adr:** every judge scores, and classification leaves the product ([#32](https://github.com/PatKeenan/label-loop/issues/32)) ([553629d](https://github.com/PatKeenan/label-loop/commit/553629d4319e84588739c74a8c4bb6dda931bd18))
+* **adr:** pin judge versions to a capability contract, and fix data collection to deny ([#23](https://github.com/PatKeenan/label-loop/issues/23)) ([05d5a50](https://github.com/PatKeenan/label-loop/commit/05d5a503bf401de9c75c07306bccdd575b143822))
+* **adr:** route M1 judge inference through OpenRouter, for this phase only ([#21](https://github.com/PatKeenan/label-loop/issues/21)) ([e332b08](https://github.com/PatKeenan/label-loop/commit/e332b087da025daf056ec4d77588f336e23296cf))
+* **adr:** version the judge's authored prompt and its compilation template ([#30](https://github.com/PatKeenan/label-loop/issues/30)) ([d8350fe](https://github.com/PatKeenan/label-loop/commit/d8350fe30ff789441cf5631b3cd6a01deaca2011))
+* **plan:** approve the M1 endpoint spine (+ ADR 0024..0029) ([#24](https://github.com/PatKeenan/label-loop/issues/24)) ([306ebb9](https://github.com/PatKeenan/label-loop/commit/306ebb9525a530ea84317f5f783f16389773f947))
+* **plan:** approve the P3 prose sweep, and defer the P2 seeded panel ([#37](https://github.com/PatKeenan/label-loop/issues/37)) ([9f9c575](https://github.com/PatKeenan/label-loop/commit/9f9c57545be59c6260bcbfb920bdc2eb6fa3736f))
+* **plan:** complete the M0 and M1 plans, and give M5 its polarity prerequisite ([#34](https://github.com/PatKeenan/label-loop/issues/34)) ([5bffaa4](https://github.com/PatKeenan/label-loop/commit/5bffaa4215a71d0b865334f01f438cac0043dae0))
+* **plan:** complete the P1 two-valued-polarity plan ([#36](https://github.com/PatKeenan/label-loop/issues/36)) ([68341db](https://github.com/PatKeenan/label-loop/commit/68341db8a5de5e2f1ca75bb744704e79be0dcc0d))
+* **plan:** record the M0 release as shipped ([#20](https://github.com/PatKeenan/label-loop/issues/20)) ([14c80cc](https://github.com/PatKeenan/label-loop/commit/14c80cc9d457681704c195d7dd1983bd71548991))
+* polarity is two-valued, and classification leaves the product ([#39](https://github.com/PatKeenan/label-loop/issues/39)) ([15ab1f6](https://github.com/PatKeenan/label-loop/commit/15ab1f698ef8fd947b4e8172b2ab7931164f0926))
+
+
+### Build & Dependencies
+
+* **deps:** bump fast-uri to 3.1.6, clearing four high advisories ([#38](https://github.com/PatKeenan/label-loop/issues/38)) ([9ea0dea](https://github.com/PatKeenan/label-loop/commit/9ea0deaeb24c289c8d631c46d1871d9f49529e48))
+
 ## [0.2.0](https://github.com/PatKeenan/label-loop/compare/v0.1.0...v0.2.0) (2026-08-29)
 
 
