@@ -108,13 +108,17 @@ ADR-0034.** "This repo's GitHub issues judged by a panel" is the classification 
 inbound issue is not something an agentic system produced, and `is-bug`-style judges no
 longer exist. The tenant has to judge something this repo's own agents emit, against
 failure modes a real error-analysis pass surfaces.
-**Prerequisite, and it lands before any annotation row does:** ADR-0034 makes judge polarity
-two-valued. That is a `judge_polarity` enum migration (Postgres does not drop enum values,
-so the type is recreated and the column swapped), a rewritten
-`judge_versions_weight_matches_polarity` CHECK, four sites in `evaluate.ts`, the `passed`
-null-semantics in the contract, and a replacement for the seeded panel — three of whose four
-judges stop being expressible. Cheap now, while every database is disposable; expensive once
-annotations FK to judge versions (ADR-0003).
+**Prerequisite, and it landed before any annotation row did:** ADR-0034 made judge polarity
+two-valued, in PR #35 — the `judge_polarity` enum recreated and the column swapped (Postgres
+does not drop enum values), a rewritten `judge_versions_weight_matches_polarity` CHECK,
+`evaluate.ts`, and the `passed` null-semantics in the contract, which now has exactly one
+reason to be null. The prose caught up in a separate documentation pass. **The seeded panel
+did not:** three of its four judges were deleted as unexpressible, `needs-human` survives
+only because a panel with no judges makes `evaluate` throw `NOT_FOUND` and is knowingly
+wrong under ADR-0036, and what is left is a one-judge placeholder until the panel is
+re-authored from a real open-coding pass. Doing that migration here was cheap while every
+database was disposable; it would not have been once annotations FK to judge versions
+(ADR-0003).
 Showcase tenant candidate: a prompt-injection-detection judge (adversarial eval
 set; natural fine-tune target for M7; demonstrates AI-security fluency via product).
 **Demo moment:** annotate 20 real traces in under 5 minutes on camera.
