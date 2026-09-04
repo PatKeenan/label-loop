@@ -60,7 +60,7 @@ RUN bun run --cwd apps/web build
 # maintainers, listening on 8080 as uid 101 — which also happens to be the port the compose
 # file already publishes from.
 # ---------------------------------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.29.3-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.5-alpine AS runtime
 
 # Carried for parity with the API image (ADR-0011). Nothing in a static bundle reads them;
 # they are here so `docker inspect` can answer "which build is this" for both images the
