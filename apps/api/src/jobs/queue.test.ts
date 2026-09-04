@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { QUEUES } from '@labelloop/db'
+import { ephemeralQueue } from '@labelloop/db/test-support'
 import { createPgBossQueue, type JobDelivery } from './index.ts'
 import { RECORD_EVALUATION } from './record-evaluation.ts'
 
@@ -12,6 +13,14 @@ import { RECORD_EVALUATION } from './record-evaluation.ts'
  * `record-evaluation.test.ts`. What is asserted HERE is only what a fake cannot tell you:
  * that a job survives the round trip through Postgres, that the app role's credential is
  * enough to work it, and that shutdown drains rather than severs.
+ *
+ * The round trip runs on a queue of this test's own (`ephemeralQueue`), NOT on
+ * `record-evaluation`. A declared queue is shared with every pg-boss client pointed at the
+ * same database — on a developer machine, the composed stack's `api` container — and a
+ * test that waits for its own worker to be handed the job is then asserting that it won a
+ * race it has no way to win reliably. The helper's own comment has the full account. What
+ * matters here is that the isolation is of the QUEUE and nothing else: this is still the
+ * real adapter, the real pg-boss, the real Postgres and the app role's credential.
  */
 
 const DATABASE_URL = (() => {
@@ -35,8 +44,17 @@ const queue = createPgBossQueue({
 
 await queue.start()
 
+/**
+ * Created before the suite so `work()` has something to subscribe to, and dropped after
+ * it. The migrator creates it, exactly as `db:migrate` creates the declared queues.
+ */
+const roundTrip = await ephemeralQueue('queue-adapter-round-trip')
+
 afterAll(async () => {
+  // Stop first, drop second: dropping a queue out from under a running worker is a race of
+  // its own, and the point of this file is not to introduce one.
   await queue.stop()
+  await roundTrip.drop()
 })
 
 /** Polling is the delivery mechanism, so waiting is the test's job, not a code smell. */
@@ -66,13 +84,13 @@ describe('the pg-boss adapter', () => {
 
   test('a job survives the round trip through Postgres, payload intact', async () => {
     const delivered: JobDelivery[] = []
-    await queue.work(RECORD_EVALUATION, async (delivery) => {
+    await queue.work(roundTrip.name, async (delivery) => {
       delivered.push(delivery)
     })
 
     const traceId = `tr_roundtrip_${Date.now()}`
     const requestId = 'cd'.repeat(16)
-    const jobId = await queue.send(RECORD_EVALUATION, {
+    const jobId = await queue.send(roundTrip.name, {
       trace_id: traceId,
       request_id: requestId,
     })
@@ -82,7 +100,7 @@ describe('the pg-boss adapter', () => {
       delivered.find((delivery) => delivery.payload.trace_id === traceId),
     )
     expect(received.jobId).toBe(jobId as string)
-    expect(received.queue).toBe(RECORD_EVALUATION)
+    expect(received.queue).toBe(roundTrip.name)
     // Both ids arrive, which is what makes a job's log lines findable from the request that
     // created it and from the evaluation it is about (ADR-0010).
     expect(received.payload).toEqual({ trace_id: traceId, request_id: requestId })
