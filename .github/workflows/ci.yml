@@ -45,12 +45,29 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      # Same reasoning as Postgres above, for the same reason: the rate-limit store tests
+      # assert what REDIS does with a Lua script under concurrency — the atomicity the whole
+      # adapter exists for — and a test that silently skipped would report that green while
+      # proving nothing. On the image tag compose pins.
+      redis:
+        image: redis:8.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
       # 5432 here rather than compose's 5433: a runner has nothing else on the port, and
       # the value that matters is that all three roles point at the same database.
       DATABASE_URL: postgres://labelloop_app:localdev@localhost:5432/labelloop
       DATABASE_MIGRATION_URL: postgres://labelloop_migrator:localdev@localhost:5432/labelloop
       DATABASE_ADMIN_URL: postgres://postgres:localdev@localhost:5432/labelloop
+      # 6379 here rather than compose's 6380, for the same reason Postgres is on 5432: a
+      # runner has nothing else on the port.
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@v7

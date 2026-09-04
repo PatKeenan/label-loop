@@ -43,85 +43,85 @@ Branch: `feat/m2-p1-rate-limit`. PR title: `feat(api): per-key rate limiting, in
 
 ### Redis, and what it costs
 
-- [ ] `infra/docker-compose.yml` — a `redis` service beside `postgres`, healthchecked
+- [x] `infra/docker-compose.yml` — a `redis` service beside `postgres`, healthchecked
       (`redis-cli ping`) and depended on by `api` with `condition: service_healthy`, matching
       how `postgres` is wired. **No volume**: the counters are ephemeral by design and a
       restart losing them is correct behaviour, not data loss.
-- [ ] `apps/api/src/config.ts` — `REDIS_URL`, defaulting to the compose value the way
+- [x] `apps/api/src/config.ts` — `REDIS_URL`, defaulting to the compose value the way
       `DATABASE_URL`'s row documents its own default. It is not a secret, so ADR-0009's
       zero-secret boot is unaffected.
-- [ ] `.env.example` — the matching row, under a `# ---------- M2: rate limiting ----------`
+- [x] `.env.example` — the matching row, under a `# ---------- M2: rate limiting ----------`
       heading, exhaustive per CONVENTIONS' "Config" rule.
-- [ ] `docs/STACK_DECISIONS.md` — **amend D4.** It currently reads *"No Redis until the k6
+- [x] `docs/STACK_DECISIONS.md` — **amend D4.** It currently reads *"No Redis until the k6
       breaking-point doc proves the need."* It becomes a decided row naming Redis, the date,
       that the decision was taken on design grounds ahead of its own evidence gate, and why
       (the sequencing trap). pg-boss stays on Postgres — this does not touch the queue.
 
 ### The store, behind a port
 
-- [ ] `apps/api/src/ports/rate-limit-store.ts` — port #3, in the register `clock.ts` and
+- [x] `apps/api/src/ports/rate-limit-store.ts` — port #3, in the register `clock.ts` and
       `error-reporter.ts` already use. One method: consume N tokens for a subject, answer
       allowed/remaining/reset. Everything Redis-shaped stays behind it.
-- [ ] `apps/api/src/rate-limit/redis-store.ts` — the real adapter, on **Bun's built-in
+- [x] `apps/api/src/rate-limit/redis-store.ts` — the real adapter, on **Bun's built-in
       `Bun.RedisClient`** (Bun 1.4.0). The bucket is one Lua script via `eval`, because
       read-then-write across two commands is a race that shows up exactly under the load this
       milestone exists to generate — and atomicity is the one thing a hand-rolled limiter
       cannot fake.
-- [ ] `apps/api/src/rate-limit/memory-store.ts` — the deterministic fake, a `Map` on the
+- [x] `apps/api/src/rate-limit/memory-store.ts` — the deterministic fake, a `Map` on the
       injected `Clock`. Peer of the real adapter, not a stub of it: both pass the same
       contract suite, the way `fake-provider` and `openrouter-provider` do.
-- [ ] `apps/api/src/rate-limit/store.contract-test.ts` — the shared suite both must pass,
+- [x] `apps/api/src/rate-limit/store.contract-test.ts` — the shared suite both must pass,
       modelled on `apps/api/src/llm/provider.contract-test.ts`.
 
 ### The bucket and the middleware
 
-- [ ] `apps/api/src/rate-limit/token-bucket.ts` — hand-rolled (ADR-0012), `Clock`-injected,
+- [x] `apps/api/src/rate-limit/token-bucket.ts` — hand-rolled (ADR-0012), `Clock`-injected,
       commented in the register of `retry.ts` and `breaker.ts`. Token bucket over fixed
       window so a caller keeps burst headroom; its state is two numbers per subject, which is
       what keeps the store swappable. **`DEFAULT_RATE_LIMIT`: capacity 60, refill 60/minute**,
       exported as a named policy beside `DEFAULT_BREAKER_POLICY` and `retry.ts`'s policy, so
       the three tunables of the resilience layer read the same way and live at the same
       altitude.
-- [ ] `apps/api/src/middleware/rate-limit.ts` — reads the subject from a **parameter, never a
+- [x] `apps/api/src/middleware/rate-limit.ts` — reads the subject from a **parameter, never a
       hardcoded key id**, so per-org at M8 is a call site rather than a refactor. Throws
       `AppError('RATE_LIMITED', …, { retryAfterSeconds })` computed from the bucket's reset,
       never a constant: `RATE_LIMITED` carries `retryAfter: true` in `ERROR_SPEC` and the
       central handler already reads it.
-- [ ] `apps/api/src/routes/public/v1/evaluate.ts:41` — chained **after** `apiKeyAuth()` in the
+- [x] `apps/api/src/routes/public/v1/evaluate.ts:41` — chained **after** `apiKeyAuth()` in the
       same `middleware` array. Order is load-bearing and gets its own test: limiting before
       authentication would let an anonymous flood burn a real key's allowance.
-- [ ] `apps/api/src/app-env.ts` — `rateLimitStore` on `AppDeps`, injected like `modelGateway`
+- [x] `apps/api/src/app-env.ts` — `rateLimitStore` on `AppDeps`, injected like `modelGateway`
       and for the same stated reason: it is stateful, and one rebuilt per request would never
       limit anything.
-- [ ] `apps/api/src/server.ts` — compose the real adapter once, beside the gateway.
-- [ ] **Fail open.** A store error — unreachable Redis, a timeout — is caught in the
+- [x] `apps/api/src/server.ts` — compose the real adapter once, beside the gateway.
+- [x] **Fail open.** A store error — unreachable Redis, a timeout — is caught in the
       middleware, logged at `warn` with the subject, reported to the `ErrorReporter` port, and
       the request proceeds. It must never surface as a 500: a broken limiter is our problem,
       not the caller's.
-- [ ] **No new error codes.** `RATE_LIMITED` and `QUOTA_EXCEEDED` already exist with the right
+- [x] **No new error codes.** `RATE_LIMITED` and `QUOTA_EXCEEDED` already exist with the right
       statuses and retry semantics. If this phase reaches for a code, the design has drifted.
 
 ### Tests
 
-- [ ] `token-bucket.test.ts` — refill, burst, exhaustion, and reset arithmetic, all on a fake
+- [x] `token-bucket.test.ts` — refill, burst, exhaustion, and reset arithmetic, all on a fake
       clock and none of them sleeping.
-- [ ] `middleware/rate-limit.test.ts` — the 429 envelope, `Retry-After` present and matching
+- [x] `middleware/rate-limit.test.ts` — the 429 envelope, `Retry-After` present and matching
       the bucket, and **the ordering assertion**: an unauthenticated request is 401 and
       consumes nothing.
-- [ ] `store.contract-test.ts` run against both adapters, the Redis one gated on a reachable
+- [x] `store.contract-test.ts` run against both adapters, the Redis one gated on a reachable
       `REDIS_URL` the way database tests are.
-- [ ] **A fail-open test**: a store that throws lets the request through, logs a warning and
+- [x] **A fail-open test**: a store that throws lets the request through, logs a warning and
       reports — asserted directly, because this path only ever runs when something is already
       wrong and would otherwise be discovered during the outage it exists for.
-- [ ] `apps/api/src/routes/public/v1/evaluate.test.ts` — one case proving a limited caller
+- [x] `apps/api/src/routes/public/v1/evaluate.test.ts` — one case proving a limited caller
       gets 429 rather than a judge call.
 
 ### Automated verification
 
-- [ ] `bun run lint`, `bun run typecheck`, `bun test` all green.
-- [ ] `docker compose -f infra/docker-compose.yml up -d --wait` — `redis` healthy, `api`
+- [x] `bun run lint`, `bun run typecheck`, `bun test` all green.
+- [x] `docker compose -f infra/docker-compose.yml up -d --wait` — `redis` healthy, `api`
       waiting on it.
-- [ ] The seeded key 429s when driven past the constant, and the response carries
+- [x] The seeded key 429s when driven past the constant, and the response carries
       `Retry-After`.
 
 ### Manual verification
@@ -251,6 +251,66 @@ Branch: `docs/m2-p3-breaking-point`. PR title: `docs: the breaking point, with r
 - **Load-testing real providers.** Settled 2026-09-04: a ramp is thousands of calls.
 - **Touching `retry.ts`'s measured `timeoutMs` or the breaker's thresholds.** If phase 3 says
   they are wrong, that is a finding for its own change with its own evidence.
+
+## Deviations
+
+Recorded as they happened, because they are decision provenance too (CLAUDE.md).
+
+### Phase 1
+
+1. **The port is #4, not #3.** The plan calls `rate-limit-store.ts` "port #3". The register
+   already reads `ModelProvider` #1, `Clock` #2, `ErrorReporter` #3, so the counter store is
+   the fourth and is numbered that way in the file. A documentation slip, not a design change.
+
+2. **The Redis adapter needed a command deadline, and the plan's fail-open does not work
+   without one.** The plan says a store error "is caught in the middleware". Measured against
+   a real client: an unreachable Redis does not throw. Bun's `RedisClient` queues the command
+   and waits for a reconnection that may never come, so the `catch` never runs and the request
+   **hangs** — strictly worse than having no limiter. `createRedisRateLimitStore` therefore
+   races every `EVAL` against a 250ms deadline (invisible against a judge call measured in
+   seconds), which is what converts "unreachable" into the catchable rejection the plan
+   assumed. It covers a hung-but-connected Redis for free.
+
+3. **Bun's client stops reconnecting permanently, so the store rebuilds it.** Found by the
+   manual verification, not by a test: after `docker compose stop redis` / `start redis`, the
+   API kept failing open **indefinitely** — every request logging "Connection has failed" —
+   until the process was restarted. Bun's `RedisClient` retries a few times and then enters a
+   terminal state; raising `maxRetries` to two billion fixed it in a host-process probe and
+   did **not** fix it against the composed stack, where a restarted container also returns on
+   a fresh address. The adapter now discards a client that reports itself disconnected and
+   builds a new one (at most once a second), which re-resolves the hostname. Without this,
+   ADR-0040's fail-open is not a brief degradation but a permanent one: a ten-second Redis
+   restart would leave the limiter off until someone redeployed. Verified end to end —
+   healthy 60/20, outage 80/0, recovery limiting again with no API restart.
+   `redis-store.test.ts` carries a regression guard.
+
+4. **CI gained a `redis` service.** The plan asks for the Redis contract test to be "gated on
+   a reachable `REDIS_URL` the way database tests are" — and the database way, stated in
+   `ci.yml` itself, is that CI runs a real one and the test does not skip. A skipped store
+   test would read green while proving nothing about the Lua under concurrency, which is the
+   only thing that adapter exists for.
+
+5. **Compose publishes Redis on 6380, not 6379**, and `config.ts` defaults to match. The same
+   reasoning the file already gives for Postgres on 5433: a developer machine often has a
+   Redis on the default port, and that collision is silent — the buckets would simply be
+   shared with whatever else is running. CI uses 6379, as it does 5432, because a runner has
+   nothing else on the port.
+
+6. **`token-bucket.ts` splits into a pure function and a clock-bound wrapper.** The plan says
+   the bucket is "`Clock`-injected"; it is, through `createTokenBucket`, but the arithmetic
+   itself is `consume(state, {nowMs, cost, policy})` — a pure function with no clock and no
+   I/O. That split is what lets the Lua in `redis-store.ts` be a transcription of a written
+   specification rather than of a closure, and what lets the whole schedule be asserted in
+   microseconds. The duplication it creates is deliberate and is exactly what
+   `store.contract-test.ts` exists to police.
+
+### Noted, not fixed
+
+- **`apps/api/src/jobs/queue.test.ts` failed locally** partway through this phase, on the
+  unmodified tree as well as the modified one — stale pg-boss state in a development database
+  the composed stack had also been running against. `docker compose down -v` and
+  `bun run db:setup` cleared it. Nothing to do with this phase, and recorded only so the next
+  reader does not spend the same twenty minutes on it.
 
 ## Open questions
 
