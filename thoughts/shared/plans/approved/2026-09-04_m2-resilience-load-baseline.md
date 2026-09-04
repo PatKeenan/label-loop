@@ -139,29 +139,29 @@ real latency`.
 **This lands after phase 1 and before phase 3**, because a ramp with no limiter measures a
 system that no longer exists, and a ramp against a zero-latency fake measures a hash.
 
-- [ ] `apps/api/src/llm/fake-provider.ts` — a latency option on `FakeProviderOptions`, beside
+- [x] `apps/api/src/llm/fake-provider.ts` — a latency option on `FakeProviderOptions`, beside
       `failFirst`/`failWith`. It impersonates a ~4s judge (the measured figure in
       `retry.ts`'s header table, not a guess) with configurable spread. **Deterministic per
       call** — derived from the same hash the verdict is, so a load run is repeatable rather
       than merely random. Distinct from the `__slow__` sentinel, which never returns.
-- [ ] `apps/api/src/llm/fake-provider.test.ts` — latency is applied, is deterministic for the
+- [x] `apps/api/src/llm/fake-provider.test.ts` — latency is applied, is deterministic for the
       same call, and is zero by default so no existing test slows down.
-- [ ] `infra/k6/ramp.js` — staged ramp to find the knee. Thresholds on p95 and on
+- [x] `infra/k6/ramp.js` — staged ramp to find the knee. Thresholds on p95 and on
       `http_req_failed`, with `expectedStatuses` told about the 429s so a limiter working
       correctly does not read as failure — the same honesty `smoke.js:33-38` already applies.
-- [ ] `infra/k6/spike.js` — a step change, to show the breaker and the limiter behaving under
+- [x] `infra/k6/spike.js` — a step change, to show the breaker and the limiter behaving under
       a cliff rather than a slope.
-- [ ] `infra/docker-compose.yml` — both under the existing `k6` profile, with the fake's
+- [x] `infra/docker-compose.yml` — both under the existing `k6` profile, with the fake's
       latency set through the `api` service's environment so a load run needs no code edit.
-- [ ] **CI runs smoke only.** Ramp and spike are operator-run; adding minutes of load to every
+- [x] **CI runs smoke only.** Ramp and spike are operator-run; adding minutes of load to every
       PR buys nothing and makes the pipeline flaky on shared runners.
 
 ### Automated verification
 
-- [ ] `bun test` green — the latency default must not have slowed the suite.
-- [ ] `docker compose --profile k6 run --rm k6 run /scripts/ramp.js` completes and its
+- [x] `bun test` green — the latency default must not have slowed the suite.
+- [x] `docker compose --profile k6 run --rm k6 run /scripts/ramp.js` completes and its
       thresholds are meaningful (they fail when pointed at a deliberately low limit).
-- [ ] The existing smoke script still passes unchanged in CI.
+- [x] The existing smoke script still passes unchanged in CI.
 
 ### Manual verification
 
@@ -304,13 +304,63 @@ Recorded as they happened, because they are decision provenance too (CLAUDE.md).
    microseconds. The duplication it creates is deliberate and is exactly what
    `store.contract-test.ts` exists to police.
 
+### Phase 2
+
+7. **The ramp's first numbers were meaningless, and the fix is the interesting part.** A run
+   produces two populations that have nothing to do with each other: a served evaluation
+   waits on a judge for seconds, a refused one is rejected in milliseconds without touching
+   anything. With one seeded key at 60/minute, **99.94% of a ramp is refusals** — so
+   `http_req_duration` p95 read as **12ms** while served calls were actually taking **5.3s**.
+   A threshold on the mixture is a threshold on the cheap population, and it would have
+   passed through any amount of degradation. Both scripts now record `served_duration`,
+   `refused_duration` and `limited_rate` separately and threshold on the served population.
+   The plan asked for "thresholds on p95 and on `http_req_failed`"; taken literally that
+   produces a number that describes nothing.
+
+8. **The question the ramp actually answers had to change with it.** One key cannot generate
+   more than one served request per second, so the limiter is the binding constraint long
+   before this instance's capacity is — a ramp cannot find the knee with the key material
+   that exists, and no key-creation endpoint ships until the management API. What it CAN
+   answer, and now does: **does a flood of refusals degrade the calls that are served?**
+   Measured on 2026-09-04 at 40 VUs — 2433 req/s, served p95 5.31s against a fake configured
+   at 4000ms ± 1500, refused p95 12ms. It does not. That is a real finding and a threshold
+   that can fail, which was verified by pointing it at a 9000ms fake: `served_duration` p95
+   9.46s, threshold crossed, run red.
+
+9. **`compose run` silently recreates the API, and that made a load run measure nothing.**
+   A service whose environment differs from the running container is considered out of date
+   and restarted — so bringing the stack up with `FAKE_PROVIDER_LATENCY_MS=4000` and then
+   running k6 without repeating it restarts the API at zero latency. Observed exactly that:
+   `served_duration` p95 of **73ms** against a fake configured for 4000ms, every threshold
+   green, the run about nothing. `ci.yml`'s k6 step documents the same trap for its build
+   args, which is how it was recognised. Both scripts now have a `setup()` that probes one
+   call and **refuses to start** if the judge answered too fast, printing the command that
+   fixes it (`ALLOW_FAST_JUDGE=1` to override when measuring the limiter alone).
+
+10. **A shared `infra/k6/load-lib.js`**, used by `ramp.js` and `spike.js` and deliberately
+    NOT by `smoke.js` — the smoke test is CI's gate and stays self-contained, because a
+    shared module is one more thing that can break the one script that has to work.
+
+11. **`biome.json` turns off `noConsole` for `infra/k6/**`.** k6 has no logger; `console.log`
+    is the only channel a script has to reach the operator. The ban exists to protect the
+    API's structured logging (CONVENTIONS.md "Logging"), and there is nothing of that kind
+    here to protect. The rationale is recorded in `load-lib.js`, because `biome.json` cannot
+    carry a comment.
+
+12. **The load knob is two env vars, not one.** `FAKE_PROVIDER_LATENCY_MS` and
+    `FAKE_PROVIDER_LATENCY_SPREAD_MS`, both defaulting to 0. The plan said "a latency option
+    ... with configurable spread"; making the spread separately settable is what lets an
+    operator collapse the distribution to a constant when isolating a variable.
+
 ### Noted, not fixed
 
-- **`apps/api/src/jobs/queue.test.ts` failed locally** partway through this phase, on the
-  unmodified tree as well as the modified one — stale pg-boss state in a development database
-  the composed stack had also been running against. `docker compose down -v` and
-  `bun run db:setup` cleared it. Nothing to do with this phase, and recorded only so the next
-  reader does not spend the same twenty minutes on it.
+- **`apps/api/src/jobs/queue.test.ts` failed locally** in BOTH phases, on the unmodified tree
+  as well as the modified one — the composed `api` container runs its own pg-boss worker
+  against the same database the host tests use. Stopping the container is not enough; only
+  `docker compose down -v` plus `bun run db:setup` cleared it, which points at leftover
+  pg-boss queue state rather than a live competitor alone. Nothing to do with either phase,
+  and out of scope for this plan — but it has now cost time twice, so it is worth its own
+  change: the test should own a uniquely-named queue per run rather than sharing one.
 
 ## Open questions
 
