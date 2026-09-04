@@ -1,9 +1,10 @@
 ---
 date: 2026-09-04T00:00:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-04T00:00:00Z
 approved_by: pat
+completed_at: 2026-09-04T14:05:00Z
 milestone: M5
 topic: p3-polarity-prose
 related_adrs: [0034, 0035, 0036, 0037, 0019]
@@ -51,17 +52,17 @@ polarity exists at all — summing raw booleans across judges pointing in opposi
 is meaningless — and keep the `verdict` vs `passed` distinction, since both survive. Drop
 `is-bug` as the third example everywhere; `is-missing-repro` and `on-brand` still work.
 
-- [ ] `CLAUDE.md:6` — the domain paragraph, second sentence. This one is load-bearing beyond
+- [x] `CLAUDE.md:6` — the domain paragraph, second sentence. This one is load-bearing beyond
       documentation: it is injected into every session as project instructions, so a stale
       sentence here is a stale sentence in every future context window.
-- [ ] `docs/CONVENTIONS.md:61-69` — the polarity bullet, including the trailing clause about
+- [x] `docs/CONVENTIONS.md:61-69` — the polarity bullet, including the trailing clause about
       `null` for informational judges. `null` now has exactly one meaning: the judge never
       answered. Cite ADR-0034 in the bullet, as neighbouring bullets cite their ADRs.
-- [ ] `docs/PRODUCT.md:58` (§5.2) — the polarity bullet. Its last sentence ("A triage panel
+- [x] `docs/PRODUCT.md:58` (§5.2) — the polarity bullet. Its last sentence ("A triage panel
       is mostly informational judges plus a gate or two; a taste panel is mostly scoring
       ones") is not an edit but a deletion: the contrast it draws no longer exists, since
       there is only one kind of judge.
-- [ ] `README.md:519-523` — see "the seeded panel" below; the polarity rationale there is
+- [x] `README.md:519-523` — see "the seeded panel" below; the polarity rationale there is
       entangled with the judge list and is rewritten as one block.
 
 ### The doctrine: classification as a separate capability
@@ -73,16 +74,16 @@ call (`docs/CONVENTIONS.md:53-57`, ADR-0019) — so each of these keeps the rule
 the label-set claim. Getting this split wrong in either direction is the main risk in the
 phase.
 
-- [ ] `CLAUDE.md:6` — "Classification is not a separate mode: a label set is N binary
+- [x] `CLAUDE.md:6` — "Classification is not a separate mode: a label set is N binary
       judges." Deleted. The adjacent `cls_`/`clv_` retirement note stays true and stays.
-- [ ] `docs/PRODUCT.md:13` — the positioning block's last sentence. Its conclusion ("bug
+- [x] `docs/PRODUCT.md:13` — the positioning block's last sentence. Its conclusion ("bug
       triage and taste validation are the same operation performed on artifacts from
       different sources") is the part ADR-0034 narrowed, and it is the sentence the
       triage persona below rests on.
-- [ ] `docs/PRODUCT.md:34` (core loop step 1) — "A label set becomes N judges, not one
+- [x] `docs/PRODUCT.md:34` (core loop step 1) — "A label set becomes N judges, not one
       multi-class call" becomes the binary-question rule alone.
-- [ ] `docs/PRODUCT.md:56` (§5.1) — same, in the CRUD bullet.
-- [ ] `README.md:89-90` (core loop step 1) — same. Keep "a verdict you can measure is worth
+- [x] `docs/PRODUCT.md:56` (§5.1) — same, in the CRUD bullet.
+- [x] `README.md:89-90` (core loop step 1) — same. Keep "a verdict you can measure is worth
       more than a verdict you can only read", which is the good half of the sentence.
 
 ### The triage persona
@@ -112,9 +113,9 @@ Two constraints on the rewrite:
 
 The **taste** persona is untouched in both files (D3).
 
-- [ ] `docs/PRODUCT.md:27` — the Triage bullet.
-- [ ] `README.md:63-64` — the same persona, in "Who it is for".
-- [ ] Both keep the closing line that follows them — *"the only difference is where the
+- [x] `docs/PRODUCT.md:27` — the Triage bullet.
+- [x] `README.md:63-64` — the same persona, in "Who it is for".
+- [x] Both keep the closing line that follows them — *"the only difference is where the
       artifact came from"* — but it now needs a caveat rather than a deletion: under
       ADR-0034 the artifact must be something the caller's system produced or decided, which
       is a property of our system. Rewrite the line rather than leaving it to contradict the
@@ -137,10 +138,10 @@ half and leaves the other advertised:
 
 Both sentences point at `docs/BUILD_SPINE.md` M5, which is where the reopening is tracked.
 
-- [ ] `docs/PRODUCT.md:171` (§8) — append the sentence. The commitment's prose is otherwise
+- [x] `docs/PRODUCT.md:171` (§8) — append the sentence. The commitment's prose is otherwise
       untouched, including the four judge slugs: they are what the appended sentence is
       about, so removing them would leave the correction referring to nothing.
-- [ ] `docs/PRODUCT.md:165` (§7, ≥ 500 annotated traces) — the same commitment stated a
+- [x] `docs/PRODUCT.md:165` (§7, ≥ 500 annotated traces) — the same commitment stated a
       second time, including the same *"this project's own GitHub issues"* claim. Extended
       to §7 as a judgement call rather than on instruction: marking §8 reopened while §7
       restates it unqualified reproduces the exact two-documents-disagreeing failure this
@@ -151,24 +152,24 @@ Both sentences point at `docs/BUILD_SPINE.md` M5, which is where the reopening i
 Not stale doctrine — **factually wrong output**. P1 left one judge; these three sites
 describe four. A reader following the walkthrough today sees a mismatch on the first curl.
 
-- [ ] `README.md:513-523` — the seeded-panel section. It becomes: one placeholder judge,
+- [x] `README.md:513-523` — the seeded-panel section. It becomes: one placeholder judge,
       named as scaffolding rather than as a capability (D5), with a forward pointer to the
       replacement panel. Say plainly that it is a placeholder and why the previous four were
       removed — the honest version is more interesting than the panel was.
-- [ ] `README.md:635-638` — the pinned-endpoint table printed by the migrate one-shot. Four
+- [x] `README.md:635-638` — the pinned-endpoint table printed by the migrate one-shot. Four
       rows become one, and the surrounding claim that the walkthrough "returns three labs'
       verdicts on one request" is false while only `SEED_MODEL_A` is read. State that the
       three-lab demo is dark until the panel is re-authored rather than quietly printing one
       row under unchanged prose.
-- [ ] `README.md:684-688` — the span tree. "Nine spans" becomes three, and the four `judge`
+- [x] `README.md:684-688` — the span tree. "Nine spans" becomes three, and the four `judge`
       children become one. The paragraph after it about nesting, backoff events and
       `circuit_open` is unaffected and stays.
-- [ ] Re-run the walkthrough and paste real output rather than editing the old block by
+- [x] Re-run the walkthrough and paste real output rather than editing the old block by
       hand. Both blocks are transcripts; hand-editing a transcript is how they drifted.
 
 ### BUILD_SPINE
 
-- [ ] `docs/BUILD_SPINE.md:108-117` — the M5 prerequisite paragraph is written in the future
+- [x] `docs/BUILD_SPINE.md:108-117` — the M5 prerequisite paragraph is written in the future
       tense about work that has now shipped ("**Prerequisite, and it lands before any
       annotation row does**"). It becomes a record: what landed, in which PR, and that the
       seeded panel is a one-judge placeholder until it is re-authored. The paragraph above
@@ -176,10 +177,10 @@ describe four. A reader following the walkthrough today sees a mismatch on the f
 
 ### Automated verification
 
-- [ ] `bun run lint` and `bun run typecheck` — nothing should change, and that is the point:
+- [x] `bun run lint` and `bun run typecheck` — nothing should change, and that is the point:
       a prose PR that moves either is a prose PR that touched code.
-- [ ] `bun test` — same reasoning.
-- [ ] The vocabulary is gone from living documents. This is the check that actually tests
+- [x] `bun test` — same reasoning.
+- [x] The vocabulary is gone from living documents. This is the check that actually tests
       the phase, and it should be run and pasted into the PR:
 
       ```bash
@@ -193,17 +194,17 @@ describe four. A reader following the walkthrough today sees a mismatch on the f
 
 ### Manual verification
 
-- [ ] Read the five doctrine sentences (`CLAUDE.md`, CONVENTIONS, PRODUCT §5.2, PRODUCT
+- [x] Read the five doctrine sentences (`CLAUDE.md`, CONVENTIONS, PRODUCT §5.2, PRODUCT
       positioning, README core loop) one after another in a single sitting. They should say
       the same thing in different registers; if any two could be read as disagreeing, the
       phase has not done its job.
-- [ ] `docker compose -f infra/docker-compose.yml down -v && … up -d --wait --build`, then
+- [x] `docker compose -f infra/docker-compose.yml down -v && … up -d --wait --build`, then
       follow the README walkthrough top to bottom. Every judge list, table and span count it
       prints matches what the README says it prints.
-- [ ] `docs/PRODUCT.md` §7 and §8 both name the reopening and both point at BUILD_SPINE M5.
+- [x] `docs/PRODUCT.md` §7 and §8 both name the reopening and both point at BUILD_SPINE M5.
       Read §8 as a newcomer would: it should be impossible to finish the paragraph still
       believing that panel of four judges is live.
-- [ ] The `docs/adr/` directory is untouched by the diff.
+- [x] The `docs/adr/` directory is untouched by the diff.
 
 ## Decisions made
 
@@ -258,8 +259,69 @@ describe four. A reader following the walkthrough today sees a mismatch on the f
   `*.md`, the phase has exceeded its scope.
 - **Any new dependency or tool.** Nothing here touches `docs/STACK_DECISIONS.md`.
 
+## Deviations
+
+Recorded during implementation on 2026-09-04. None changes the phase's intent; all four are
+additional sites or a corrected command.
+
+- **Three sites beyond the enumerated list, all in the same failure class the plan names.**
+  The plan lists eight doctrine sites and three README output sites; the vocabulary grep and
+  a follow-up scan for retired judge slugs found three more that are wrong in exactly the
+  way the listed ones are, so they were fixed rather than left to contradict the rest:
+  - `docs/PARKING_LOT.md:90` — *"each accessible panel auto-described from its label set"*
+    (the MCP-distribution entry) becomes *"from its judges"*. It is the only living-document
+    hit the plan's own grep produces once the listed sites are done, so leaving it would
+    have failed the phase's automated check.
+  - `README.md:337` — a cross-reference stating *"one evaluation is nine spans"*, the same
+    stale count as the span tree at `:684` that the plan does list.
+  - `README.md:568` — *"the panel's four judges all sit on one model"*, in the resilience
+    walkthrough; rewritten as *"every judge on one model shares one circuit breaker"*, which
+    is the sentence's actual point and is count-independent.
+- **`docs/SENIORITY_CHECKLIST.md:65` — a fourth unlisted site, found on completion.** The
+  row *"Dogfood case study: repo's own issues judged in production"* describes the same
+  reopened commitment, in the document that is the project's scoreboard. The vocabulary grep
+  does not catch it (none of its trigger words appear), which is why it surfaced only when
+  the checklist was checked for artifacts going live. The row stays unchecked — nothing went
+  live — and gains the same reopened marker as PRODUCT §7/§8 and the README.
+- **The README's own Dogfooding section (`README.md:774`) is marked reopened too.** The plan
+  extends the §8 append to PRODUCT §7 on the reasoning that marking one site while another
+  restates it unqualified reproduces the failure the plan exists to end. The README states
+  the same commitment a third time, in the more public document, so the same reasoning
+  applies. Same treatment: an appended paragraph naming both halves and pointing at
+  BUILD_SPINE M5, with the commitment's own prose untouched.
+- **The plan's verification grep does not exclude what it intends to on this shell.** As
+  written the filter is `grep -vE '…|^\./thoughts/|^\./docs/adr/|…'`, but `grep -rn … .`
+  here emits paths without the `./` prefix, so every ADR and thoughts hit survives the
+  filter and the check appears to fail. Run with the anchors relaxed:
+
+  ```bash
+  grep -rniE 'three-valued|does_not_score|does not score|no valence|informational judge|label set' \
+    --include='*.md' . | grep -vE 'node_modules|(^|\./)thoughts/|(^|\./)docs/adr/|CHANGELOG'
+  ```
+
+  Result: no hits. The intent — ADRs and thoughts are historical records — is unchanged.
+- **The pinned-endpoint transcript cost one real OpenRouter call, approved in conversation
+  on 2026-09-04.** The plan requires transcripts to be re-run rather than hand-edited, and
+  that block is the one that only exists with a key set. `SEED_MODEL_A` was pointed at
+  `openrouter:anthropic/claude-sonnet-5` for one `down -v` / `up --build` cycle; the row
+  pasted (`effort none`, `5 endpoints`) is that run's real output. The walkthrough's evaluate
+  call was **not** re-run against the real model — a second billable call for a claim that is
+  prose rather than a transcript — and the stack was returned to the zero-secret path
+  afterwards, where the walkthrough was verified end to end.
+- **`docker compose up --build` needed the base image pulled separately.** Docker Hub
+  metadata for `oven/bun:1.4.0-alpine` timed out twice mid-session; `docker pull` out of band
+  fixed it. Environmental, nothing in the repo.
+
 ## Open questions
 
-1. **Does this PR record itself?** P1 got an entry in `thoughts/shared/progress/decisions-log.md`
+1. **Does this PR record itself?** ~~P1 got an entry in `thoughts/shared/progress/decisions-log.md`
    via `/log_decision`. The P2 deferral is a real sequencing decision made in conversation
-   on 2026-09-04 and is currently recorded nowhere but this plan's "Explicitly NOT doing".
+   on 2026-09-04 and is currently recorded nowhere but this plan's "Explicitly NOT doing".~~
+
+   **Settled, and the question was half stale when it was written.** The P2 deferral was
+   already logged at `decisions-log.md:73` (2026-09-04T12:40Z) by the `/approve_plan`
+   session, alternatives and costs included. What was genuinely unrecorded was *this* plan's
+   own product decision, which is the one the plan itself flagged as the cost of shipping a
+   product call inside a prose PR. Logged on completion at `decisions-log.md:74`, covering
+   both the triage-persona rewrite (ADR-0037) and the append-rather-than-rewrite treatment
+   of the dogfooding commitment.

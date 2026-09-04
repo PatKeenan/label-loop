@@ -60,14 +60,19 @@ Small-to-mid engineering teams embedding judgement into automated or agentic sys
 with at least one subject-matter expert willing to review outputs. The shape we design
 against, in two shapes that are the same operation:
 
-- **Triage** — a platform team judging inbound GitHub issues with a panel of
-  `is-bug`, `is-feature`, `is-question`, `needs-human`, consumed by their triage bot.
+- **Triage** — a platform team gating their triage bot's own routing decisions: the
+  inbound issue is the artifact, the route the bot chose travels in `context`, and
+  `mis-routed` asks whether that decision misjudges the issue. `true` means their agent
+  got it wrong.
 - **Taste** — a marketing team gating generated assets on a designer's judgement with
   `on-brand`, `composition-acceptable`, `colour-balanced`, called from inside their
   generation agent before an asset ships.
 
-Both send an artifact and receive per-judge verdicts. The only difference is where the
-artifact came from, which is not a property of our system.
+Both send an artifact and receive per-judge verdicts. Where the artifact itself originated
+still does not matter — an inbound issue is as good as a generated asset — but what the
+panel *judges* has to be something the caller's system produced or decided, which is why the
+triage panel judges the routing decision carried in `context` rather than the issue
+(ADR-0034).
 
 ---
 
@@ -86,9 +91,9 @@ flowchart LR
 ```
 
 1. **Create a panel.** Name, description, and its judges — each one a single binary
-   question with a definition and optional examples. A label set becomes N judges rather
-   than one multi-class call, because a verdict you can measure is worth more than a
-   verdict you can only read. This is version 1.
+   question with a definition and optional examples, never a bundled multi-criteria call,
+   because a verdict you can measure is worth more than a verdict you can only read. This
+   is version 1.
 2. **Choose the model** your judges run on, and **get a scoped key**. Your agent calls the
    panel as one step in its own workflow.
 3. **Every judge runs independently and is traced** — artifact, per-judge verdict and
@@ -329,7 +334,7 @@ The **Follow-up** column is `pending` until the queue job stamps the row.
 **3. Find the same call in Grafana.** Open http://localhost:3001 → **Explore** → **Tempo**
 and paste the `request_id` in. It is not *like* a trace id, it **is** the W3C trace id of
 the span that served the request (ADR-0010), so the string in the JSON body is the string
-Tempo is indexed by. One evaluation is nine spans — see [Seeing the
+Tempo is indexed by. One evaluation is three spans — see [Seeing the
 trace](#seeing-the-trace) for what the nesting is telling you.
 
 **4. Read the logs.** Raw NDJSON on stdout, one line per request, every line carrying the
@@ -510,17 +515,29 @@ docker compose -f infra/docker-compose.yml start postgres
 
 ### The seeded panel
 
-`bun run db:seed` creates the issue-triage panel this project runs on itself, and prints a
-fixed development API key. The key is deliberately zero-entropy and self-describing: it is
+`bun run db:seed` creates a one-judge placeholder panel and prints a fixed development API
+key. The key is deliberately zero-entropy and self-describing: it is
 a real credential in shape only, on a throwaway local database. Real keys are 32 random
 bytes, shown exactly once at creation and stored only as a SHA-256 hash — `api_keys` has
 no column that could hold a plaintext one.
 
-Its four judges are the reason the schema models polarity as three-valued rather than as a
-boolean. `is-bug`, `is-feature` and `is-question` are labels with no valence: they answer a
-question without passing or failing anything, so they score nothing and sit outside both
-the numerator and the denominator. `needs-human` is the one real gate — answering `true`
-*fails*, and it is `required`, so it vetoes the panel whatever the score says.
+**The panel is scaffolding, not a capability, and saying so is the honest version.** It
+holds one judge: `needs-human` — *"Does this issue need a maintainer to read it before any
+automated reply?"* — where answering `true` *fails*, and it is `required`, so it vetoes the
+panel whatever the score says. It is here because a panel with no judges makes `evaluate`
+throw `NOT_FOUND`, not because it is a good judge.
+
+The other three went with the polarity change. `is-bug`, `is-feature` and `is-question`
+answered a question without passing or failing anything, and ADR-0034 removed the ability to
+express such a judge at all: every judge now carries a weight, participates in the score, and
+can fail the panel. They were never
+products of the flywheel either — they were fixtures typed into `scripts/seed.ts` at M0,
+months before the open-coding pass they were meant to illustrate existed, and they were
+mistaken for a feature. `needs-human` outlived them by clearing the polarity bar and failing
+the one that matters: a triage bot routes on the answer, so the call manufactures a fact
+their system needs rather than gating something it produced (ADR-0036). It is deleted when
+the panel is re-authored from a real open-coding pass, and `scripts/seed-judges.ts` says so
+in a comment.
 
 Point the key at the panel and it answers:
 
@@ -548,9 +565,9 @@ Three artifact prefixes drive the fake into a specific failure, so the resilienc
 be watched by hand rather than only in a test. They belong to the fake and disappear with
 it at M1.
 
-**Run them in this order, and only this order.** The panel's four judges all sit on one
-model, so they share one circuit breaker — and once it opens it stays open for 30 seconds,
-refusing everything before it reaches the provider. Send `__unavailable__` first and the
+**Run them in this order, and only this order.** Every judge on one model shares one circuit
+breaker — and once it opens it stays open for 30 seconds, refusing everything before it
+reaches the provider. Send `__unavailable__` first and the
 next two requests come back `CIRCUIT_OPEN` no matter what you put in them, which looks
 exactly like nothing working:
 
@@ -604,19 +621,22 @@ a string, never a number. `curl -i` shows both.
 ### Pointing it at real models
 
 Everything above runs on the deterministic fake: no key, no network, no bill. Setting an
-OpenRouter key and three variables swaps in three real frontier models on the same code
-path — there is no branch in the seed on whether a key exists, which is what keeps the free
-path and the paid path the same lines.
+OpenRouter key and a model variable swaps in a real frontier model on the same code path —
+there is no branch in the seed on whether a key exists, which is what keeps the free path
+and the paid path the same lines.
 
-Compose forwards all four **from your shell**, so set them there and not in `.env`, which
+Compose forwards them **from your shell**, so set them there and not in `.env`, which
 compose does not read:
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 export SEED_MODEL_A=openrouter:anthropic/claude-sonnet-5
-export SEED_MODEL_B=openrouter:openai/gpt-5.6-sol
-export SEED_MODEL_C=openrouter:google/gemini-3.7-flash
 ```
+
+`SEED_MODEL_B` and `SEED_MODEL_C` still exist and are still forwarded, but **nothing reads
+them while the panel holds one judge** — see [the seeded panel](#the-seeded-panel). They are
+kept rather than churned out and back in, because the panel that reads all three is what
+gets re-authored, not the mechanism.
 
 **Throw the old data away first, or nothing will change.** The seed is idempotent by judge
 id, and a `jdv_` is immutable (ADR-0003) — so a judge already seeded as `fake:deterministic`
@@ -632,26 +652,29 @@ The migrate one-shot then prints what it pinned:
 
 ```
   judges
-    is-bug       openrouter:anthropic/claude-sonnet-5   effort none    5 endpoints
-    is-feature   openrouter:openai/gpt-5.6-sol          effort none    3 endpoints
-    is-question  openrouter:google/gemini-3.7-flash     effort medium  2 endpoints
     needs-human  openrouter:anthropic/claude-sonnet-5   effort none    5 endpoints
 ```
 
-Now [the walkthrough's first curl](#the-walkthrough) returns three labs' verdicts on one
-request, and `served_by` carries three dated model ids rather than one fake.
+Now [the walkthrough's first curl](#the-walkthrough) runs against a real frontier model, and
+`served_by` carries a dated model id rather than a fake.
+
+**One row, and the three-lab demo is dark.** The panel used to pin four judges across three
+labs, which is what made the price, latency and reasoning-effort spread legible in one
+screenful. That comparison comes back when the panel is re-authored, and not before — it is
+a property of the panel, not of the mechanism, and inventing three judges to restore the
+table is the exact mistake that put four hand-written fixtures in the seed to begin with.
 
 The **endpoint count** is the pool that survived that judge's pin, measured by one real call
 before the version froze (ADR-0022) — a judge with two spares is fragile in a way one with
-five is not, and no catalogue field predicts it. The **effort** column is why
-`gemini-3.7-flash` is in the list: its reasoning is mandatory, so it cannot be pinned to
-`none` like the others, and its pin carries its own default effort written in as a literal.
-That difference shows up in the data rather than being asserted — on the run above, Gemini
-spent **106 reasoning tokens** and the other two spent zero.
+five is not, and no catalogue field predicts it. The **effort** column carries the reasoning
+effort the pin froze. It reads `none` here, because hidden deliberation defeats the
+reasoning-before-verdict ordering; a model whose reasoning is *mandatory* — the panel used
+to pin `google/gemini-3.7-flash` for exactly this contrast — cannot be pinned to `none` and
+freezes its own default effort as a literal instead (`scripts/seed-judges.ts`, ADR-0025).
 
-A panel run over the four judges costs about **$0.006**. Seeding costs one validating call
-per judge, once; re-running the seed is free and makes no network call, because a frozen
-`jdv_` has a pin that can never change and a validation that can never be made more true.
+Seeding costs one validating call per judge, once; re-running the seed is free and makes no
+network call, because a frozen `jdv_` has a pin that can never change and a validation that
+can never be made more true.
 
 **The seed fails outright if a pin does not route**, naming the judge, and there is no switch
 to turn that off. A judge frozen against a pin that routes nowhere is permanently broken, so
@@ -677,15 +700,13 @@ go to **Explore → Tempo**, and search by the `request_id` from any response. B
 datasources are already there: they are provisioned from `infra/grafana/provisioning/`, so
 a fresh volume needs no clicking.
 
-One evaluation of the seeded panel is nine spans:
+One evaluation of the seeded panel is three spans — the placeholder panel holds one judge,
+so this is the whole tree rather than an abridged one:
 
 ```
 POST /v1/panels/:panel_id/evaluate        SERVER   http.route, url.path, status
-  judge is-bug                            INTERNAL model, tokens, cost, jdv_, outcome
+  judge needs-human                       INTERNAL model, tokens, cost, jdv_, outcome
     provider call fake:deterministic      CLIENT   one span per attempt that reached the provider
-  judge is-feature   …
-  judge is-question  …
-  judge needs-human  …
 ```
 
 The nesting is the point. A flat span says a judge took four seconds; this says it was
@@ -762,6 +783,13 @@ This repository is tenant #1. Incoming issues are judged by a panel through the 
 annotated by the maintainer, and carried through the full loop in public — including the
 parts that go badly. Quality and cost comparisons are published whichever way the numbers
 land; a fine-tune that underperforms is a result, not a failure to hide.
+
+**Reopened, and not live yet.** Judging inbound issues is the classification shape ADR-0034
+removed: an issue is not something an agentic system produced. What this repo dogfoods has
+to be something its own agents emit, judged against failure modes a real error-analysis pass
+surfaces — an open question tracked at `docs/BUILD_SPINE.md` M5, alongside a trace count
+(this repo has roughly 34 PRs and an effectively empty issue tracker) an order of magnitude
+short of the 500 annotated traces the commitment names.
 
 ---
 

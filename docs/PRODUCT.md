@@ -10,7 +10,7 @@
 
 **Judge-as-a-service with a built-in eval-to-fine-tune flywheel:** teams create a *panel of judges* that an expert's judgment is distilled into, call it as one step inside their own agentic workflow, annotate real traffic, align each judge against that expert, and graduate to a cheaper fine-tuned open-weights judge served from the same endpoint.
 
-> **Positioning, stated once so nothing downstream drifts (ADR-0019).** We are **one call inside someone else's loop**, not an orchestration layer. Their agent generates the artifact; we judge it. We *are* the inference path for the judge calls — the customer picks the model, we route it — which is what lets us capture every trace server-side and swap the model out later without them changing a line. Classification is not a separate mode: a label set is expressed as N binary judges, so bug triage and taste validation are the same operation performed on artifacts from different sources.
+> **Positioning, stated once so nothing downstream drifts (ADR-0019).** We are **one call inside someone else's loop**, not an orchestration layer. Their agent generates the artifact; we judge it. We *are* the inference path for the judge calls — the customer picks the model, we route it — which is what lets us capture every trace server-side and swap the model out later without them changing a line. **We evaluate a caller's system; we do not perform steps inside it (ADR-0034).** A judge is one binary question, never a bundled multi-criteria call — but answering `true` has to pass or fail something the caller's system produced or decided. Bug triage and taste validation are still the same operation, provided triage arrives as a gate on the triage bot's own routing decision rather than as a label we manufacture for it (ADR-0036, ADR-0037).
 
 ## 2. Problem
 
@@ -24,14 +24,14 @@ Teams bolt LLM judgment onto agentic and automated workflows — bug triage, tic
 
 Small-to-mid engineering teams embedding judgment into agentic or automated systems, with at least one subject-matter expert (SME) willing to annotate. Two running personas:
 
-- **Triage.** A platform team judging incoming GitHub issues with a panel — `is-bug`, `is-feature`, `is-question`, `needs-human` — consumed by their triage bot.
+- **Triage.** A platform team gating their triage bot's own routing decisions: the inbound issue is the artifact, the route the bot chose travels in `context`, and `mis-routed` asks whether that decision misjudges the issue. `true` means their agent got it wrong. One judge, because one is what clears the bar — a panel that labelled the issue instead would be doing the bot's work rather than evaluating it (ADR-0036, ADR-0037).
 - **Taste.** A marketing team gating generated assets on a designer's judgment — `on-brand`, `composition-acceptable`, `colour-balanced` — called from inside their generation agent before an asset ships.
 
-Both send an artifact and receive per-judge verdicts. The only difference is where the artifact came from, which is not a property of our system.
+Both send an artifact and receive per-judge verdicts. Where the artifact itself originated still does not matter — an inbound issue is as good as a generated asset — but what the panel *judges* has to be something the caller's system produced or decided, which is why the triage panel judges the routing decision carried in `context` rather than the issue (ADR-0034).
 
 ## 4. Core product loop
 
-1. **Create panel** — Team defines a panel in the UI: name, description, the artifact it judges, and its first judges. A judge is one binary question with a definition and optional few-shot examples. A label set becomes N judges, not one multi-class call.
+1. **Create panel** — Team defines a panel in the UI: name, description, the artifact it judges, and its first judges. A judge is one binary question with a definition and optional few-shot examples, never a bundled multi-criteria call.
 2. **Choose the model** — Team selects which model their judges run on, globally or per judge. We route those calls, which is what makes trace capture and later model-swapping ours to do.
 3. **Get scoped token** — Team receives an API key scoped to that panel, and calls it as one step inside their own workflow.
 4. **Judge + trace** — Every call runs each judge independently and is fully traced: artifact, per-judge verdict and reasoning, latency, tokens, cost, model version. Judges are never bundled into one prompt — a bundled verdict cannot be attributed, measured, or paid against.
@@ -53,9 +53,9 @@ Both send an artifact and receive per-judge verdicts. The only difference is whe
 - Full tenant data isolation.
 
 ### 5.2 Panel & judge management
-- CRUD for panels and for the judges inside them. A judge is one binary question; a multi-class label set is modelled as N judges, and the caller applies whatever policy they want across the results.
+- CRUD for panels and for the judges inside them. A judge is one binary question and never a bundled multi-criteria call; the caller applies whatever policy they want across the per-judge results.
 - Judge type: `llm` or `code`. Code judges are deterministic checks (schema assertion, regex) with near-zero cost and latency and nothing to align.
-- **Judge polarity, set per judge and three-valued:** answering `true` either passes, fails, or does not score. `is-missing-repro: true` is a failure; `on-brand: true` is a success; `is-bug: true` is a label with no valence and is excluded from the score entirely. A triage panel is mostly informational judges plus a gate or two; a taste panel is mostly scoring ones. Without polarity the panel score is uncomputable.
+- **Judge polarity, set per judge and two-valued:** answering `true` either passes or fails. `is-missing-repro: true` is a failure; `on-brand: true` is a success. Every judge therefore carries a weight, participates in the score, and can fail the panel (ADR-0034). Without polarity the panel score is uncomputable, because summing raw booleans across judges that point in opposite directions is meaningless.
 - Per-judge weight and the panel's pass threshold, both configured by the customer — we never decide a caller's risk tolerance.
 - **Failure tolerance, configured per panel.** Real fan-outs partially fail, so the customer declares what is acceptable rather than us guessing: which judges are `required` (a `skipped`, `failed` or `error` on one fails the panel outright, whatever the score says) and which may drop out silently. Everything else is best-effort, and the result is returned marked `complete: false`. Deliberately two dials and not ten — the UX cost of a settings matrix is real, and most tenants should never leave the defaults (all judges best-effort, nothing required).
 - Configuration is available in the console **and** over a management API, so a team can keep panels in version control rather than clicking. That needs **scoped keys** — see 5.1.
@@ -162,13 +162,15 @@ Alignment is a **discrete, repeatable event with its own surface**, not a backgr
 ## 7. Success metrics (product)
 
 - A tenant can go from signup → first judgment in < 10 minutes.
-- End-to-end loop demonstrated by dogfood tenant (this project's own GitHub issues) with ≥ 500 annotated traces.
+- End-to-end loop demonstrated by dogfood tenant (this project's own GitHub issues) with ≥ 500 annotated traces. **Reopened against M5 (ADR-0034):** neither half holds — the panel §8 names is retired, and this repo has produced roughly 34 PRs against an effectively empty issue tracker, an order of magnitude short of 500. See `docs/BUILD_SPINE.md` M5.
 - Fine-tuned judges within X% of frontier agreement on held-out evals at ≥ 10x lower serving cost (honest number published either way).
 - Documented breaking point under k6 load with graceful degradation.
 
 ## 8. Dogfooding commitment
 
 The project's own public GitHub repo is tenant #1: incoming issues are judged by a panel (`is-bug`, `is-feature`, `is-question`, `needs-human`) through the production API, annotated by the owner, and carried through the entire loop publicly.
+
+**Reopened against M5, and no part of that paragraph is live.** All four judges are retired: `is-bug`, `is-feature` and `is-question` are unexpressible now that polarity is two-valued (ADR-0034), and `needs-human` produces a fact the triage bot needs rather than gating something this repo's own agents emitted (ADR-0036). The artifact is as stale as the panel — this repo has produced roughly 34 PRs against an effectively empty issue tracker, an order of magnitude short of §7's ≥ 500 annotated traces. What this repo dogfoods, and what an expert would judge about it, is tracked at `docs/BUILD_SPINE.md` M5.
 
 ## 9. Architecture sketch (summary)
 

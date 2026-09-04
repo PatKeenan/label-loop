@@ -87,7 +87,7 @@ Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.m
   position is that the real moat is continuous alignment: a clone is a frozen snapshot that
   goes stale with no realignment loop and no named experts.
 - **MCP distribution.** One platform-level remote server with dynamic per-user tool lists,
-  each accessible panel auto-described from its label set — never per-panel servers. A thin
+  each accessible panel auto-described from its judges — never per-panel servers. A thin
   adapter over the same `/v1` gateway.
 - **API surface split**, with a dashboard-first promotion rule: read-only analytics as MCP
   tools, audit as the M8 compliance export, management CRUD parked until enterprise pull.

@@ -62,7 +62,9 @@ interviewer in under five minutes.
       boots via one command — M0 · Actions + compose
 - [ ] CD to a live URL — **M8** (moved from M1, 2026-08-29); automated versioning +
       generated CHANGELOG — M0 · Releases
-- [ ] Dogfood case study: repo's own issues judged in production — M5 · case study
+- [ ] Dogfood case study: what this repo's own agents produce, judged in production — M5 ·
+      case study. **What it judges is reopened** — "the repo's own issues" is the
+      classification shape ADR-0034 removed (`docs/BUILD_SPINE.md` M5).
 - [ ] Architecture writeup + demo video of eval + load findings — M8 · links
 
 ## 9. Compliance & AI Governance
