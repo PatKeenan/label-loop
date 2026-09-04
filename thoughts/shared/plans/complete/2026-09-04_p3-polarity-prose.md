@@ -1,9 +1,10 @@
 ---
 date: 2026-09-04T00:00:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-04T00:00:00Z
 approved_by: pat
+completed_at: 2026-09-04T14:05:00Z
 milestone: M5
 topic: p3-polarity-prose
 related_adrs: [0034, 0035, 0036, 0037, 0019]
@@ -276,6 +277,12 @@ additional sites or a corrected command.
   - `README.md:568` — *"the panel's four judges all sit on one model"*, in the resilience
     walkthrough; rewritten as *"every judge on one model shares one circuit breaker"*, which
     is the sentence's actual point and is count-independent.
+- **`docs/SENIORITY_CHECKLIST.md:65` — a fourth unlisted site, found on completion.** The
+  row *"Dogfood case study: repo's own issues judged in production"* describes the same
+  reopened commitment, in the document that is the project's scoreboard. The vocabulary grep
+  does not catch it (none of its trigger words appear), which is why it surfaced only when
+  the checklist was checked for artifacts going live. The row stays unchecked — nothing went
+  live — and gains the same reopened marker as PRODUCT §7/§8 and the README.
 - **The README's own Dogfooding section (`README.md:774`) is marked reopened too.** The plan
   extends the §8 append to PRODUCT §7 on the reasoning that marking one site while another
   restates it unqualified reproduces the failure the plan exists to end. The README states
@@ -307,6 +314,14 @@ additional sites or a corrected command.
 
 ## Open questions
 
-1. **Does this PR record itself?** P1 got an entry in `thoughts/shared/progress/decisions-log.md`
+1. **Does this PR record itself?** ~~P1 got an entry in `thoughts/shared/progress/decisions-log.md`
    via `/log_decision`. The P2 deferral is a real sequencing decision made in conversation
-   on 2026-09-04 and is currently recorded nowhere but this plan's "Explicitly NOT doing".
+   on 2026-09-04 and is currently recorded nowhere but this plan's "Explicitly NOT doing".~~
+
+   **Settled, and the question was half stale when it was written.** The P2 deferral was
+   already logged at `decisions-log.md:73` (2026-09-04T12:40Z) by the `/approve_plan`
+   session, alternatives and costs included. What was genuinely unrecorded was *this* plan's
+   own product decision, which is the one the plan itself flagged as the cost of shipping a
+   product call inside a prose PR. Logged on completion at `decisions-log.md:74`, covering
+   both the triage-persona rewrite (ADR-0037) and the append-rather-than-rewrite treatment
+   of the dogfooding commitment.
