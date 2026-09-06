@@ -165,8 +165,11 @@ system that no longer exists, and a ramp against a zero-latency fake measures a 
 
 ### Manual verification
 
-- [ ] Watch a ramp in Grafana: latency climbing, then 429s appearing, then the breaker
+- [x] Watch a ramp in Grafana: latency climbing, then 429s appearing, then the breaker
       tripping if pushed past it. The nesting should make the sequence readable.
+      **Half of this was not possible — see Deviation 13.** The nesting IS readable, in
+      Explore → Tempo. The climbing-latency graph does not exist and cannot at M2: there are
+      no dashboards and no application metrics until M3.
 
 ## Phase 3 — `docs/BREAKING_POINT.md` v0
 
@@ -351,6 +354,32 @@ Recorded as they happened, because they are decision provenance too (CLAUDE.md).
     `FAKE_PROVIDER_LATENCY_SPREAD_MS`, both defaulting to 0. The plan said "a latency option
     ... with configurable spread"; making the spread separately settable is what lets an
     operator collapse the distribution to a constant when isolating a variable.
+
+13. **"Watch a ramp in Grafana" was half-impossible as written, and the plan should have
+    known.** Verified with the stakeholder on 2026-09-05. What works: the trace nesting, in
+    Explore → Tempo, and it shows exactly what the step wanted — a served call as
+    `POST …/evaluate` → `judge needs-human` → `provider call fake:deterministic` with the 4s
+    latency, `attempts`, cost and `judge_version_id` on the spans; a refused call as a bare
+    root span with **no children at all**, which is the visual proof the limiter refuses
+    before any judge is called.
+
+    What does not work, and is nobody's mistake: **there is no latency graph, because there
+    are no dashboards and no application metrics.** `infra/prometheus/prometheus.yml` scrapes
+    the collector, Tempo and itself and says application metrics and dashboards are M3;
+    `infra/tempo/tempo.yaml` says the same of `metrics_generator`, which is why Grafana's
+    Traces Drilldown Breakdown tab answers `error finding generators: empty ring`. Logs are
+    not in Grafana either — no Loki until M3, by the collector config's own note.
+
+    Three consequences, and the first is the one that matters:
+    - **M2's evidence is k6's own summary plus trace inspection**, not a Grafana screenshot.
+      `docs/BREAKING_POINT.md` is written from the former and must not imply the latter.
+    - The step should have been caught when the plan was written; a manual-verification step
+      that assumes a surface a later milestone owns is a plan reviewing itself optimistically.
+    - Enabling Tempo's `metrics_generator` (plus `--web.enable-remote-write-receiver` on
+      Prometheus) is a small two-file change that would light up Drilldown and give real RED
+      series. **Deliberately NOT done here** — stakeholder decision, 2026-09-05: it is M3 by
+      the register's own words, and pulling it into M2 to make one checkbox tickable is the
+      wrong reason to move a milestone boundary.
 
 ### Noted, not fixed
 
