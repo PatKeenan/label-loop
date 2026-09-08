@@ -1,10 +1,12 @@
 ---
 date: 2026-09-08T15:40:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-08T16:05:00Z
+approved_by: pat
 milestone: M3
 topic: m3-observability
-related_adrs: [0007, 0010, 0011, 0016, 0024, 0009, 0013, 0006]
+related_adrs: [0041, 0042, 0043, 0044, 0045, 0007, 0010, 0011, 0016, 0024, 0009, 0013, 0006]
 research: thoughts/shared/research/2026-09-08_m3-observability.md
 ---
 
