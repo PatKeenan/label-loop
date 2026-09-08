@@ -36,11 +36,30 @@ interviewer in under five minutes.
 
 ## 5. Reliability & Load
 - [ ] k6 scenarios: smoke, ramp, spike, soak — M0/M2 · scripts in repo
-      *(M0: `infra/k6/smoke.js` runs in CI against the composed stack. Ramp, spike and
-      soak are M2 — and load numbers against a fake provider would measure a hash.)*
-- [ ] Circuit breakers, retries + backoff + jitter, timeouts — M2 · code + logs
+      *(**Three of four, so the box stays open.** `infra/k6/smoke.js` runs in CI against the
+      composed stack (M0); `ramp.js` and `spike.js` landed at M2 and are operator-run, against
+      a fake provider given the measured latency of a real judge — without which a load run
+      measures a hash. **Soak is deliberately deferred to M3**: it measures leak behaviour
+      over hours, and it belongs where the observability to watch a leak actually exists.
+      Ticking this on three of four would be the kind of rounding-up this checklist is
+      supposed to prevent.)*
+- [x] Circuit breakers, retries + backoff + jitter, timeouts — M2 · code + logs
+      *(All three hand-rolled per ADR-0012 — `llm/retry.ts` (full jitter, measured 10s
+      per-attempt timeout) and `llm/breaker.ts` (closed/open/half-open, one probe). Live on
+      the evaluation path since M0 and exercised end to end by `infra/k6/smoke.js`.)*
 - [ ] Per-key rate limiting, quota enforcement, graceful 429/503 — M2/M8 · API behavior
-- [ ] Documented breaking point + degradation behavior — M2 · BREAKING_POINT.md
+      *(**Two of three — open until M8 by decision.** Per-key rate limiting shipped at M2: a
+      hand-rolled token bucket behind the `RateLimitStore` port (ADR-0039), 60/minute burst
+      60, running after authentication. Graceful 429/503 is complete down to an exhaustive
+      console error map. **Quota enforcement is M8**, with per-org `QUOTA_EXCEEDED`, the
+      usage meter and billing — and ADR-0040's fail-open must be revisited there rather than
+      inherited, because a limiter that is load-bearing for spend cannot fail open.)*
+- [x] Documented breaking point + degradation behavior — M2 · BREAKING_POINT.md
+      *(`docs/BREAKING_POINT.md` v0, measured 2026-09-08 over 1.81M requests. **It reports a
+      negative result**: the limiter binds long before capacity does, so the instance's knee
+      was not found and the document says so in its first paragraph. It also states plainly
+      that a single instance never needed Redis — one key, 1.2 MiB — which ADR-0038 committed
+      it to saying.)*
 
 ## 6. Auth Gauntlet
 - [ ] OIDC login, sessions, server-enforced RBAC (admin/engineer/annotator) — M4 · demo
