@@ -113,6 +113,12 @@ services:
     environment:
       DATABASE_URL: postgres://labelloop_app:localdev@postgres:5432/labelloop
       DATABASE_MIGRATION_URL: postgres://labelloop_migrator:localdev@postgres:5432/labelloop
+      # Held here because `db:bootstrap` sets each role's password FROM its connection
+      # string, so the one-shot that creates the role needs the string (ADR-0045). It is
+      # not used for anything else here — the grants are issued by the migrator in
+      # `0010_readonly_role.sql`, and the only service that CONNECTS with this role is
+      # grafana, below.
+      DATABASE_READONLY_URL: postgres://labelloop_readonly:localdev@postgres:5432/labelloop
       # The ONLY container that ever sees the superuser, and only long enough to CREATE
       # ROLE. Nothing that serves traffic is given it.
       DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_SUPERUSER_PASSWORD:-localdev}@postgres:5432/labelloop
@@ -290,6 +296,16 @@ services:
       # Datasources come from the provisioning directory below, never from the UI. A
       # datasource configured by clicking exists only in one person's volume.
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      # The READONLY role, and the only service that connects with it (ADR-0045). Grafana
+      # needs a database credential because per-key usage is read from Postgres rather than
+      # from a metric label (ADR-0042) — and it gets one that can only `SELECT`, because
+      # handing a dashboard the ability to `INSERT` or `DELETE` is precisely the capability
+      # the migrator/app split exists to withhold.
+      #
+      # Consumed by the Postgres datasource that phase 3 provisions. It is set here first,
+      # in the phase that creates the role, so the credential exists before the thing that
+      # uses it rather than arriving in the same diff as a dashboard.
+      DATABASE_READONLY_URL: postgres://labelloop_readonly:localdev@postgres:5432/labelloop
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana

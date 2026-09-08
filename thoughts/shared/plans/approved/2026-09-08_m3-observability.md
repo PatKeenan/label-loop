@@ -144,34 +144,34 @@ DML, and handing a dashboard the ability to `INSERT` or `DELETE` is exactly what
 split exists to make impossible. A third role that can only `SELECT` is the smallest thing that
 answers the question.
 
-- [ ] `scripts/db-bootstrap.ts` — create `labelloop_readonly`. The only step that needs a
+- [x] `scripts/db-bootstrap.ts` — create `labelloop_readonly`. The only step that needs a
       superuser, which is why role creation already lives here and not in a migration.
-- [ ] `packages/db/migrations/0010_readonly_role.sql` — **both halves, and the second is the one
+- [x] `packages/db/migrations/0010_readonly_role.sql` — **both halves, and the second is the one
       that is easy to forget.** `GRANT SELECT ON ALL TABLES` covers the tables that already exist;
       `ALTER DEFAULT PRIVILEGES ... GRANT SELECT` covers every table a later migration adds.
       `0000_privileges.sql` already documents this exact trap for `drizzle.__drizzle_migrations`
       — default privileges only ever cover objects created *after* they are set, and a role added
       at migration 10 is on the wrong side of every table created in 1 through 9.
-- [ ] **`audit_events` stays readable but never writable**, which it already is for this role by
+- [x] **`audit_events` stays readable but never writable**, which it already is for this role by
       construction: the readonly grant is SELECT only, so ADR's append-only invariant needs no
       special case here. Worth asserting anyway, because "by construction" is what tests are for.
-- [ ] `packages/db/src/roles.test.ts` — extend the existing suite: the readonly role **can**
+- [x] `packages/db/src/roles.test.ts` — extend the existing suite: the readonly role **can**
       SELECT from a representative table, and **cannot** INSERT, UPDATE, DELETE, or issue DDL.
       Asserted on SQLSTATE `42501`, matching how `queue.test.ts` and the audit tests already do it.
-- [ ] `docs/CONVENTIONS.md` — **"Data rules" says two roles; it becomes three.** The addition is
+- [x] `docs/CONVENTIONS.md` — **"Data rules" says two roles; it becomes three.** The addition is
       recorded with its reason: a credential handed to a dashboard must not be able to write, and
       the invariant is enforced by grants rather than by trusting the dashboard.
-- [ ] `.env.example` — a `DATABASE_READONLY_URL` row, exhaustive per the "Config" rule, with the
+- [x] `.env.example` — a `DATABASE_READONLY_URL` row, exhaustive per the "Config" rule, with the
       same self-describing `localdev` placeholder the other connection strings use.
-- [ ] `infra/docker-compose.yml` — the connection string on the `grafana` service only. **Not on
+- [x] `infra/docker-compose.yml` — the connection string on the `grafana` service only. **Not on
       `api`**: `config.ts` must not be able to express this credential, for the same reason it
       cannot express the migrator's — a role the API cannot name is a role a bug cannot use.
 
 ### Automated verification
 
-- [ ] `bun run db:setup` from scratch creates all three roles and applies the migration.
-- [ ] `bun test` green, including the new privilege assertions.
-- [ ] A `down -v` / `up` cycle reproduces the role without a manual step.
+- [x] `bun run db:setup` from scratch creates all three roles and applies the migration.
+- [x] `bun test` green, including the new privilege assertions.
+- [x] A `down -v` / `up` cycle reproduces the role without a manual step.
 
 ### Manual verification
 
@@ -368,6 +368,42 @@ Recorded as they happen, because they are decision provenance too (CLAUDE.md).
   series set on each deploy — which would be an odd thing to do inside the milestone that
   writes down a cardinality rule.
 
+### Phase 2
+
+- **The `traces` index moved from phase 3 into this phase.** Stakeholder, on being told
+  open question 2's answer. `traces.api_key_id` has existed since `0001_initial_schema.sql`
+  with a foreign key and NO index, and none of the three indexes on that table
+  (`org_id, created_at`, `panel_id, created_at`, `request_id`) can serve a
+  `GROUP BY api_key_id` over a time window — so the per-key panel would have table-scanned
+  the hot path's own database every fifteen seconds. It ships in `0010` with the grants.
+- **Open question 2 is therefore ANSWERED: yes, it needed one, and it now has one.**
+  `(api_key_id, created_at)`, verified against 200k rows over 8 keys rather than reasoned
+  about — Postgres 18.6 skip-scans the leading column, so `EXPLAIN` shows a Bitmap Index
+  Scan on this index with `Index Cond: (created_at > ...)` and no leading-column condition
+  at all. One index serves both the panel's group-by-over-a-window and an ordinary
+  single-key lookup. On a Postgres older than 18 the columns would want reversing.
+- **`bootstrapRoles` gained a fourth parameter**, `readonlyUrl`, and `db:bootstrap` a third
+  `requireEnv`. Unavoidable given the existing design: bootstrap derives each role's
+  password FROM its connection string, deliberately, so the strings stay the single source
+  of truth. A third role means a third string.
+- **The `migrate` service holds `DATABASE_READONLY_URL` as well as `grafana`.** The plan
+  says "the connection string on the `grafana` service only. **Not on `api`**" — the second
+  half is honoured exactly, and the first needed one addition, because the one-shot that
+  runs `db:bootstrap` is what sets the role's password and so must be given the string. That
+  matches what the compose file already says about that service: it "holds all three
+  connection strings and the API below holds exactly one". Now four and one.
+- **No grant on the `drizzle` schema for the readonly role.** The app role reads
+  `__drizzle_migrations` because `/readyz` reports whether migrations are current; a
+  dashboard has no such question. Stated in the migration so it reads as a decision rather
+  than an omission.
+- **Two separate tests for the two halves of the grant**, rather than one. They fail
+  independently — drop the explicit `GRANT SELECT ON ALL TABLES` and only the
+  before-the-role table breaks; drop the default privileges and only the after one does —
+  so a single test would hide exactly the trap ADR-0045 warns about.
+- **`.env.example` gained the row, and a local `.env` needs it too.** `bun run db:setup`
+  fails by name without it, which is the intended behaviour (CONVENTIONS "Config") but is
+  worth saying out loud: anyone pulling this branch re-copies the row or re-runs setup.
+
 ## Open questions
 
 1. ~~**Which database role does Grafana connect as for the per-key panel?**~~ **ANSWERED —
@@ -378,11 +414,15 @@ Recorded as they happen, because they are decision provenance too (CLAUDE.md).
    "Data rules" is amended from two roles to three, and the reason the third exists — a dashboard
    credential must not be able to write — is recorded with it.
 
-2. **Does the per-key panel need a `traces` index it does not have?** Grouping by key over a
-   growing table is a dashboard query on the hot path's own database. Worth confirming an index
-   exists before the panel ships, or the friendliest dashboard in the repo becomes the slowest
-   query against production data.
+2. ~~**Does the per-key panel need a `traces` index it does not have?**~~ **ANSWERED — yes,
+   and it now has one.** There was no index on `api_key_id` at all. `(api_key_id, created_at)`
+   ships in PHASE 2's migration rather than phase 3 (stakeholder), verified by `EXPLAIN`
+   against 200k rows: Postgres 18.6 skip-scans the leading column, so the same index serves
+   the panel's group-by-over-a-window and an ordinary single-key lookup.
 
-3. **Is a metric-name prefix of `labelloop_` right for Prometheus**, given spans use dotted
-   `labelloop.*`? Prometheus convention is `snake_case` with underscores and the OTel exporter
-   translates dots automatically. Naming it explicitly avoids two conventions drifting.
+3. ~~**Is a metric-name prefix of `labelloop_` right for Prometheus**, given spans use dotted
+   `labelloop.*`?~~ **ANSWERED in phase 1 — instruments are named OTel-dotted and the
+   collector translates.** Each convention stays correct on its own side of the collector,
+   and the metric names are spelled the same way as the span attribute names beside them.
+   Verified against the exporter's real output, which also caught `unit: 'USD'` publishing
+   `labelloop_judge_cost_usd_USD_total`.

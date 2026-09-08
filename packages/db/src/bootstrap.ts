@@ -1,14 +1,14 @@
-import { APP_ROLE, MIGRATOR_ROLE } from './roles.ts'
+import { APP_ROLE, MIGRATOR_ROLE, READONLY_ROLE } from './roles.ts'
 import { createSqlClient } from './sql-client.ts'
 
 /**
- * The one privileged step: creating the two roles. Everything else — tables, grants,
+ * The one privileged step: creating the three roles. Everything else — tables, grants,
  * default privileges — is done by the migrator in the migration stream, so the surface
  * that needs a superuser is this file and the twenty lines of SQL it runs.
  *
  * Passwords are taken from the connection strings the application already has, rather
- * than from two more environment variables. One source of truth, and bootstrap's job
- * becomes "make the database agree with the config" instead of "keep four values in sync".
+ * than from three more environment variables. One source of truth, and bootstrap's job
+ * becomes "make the database agree with the config" instead of "keep six values in sync".
  */
 
 const rolesSql = await Bun.file(new URL('../sql/0000_roles.sql', import.meta.url)).text()
@@ -31,15 +31,22 @@ export type BootstrapOptions = {
   appUrl: string
   /** The migrator's connection string; likewise. */
   migrationUrl: string
+  /**
+   * The readonly role's connection string (ADR-0045). Held by the migrate one-shot and by
+   * Grafana; never by the API, whose config schema cannot express it.
+   */
+  readonlyUrl: string
 }
 
 export const bootstrapRoles = async ({
   adminUrl,
   appUrl,
   migrationUrl,
+  readonlyUrl,
 }: BootstrapOptions): Promise<void> => {
   const appPassword = passwordFrom(appUrl, 'DATABASE_URL')
   const migratorPassword = passwordFrom(migrationUrl, 'DATABASE_MIGRATION_URL')
+  const readonlyPassword = passwordFrom(readonlyUrl, 'DATABASE_READONLY_URL')
 
   const admin = createSqlClient({ url: adminUrl, max: 1 })
   try {
@@ -48,6 +55,7 @@ export const bootstrapRoles = async ({
     // file, and it makes rotation a re-run of bootstrap rather than an edit.
     await admin.unsafe(`ALTER ROLE ${MIGRATOR_ROLE} WITH PASSWORD ${literal(migratorPassword)}`)
     await admin.unsafe(`ALTER ROLE ${APP_ROLE} WITH PASSWORD ${literal(appPassword)}`)
+    await admin.unsafe(`ALTER ROLE ${READONLY_ROLE} WITH PASSWORD ${literal(readonlyPassword)}`)
   } finally {
     await admin.close()
   }

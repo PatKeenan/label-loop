@@ -30,6 +30,10 @@ export const appClient = () => createSqlClient({ url: required('DATABASE_URL'), 
 export const migratorClient = () =>
   createSqlClient({ url: required('DATABASE_MIGRATION_URL'), max: 2 })
 
+/** The role Grafana connects with: SELECT and nothing else, on `public` only (ADR-0045). */
+export const readonlyClient = () =>
+  createSqlClient({ url: required('DATABASE_READONLY_URL'), max: 2 })
+
 /**
  * The SQLSTATE off a driver error (`42501` = insufficient_privilege), for asserting on the
  * cause rather than on a message. `node-postgres` exposes it as `code`; the previous driver
