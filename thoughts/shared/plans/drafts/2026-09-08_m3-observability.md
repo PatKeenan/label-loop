@@ -24,12 +24,15 @@ watching a leak needs the dashboards this milestone builds.
 in `docs/SENIORITY_CHECKLIST.md` and finishes Category-5 row 38, which has stood at three of
 four scenarios since M2.
 
-## Why four phases, and why this order
+## Why five phases, and why this order
 
-Phase 1 makes metrics exist; phase 2 can only draw what phase 1 emits. Phase 3 (logs) is
-independent of both and could run in parallel, but is sequenced third so each PR stays one
-signal. Phase 4 runs last **because it has to** — a soak with no dashboard is an hours-long
-run nobody can watch, which is the argument M2 used to defer it here in the first place.
+Phase 1 makes metrics exist; phase 3 can only draw what phase 1 emits. **Phase 2 sits between
+them because the per-key panel needs a database credential that does not exist yet**, and a
+privilege migration is a different review surface from dashboard JSON — mixing them would ask
+one reviewer to check Postgres grants and Grafana panels in the same diff. Phase 4 (logs) is
+independent of all three and could run in parallel, but is sequenced late so each PR carries one
+signal. Phase 5 runs last **because it has to** — a soak with no dashboard is an hours-long run
+nobody can watch, which is the argument M2 used to defer it here in the first place.
 
 One branch + PR per phase, per CLAUDE.md.
 
@@ -129,9 +132,52 @@ instrumentation points**, which is the whole reason this milestone is small.
 - [ ] Drive some traffic; confirm request, judge-call, cost and rate-limit series all move.
 - [ ] Stop the collector; confirm the API keeps serving and warns rather than erroring.
 
-## Phase 2 — dashboards and the one alert rule
+## Phase 2 — a read-only role, so a dashboard cannot write
 
-Branch: `feat/m3-p2-dashboards`. PR title: `feat(grafana): dashboards as code, and one alert rule`.
+Branch: `feat/m3-p2-readonly-role`. PR title: `feat(db): a read-only role for the dashboards`.
+
+**Why this exists.** Per-key usage is read from Postgres (stakeholder, 2026-09-08), so Grafana
+needs a credential. Neither existing role is right: the migrator owns DDL and the app role holds
+DML, and handing a dashboard the ability to `INSERT` or `DELETE` is exactly what the two-role
+split exists to make impossible. A third role that can only `SELECT` is the smallest thing that
+answers the question.
+
+- [ ] `scripts/db-bootstrap.ts` — create `labelloop_readonly`. The only step that needs a
+      superuser, which is why role creation already lives here and not in a migration.
+- [ ] `packages/db/migrations/0010_readonly_role.sql` — **both halves, and the second is the one
+      that is easy to forget.** `GRANT SELECT ON ALL TABLES` covers the tables that already exist;
+      `ALTER DEFAULT PRIVILEGES ... GRANT SELECT` covers every table a later migration adds.
+      `0000_privileges.sql` already documents this exact trap for `drizzle.__drizzle_migrations`
+      — default privileges only ever cover objects created *after* they are set, and a role added
+      at migration 10 is on the wrong side of every table created in 1 through 9.
+- [ ] **`audit_events` stays readable but never writable**, which it already is for this role by
+      construction: the readonly grant is SELECT only, so ADR's append-only invariant needs no
+      special case here. Worth asserting anyway, because "by construction" is what tests are for.
+- [ ] `packages/db/src/roles.test.ts` — extend the existing suite: the readonly role **can**
+      SELECT from a representative table, and **cannot** INSERT, UPDATE, DELETE, or issue DDL.
+      Asserted on SQLSTATE `42501`, matching how `queue.test.ts` and the audit tests already do it.
+- [ ] `docs/CONVENTIONS.md` — **"Data rules" says two roles; it becomes three.** The addition is
+      recorded with its reason: a credential handed to a dashboard must not be able to write, and
+      the invariant is enforced by grants rather than by trusting the dashboard.
+- [ ] `.env.example` — a `DATABASE_READONLY_URL` row, exhaustive per the "Config" rule, with the
+      same self-describing `localdev` placeholder the other connection strings use.
+- [ ] `infra/docker-compose.yml` — the connection string on the `grafana` service only. **Not on
+      `api`**: `config.ts` must not be able to express this credential, for the same reason it
+      cannot express the migrator's — a role the API cannot name is a role a bug cannot use.
+
+### Automated verification
+
+- [ ] `bun run db:setup` from scratch creates all three roles and applies the migration.
+- [ ] `bun test` green, including the new privilege assertions.
+- [ ] A `down -v` / `up` cycle reproduces the role without a manual step.
+
+### Manual verification
+
+- [ ] Connect as `labelloop_readonly` and confirm a `SELECT` works and an `INSERT` is refused.
+
+## Phase 3 — dashboards and the one alert rule
+
+Branch: `feat/m3-p3-dashboards`. PR title: `feat(grafana): dashboards as code, and one alert rule`.
 
 - [ ] `infra/grafana/provisioning/dashboards/` — **the directory does not exist yet.** A
       provider YAML plus dashboard JSON, mounted read-only exactly as `datasources/` is, so a
@@ -145,8 +191,10 @@ Branch: `feat/m3-p2-dashboards`. PR title: `feat(grafana): dashboards as code, a
       fold genuinely-free fake calls and unpriced-model calls into real spend and understate it;
       the attribute exists precisely so a zero is not ambiguous. *(Planner's call, flagged in the
       research — say so if one number with a caveat is preferred.)*
-- [ ] **Per-key usage, queried from Postgres** (stakeholder, 2026-09-08) — see the open question
-      below about which role Grafana connects as, which must be settled before this ships.
+- [ ] **Per-key usage, queried from Postgres** (stakeholder, 2026-09-08), through a Grafana
+      Postgres datasource provisioned as code and connecting as **`labelloop_readonly`** (phase 2).
+      Grouped by key id, which is safe here in a way it would never be as a metric label: a SQL
+      `GROUP BY` costs a query, while a Prometheus label costs a time series forever.
 - [ ] **One alert rule: `misconfigured`**, pre-nominated by the decisions log on 2026-08-29 as
       *"100% actionable with no false positives"* — it never self-heals, takes every judge down
       at once, and already has its own `failure_kind` attribute so a dashboard cannot conflate
@@ -166,9 +214,9 @@ Branch: `feat/m3-p2-dashboards`. PR title: `feat(grafana): dashboards as code, a
 - [ ] Drive the fake into `misconfigured` and watch the rule fire in Grafana.
 - [ ] Run a ramp and watch the dashboards — **this is the checklist's "recorded clip"**.
 
-## Phase 3 — logs, and the line ADR-0007 told us to amend
+## Phase 4 — logs, and the line ADR-0007 told us to amend
 
-Branch: `feat/m3-p3-logs`. PR title: `feat(infra): logs to Loki, by out-of-process collection`.
+Branch: `feat/m3-p4-logs`. PR title: `feat(infra): logs to Loki, by out-of-process collection`.
 
 - [ ] `infra/docker-compose.yml` — a `loki` service, pinned (`grafana/loki:3.6.2`, confirmed to
       exist), with a volume. **No new stack row**: ADR-0007 states Loki *"needs no new stack row
@@ -195,14 +243,14 @@ Branch: `feat/m3-p3-logs`. PR title: `feat(infra): logs to Loki, by out-of-proce
 - [ ] From a log line in Grafana, click through to its trace in Tempo. That round trip is the
       whole reason the log pipeline is out-of-process rather than in-process.
 
-## Phase 4 — soak, retention, and closing M3
+## Phase 5 — soak, retention, and closing M3
 
-Branch: `feat/m3-p4-soak`. PR title: `feat(k6): a soak, and retention sized from what it shows`.
+Branch: `feat/m3-p5-soak`. PR title: `feat(k6): a soak, and retention sized from what it shows`.
 
 - [ ] `infra/k6/soak.js` — a long, low-rate run on the shared `load-lib.js`, using the same
       judge-latency guard. Deliberately BELOW the rate limit so the evaluation path is actually
       exercised: a soak of 429s would measure nothing, which is the trap `ramp.js` documents.
-- [ ] Run it, watching phase 2's dashboards. **This is the ordering the whole plan is built
+- [ ] Run it, watching phase 3's dashboards. **This is the ordering the whole plan is built
       around** — M2 deferred soak here so a leak would be visible while it happened.
 - [ ] `infra/tempo/tempo.yaml` — retention tuned from evidence. `BREAKING_POINT.md` §4 is the
       justification: Tempo used **542–569 MiB against the API's 322–351 MiB**, and the only thing
@@ -252,6 +300,15 @@ Branch: `feat/m3-p4-soak`. PR title: `feat(k6): a soak, and retention sized from
   single sum folds genuinely-free and unpriced calls into real spend and understates it.
 - **Soak runs last, after the dashboards.** Stakeholder, 2026-09-08, and the ordering M2's
   deferral assumed.
+- **A third database role, `labelloop_readonly`, and CONVENTIONS' two-role invariant becomes
+  three.** Stakeholder, 2026-09-08. Neither existing role is right for a dashboard: one owns DDL,
+  the other can write. The alternative — reusing the app role — would hand a Grafana datasource a
+  credential that can `INSERT` and `DELETE`, which is precisely the capability the migrator/app
+  split exists to withhold. It gets its own phase because a privilege migration and a dashboard
+  JSON are different review surfaces.
+- **The readonly credential is given to Grafana and withheld from the API.** `config.ts` must not
+  be able to express it, matching how the migrator credential is already kept out of the API's
+  config schema: a role the API cannot name is a role a bug cannot reach for.
 - **Instrumentation reuses the three funnels that already exist** rather than adding call sites.
 
 ## Explicitly NOT doing
@@ -271,16 +328,13 @@ Branch: `feat/m3-p4-soak`. PR title: `feat(k6): a soak, and retention sized from
 
 ## Open questions
 
-1. **Which database role does Grafana connect as for the per-key panel?** The per-key decision
-   points Grafana at Postgres, and CONVENTIONS states a **two-role** invariant: a migrator that
-   owns DDL and an app role holding DML only. Grafana needs neither — it needs SELECT. Options:
-   **(a)** a third `labelloop_readonly` role with SELECT and `ALTER DEFAULT PRIVILEGES`, added by
-   a forward-only migration — correct, and it amends a stated convention; **(b)** reuse the app
-   role — no migration, but hands a dashboard a credential that can INSERT and DELETE, which is
-   exactly the reasoning the two-role split exists to make impossible. **(a) is recommended** and
-   would make CONVENTIONS' "Data rules" say three roles. It needs a human call because it changes
-   a documented invariant, and because a new role is a migration in a package whose migrations
-   are forward-only.
+1. ~~**Which database role does Grafana connect as for the per-key panel?**~~ **ANSWERED —
+   option (a), a third `labelloop_readonly` role.** Stakeholder, 2026-09-08. It gets **Phase 2 of
+   its own** rather than riding inside the dashboards PR: a Postgres privilege migration and a
+   dashboard JSON are different kinds of risk, and the repo already treats privilege changes as
+   first-class with dedicated tests (`roles.test.ts`, `0002_audit_append_only.sql`). CONVENTIONS'
+   "Data rules" is amended from two roles to three, and the reason the third exists — a dashboard
+   credential must not be able to write — is recorded with it.
 
 2. **Does the per-key panel need a `traces` index it does not have?** Grouping by key over a
    growing table is a dashboard query on the hot path's own database. Worth confirming an index
