@@ -115,6 +115,9 @@ not about new instrumentation points.
 
 ## Open questions for the human
 
+> **All six were answered by the stakeholder on 2026-09-08 and are recorded inline below.
+> `/create_plan` should treat them as settled inputs, not as questions to reopen.**
+
 1. **Where do metrics come from: the app, or Tempo's `metrics_generator`?** The generator derives
    RED metrics from spans already being sent — near-zero app change, and it fixes Drilldown. But
    it can only produce what is on a span, its cardinality is governed by span attributes, and it
@@ -123,6 +126,10 @@ not about new instrumentation points.
    SDK, a second exporter and instrumentation call sites. **They are not mutually exclusive; the
    question is which is authoritative for the dashboards.**
 
+   **ANSWERED — app-emitted metrics are authoritative.** Stakeholder, 2026-09-08. The
+   `metrics_generator` may still be enabled alongside for Traces Drilldown, but no dashboard
+   is built on it.
+
 2. **How is "per-key usage" measured?** The checklist demands a per-key panel and PRODUCT 5.10
    wants `org → panel → judge → key` drill-down. **Key id as a Prometheus label is unbounded
    cardinality** — fine at today's one seeded key, a liability at scale. Options: accept the label
@@ -130,11 +137,21 @@ not about new instrumentation points.
    M8's billing must read from anyway, since a dashboard is not an invoice); or expose it only as
    exemplars. This is the one question whose wrong answer is expensive later.
 
+   **ANSWERED — from Postgres, not Prometheus.** Stakeholder, 2026-09-08. **No key-identifying
+   label ships in any metric series.** Per-key usage is queried from `traces`/`trace_verdicts`,
+   which is where M8's billing must read from anyway — a dashboard is not an invoice. This also
+   removes the cardinality risk entirely rather than deferring it.
+
 3. **What is the single alert rule, and where does it go?** `misconfigured` is pre-nominated and
    looks right. But **there is nothing deployed for it to page** — the checklist says so — and a
    notification channel needs a destination, which may mean a secret and a collision with
    ADR-0009's zero-secret boot. Is the deliverable a *firing rule visible in Grafana*, or a rule
    that actually reaches a human?
+
+   **ANSWERED — Grafana-visible only, no notification channel.** Stakeholder, 2026-09-08. The
+   deliverable is a rule that visibly fires in Grafana; nothing pages. This keeps ADR-0009's
+   zero-secret boot intact, since a destination would need a credential. `misconfigured`
+   (ADR-0024) remains the nominated condition.
 
 4. **Does the observability stack ship to production, or stay compose-only?** Decisions log
    2026-08-29: *"`OTEL_EXPORTER_OTLP_ENDPOINT` is deliberately unset in production at M1, since
@@ -142,13 +159,29 @@ not about new instrumentation points.
    Railway services and real cost; not doing it means "live dashboards" is a local demo. Both are
    defensible; only one is budgeted.
 
+   **ANSWERED — compose-only.** Stakeholder, 2026-09-08. `OTEL_EXPORTER_OTLP_ENDPOINT` stays
+   unset in production, which is already a supported state (ADR-0009). "Live dashboards during
+   a load test" is satisfied by a local recorded clip, which is what the checklist asks for.
+   **The cost, recorded rather than glossed: nothing observes the deployed API**, and shipping
+   the stack later is its own change. Grafana is anonymous-admin today and could not ship as-is.
+
 5. **Is soak in M3, or deferred again?** It is the missing quarter of checklist row 38 and BUILD
    SPINE lists it nowhere. M2 deferred it here *because* the observability to watch a leak would
    exist — which only holds if the dashboards land first, making it late-M3 work if it happens.
 
+   **ANSWERED — yes, late M3, after the dashboards exist.** Stakeholder, 2026-09-08. That
+   ordering is the whole reason M2 deferred it here: watching a leak needs the dashboards this
+   milestone builds. Closes checklist row 38 fully (currently three of four).
+
 6. **Does the cost/min panel show unpriced calls, and how?** `cost_priced=false` and a genuinely
    free fake both report zero. Two series, a filter, or a single number with a caveat — a wrong
    choice here produces a dashboard that quietly understates spend.
+
+   **ANSWERED by the planner, not the stakeholder — flagged for review.** Two series, split on
+   `cost_priced`. The attribute exists precisely so a zero is not ambiguous, and a single summed
+   number would understate real spend by silently folding in free and unpriced calls. This is a
+   presentation choice with a cheap reversal, so it is being taken rather than escalated —
+   **say so if you would rather it were one number with a caveat.**
 
 ## Recommended approach
 
