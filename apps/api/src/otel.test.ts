@@ -14,42 +14,67 @@ import { createTelemetry } from './otel.ts'
  * backend, so the test reads what the backend would have received.
  */
 
-/** A stand-in collector. Records every OTLP payload posted to it. */
+/**
+ * A stand-in collector. Records every OTLP payload posted to it, keeping the two signals
+ * apart by the PATH they arrived on — which is also how a real collector tells them apart.
+ */
 const fakeCollector = () => {
-  const payloads: OtlpPayload[] = []
+  const paths: string[] = []
+  const payloads: OtlpTracePayload[] = []
+  const metricPayloads: OtlpMetricPayload[] = []
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
-      payloads.push((await request.json()) as OtlpPayload)
+      const path = new URL(request.url).pathname
+      paths.push(path)
+      const body = await request.json()
+      if (path.endsWith('/v1/metrics')) metricPayloads.push(body as OtlpMetricPayload)
+      else payloads.push(body as OtlpTracePayload)
       return new Response('{}', { headers: { 'content-type': 'application/json' } })
     },
   })
+  const attributesOf = (attributes: Array<{ key: string; value: { stringValue?: string } }>) =>
+    Object.fromEntries(attributes.map((attribute) => [attribute.key, attribute.value.stringValue]))
   return {
     /** The base endpoint, as `OTEL_EXPORTER_OTLP_ENDPOINT` is given. */
     endpoint: `http://localhost:${server.port}`,
     payloads,
-    paths: [] as string[],
+    paths,
     spanNames: () =>
       payloads.flatMap((payload) =>
         payload.resourceSpans.flatMap((resourceSpan) =>
           resourceSpan.scopeSpans.flatMap((scopeSpan) => scopeSpan.spans.map((span) => span.name)),
         ),
       ),
-    resourceAttributes: () =>
-      Object.fromEntries(
-        (payloads[0]?.resourceSpans[0]?.resource.attributes ?? []).map((attribute) => [
-          attribute.key,
-          attribute.value.stringValue,
-        ]),
+    metricNames: () =>
+      metricPayloads.flatMap((payload) =>
+        payload.resourceMetrics.flatMap((resourceMetric) =>
+          resourceMetric.scopeMetrics.flatMap((scopeMetric) =>
+            scopeMetric.metrics.map((metric) => metric.name),
+          ),
+        ),
       ),
+    resourceAttributes: () =>
+      attributesOf(payloads[0]?.resourceSpans[0]?.resource.attributes ?? []),
+    metricResourceAttributes: () =>
+      attributesOf(metricPayloads[0]?.resourceMetrics[0]?.resource.attributes ?? []),
     stop: () => server.stop(true),
   }
 }
 
-type OtlpPayload = {
+type OtlpResource = { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+
+type OtlpTracePayload = {
   resourceSpans: Array<{
-    resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+    resource: OtlpResource
     scopeSpans: Array<{ spans: Array<{ name: string }> }>
+  }>
+}
+
+type OtlpMetricPayload = {
+  resourceMetrics: Array<{
+    resource: OtlpResource
+    scopeMetrics: Array<{ metrics: Array<{ name: string }> }>
   }>
 }
 
@@ -146,7 +171,7 @@ describe('the batch processor is bounded', () => {
     const slow = Bun.serve({
       port: 0,
       fetch: async (request) => {
-        const payload = (await request.json()) as OtlpPayload
+        const payload = (await request.json()) as OtlpTracePayload
         for (const resourceSpan of payload.resourceSpans) {
           for (const scopeSpan of resourceSpan.scopeSpans) delivered += scopeSpan.spans.length
         }
@@ -264,6 +289,65 @@ describe('a collector that rejects what we send it', () => {
     // At WARN, not ERROR: dropping spans is degraded-but-serving, and a channel that pages
     // someone for it is a channel that gets muted (CONVENTIONS.md "Logging" levels).
     expect(result.lines.some((line) => line.startsWith('warn'))).toBe(true)
-    expect(result.lines.join('\n')).toContain('span export failed')
+    expect(result.lines.join('\n')).toContain('telemetry export failed')
+  })
+})
+
+describe('the meter provider (ADR-0041)', () => {
+  test('shares the tracer provider s Resource, so a dashboard and a trace name one build', async () => {
+    const collector = fakeCollector()
+    const telemetry = telemetryFor(configWith({ OTEL_EXPORTER_OTLP_ENDPOINT: collector.endpoint }))
+
+    telemetry.tracer.startSpan('unit-of-work').end()
+    telemetry.meter.createCounter('unit.of.work').add(1)
+    await telemetry.forceFlush()
+
+    // The claim is not "both were configured with the same object" — that is true by
+    // construction and would pass with a broken exporter. It is that the two signals
+    // ARRIVE carrying the same identity, which is what makes "p95 regressed after v0.4.0"
+    // and "show me a slow trace from v0.4.0" the same filter twice (ADR-0011).
+    const identity = {
+      'service.name': 'labelloop-api',
+      'service.version': '9.9.9',
+      'deployment.environment.name': 'test',
+      'labelloop.git_sha': 'deadbee',
+    }
+    expect(collector.resourceAttributes()).toMatchObject(identity)
+    expect(collector.metricResourceAttributes()).toMatchObject(identity)
+    expect(collector.metricNames()).toContain('unit.of.work')
+    // Shut down BEFORE the collector goes away. A meter provider always has something to
+    // flush — a cumulative counter still holds its total — so a shutdown aimed at a
+    // stopped server spends the whole export timeout on a connection OTLP considers
+    // retryable, which is the same trap the export-failure test below documents.
+    await telemetry.shutdown()
+    collector.stop()
+  })
+
+  test('metrics and spans go to their own OTLP paths', async () => {
+    const collector = fakeCollector()
+    const telemetry = telemetryFor(configWith({ OTEL_EXPORTER_OTLP_ENDPOINT: collector.endpoint }))
+
+    telemetry.tracer.startSpan('unit-of-work').end()
+    telemetry.meter.createCounter('unit.of.work').add(1)
+    await telemetry.forceFlush()
+
+    // One endpoint in configuration, two signal paths on the wire. Worth asserting because
+    // the two exporters are built from the same string and a copy-paste that pointed
+    // metrics at `/v1/traces` would be accepted by the collector's receiver and then
+    // silently dropped as the wrong message type.
+    expect(new Set(collector.paths)).toEqual(new Set(['/v1/traces', '/v1/metrics']))
+    await telemetry.shutdown()
+    collector.stop()
+  })
+
+  test('an unset endpoint leaves the instruments legal and going nowhere (ADR-0009)', async () => {
+    const telemetry = telemetryFor(configWith())
+
+    expect(telemetry.exporting).toBe(false)
+    // The property that matters for zero-secret boot: no reader, but a real meter, so
+    // every `add()` in the codebase is still a legal call and nothing has to branch on
+    // whether telemetry happens to be configured.
+    expect(() => telemetry.meter.createCounter('unit.of.work').add(1)).not.toThrow()
+    await expect(telemetry.forceFlush()).resolves.toBeUndefined()
   })
 })

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { errorEnvelopeSchema, newId } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
-import { trace } from '@opentelemetry/api'
+import { metrics, trace } from '@opentelemetry/api'
 import { eq } from 'drizzle-orm'
 import { createFixedClock } from '../../adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from '../../adapters/noop-error-reporter.ts'
@@ -64,6 +64,8 @@ let db: Database
 let auth: ReturnType<typeof createAuth>
 
 const noopTracer = trace.getTracer('test')
+/** The same, for metrics: a real meter with a no-op implementation behind it. */
+const noopMeter = metrics.getMeter('test')
 
 const app = () =>
   createApp({
@@ -75,9 +77,11 @@ const app = () =>
       provider: createFakeProvider(),
       clock: createFixedClock(),
       tracer: noopTracer,
+      meter: noopMeter,
     }),
     jobs: fakeQueue(),
     tracer: noopTracer,
+    meter: noopMeter,
     auth,
     rateLimitStore: createMemoryRateLimitStore(),
   })

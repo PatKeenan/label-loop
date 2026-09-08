@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app-env.ts'
 import { AppError } from '../errors.ts'
+import { ATTR_DECISION, instrumentsFor } from '../metrics.ts'
 import type { RateLimitPolicy } from '../ports/rate-limit-store.ts'
 import { createTokenBucket, DEFAULT_RATE_LIMIT } from '../rate-limit/token-bucket.ts'
 
@@ -25,6 +26,15 @@ import { createTokenBucket, DEFAULT_RATE_LIMIT } from '../rate-limit/token-bucke
  *    traffic at all — and it is acceptable only because this limit is about throughput
  *    fairness rather than about spend. **M8's per-org `QUOTA_EXCEEDED` is load-bearing for
  *    money and must revisit this rather than inherit it.**
+ *
+ * M3 adds the metrics, and the second of the two is the point: a fail-open limiter is
+ * INVISIBLE when it breaks. It serves every request and writes a warning into a log stream
+ * nobody is watching at 3am, so `labelloop.rate_limit.fail_open` is what turns "traffic was
+ * unlimited for eleven minutes" from an archaeology exercise into a line on a graph.
+ *
+ * **Neither metric is labelled with the subject.** The subject IS a key id, which is the
+ * label ADR-0042 bans by name — "who is being limited" is a question for the per-key
+ * dashboard's SQL, and the answer here is only ever how many, not who.
  */
 
 /** What the caller is told. It says what to do, and nothing about who else is loud. */
@@ -62,6 +72,10 @@ export const rateLimit = ({
   cost = 1,
 }: RateLimitOptions): MiddlewareHandler<AppEnv> => {
   return async (c, next) => {
+    // Read per request rather than closed over: the meter arrives on `deps`, which this
+    // middleware only meets through the context. `instrumentsFor` memoises per meter, so
+    // this is a `WeakMap` lookup and not a rebuild.
+    const { rateLimitDecisions, rateLimitFailOpen } = instrumentsFor(c.var.deps.meter)
     const who = subject(c)
     // No subject is not a failure and not a free pass either — it means this request never
     // reached the middleware that identifies one, and `apiKeyAuth` has already turned it
@@ -92,10 +106,16 @@ export const rateLimit = ({
         requestId: c.var.requestId,
         context: { component: 'rate-limit', subject: who },
       })
+      rateLimitFailOpen.add(1)
+      // Counted as an allowed request too, because that is what it was: the caller was
+      // served. A fail-open that vanished from the decisions series would make the two
+      // metrics disagree about how many requests the limiter saw.
+      rateLimitDecisions.add(1, { [ATTR_DECISION]: 'allowed' })
       return await next()
     }
 
     if (!decision.allowed) {
+      rateLimitDecisions.add(1, { [ATTR_DECISION]: 'refused' })
       throw new AppError('RATE_LIMITED', RATE_LIMITED, {
         // Computed from the bucket, never a constant: a constant either sends the caller
         // back before there is a token for them or makes them wait longer than they must.
@@ -106,6 +126,7 @@ export const rateLimit = ({
       })
     }
 
+    rateLimitDecisions.add(1, { [ATTR_DECISION]: 'allowed' })
     await next()
   }
 }

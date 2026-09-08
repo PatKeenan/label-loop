@@ -73,7 +73,7 @@ export const createApp = (deps: AppDeps) => {
   // downstream can read them; then the request id, which is now READ from the span
   // tracing just started, so the logger and the envelope quote the trace id itself; then
   // logging, so it observes the whole request.
-  app.use('*', tracing(deps.tracer))
+  app.use('*', tracing(deps.tracer, deps.meter))
   app.use('*', async (c, next) => {
     c.set('deps', deps)
     await next()

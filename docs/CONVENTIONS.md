@@ -146,6 +146,43 @@
   error code fails the frontend typecheck until someone decides what the user sees —
   front/back error sync is structurally enforced, not remembered.
 
+## Metrics
+- **App-emitted metrics are the authoritative ones** (ADR-0041). The API owns a
+  `MeterProvider` beside its tracer provider, sharing one Resource so a dashboard and a
+  trace name the same build. Tempo's `metrics_generator` is enabled and its span-derived
+  series are NOT authoritative — they carry `source="tempo"` and no dashboard is built on
+  them.
+- The API exports OTLP to the **one** collector endpoint and never to Prometheus. The
+  collector republishes on a second port; Prometheus scrapes it. No `/metrics` endpoint on
+  the API, ever, and no remote-write from the application.
+- **Instrument names live in code, in two files and no others**: `metrics.ts` for the HTTP
+  and rate-limit instruments, `llm/attributes.ts` for the model-call ones, beside the span
+  attribute names they share a convention with. An industry convention keeps its own name
+  (`http.server.request.duration`, `gen_ai.client.operation.duration`); anything of ours is
+  namespaced `labelloop.*`. Written OTel-dotted — the collector translates to Prometheus's
+  underscored form, so each convention stays correct on its own side of that line.
+- Durations are **seconds**, with explicit bucket boundaries taken from measurements
+  (`docs/BREAKING_POINT.md`), never the SDK's millisecond-shaped defaults.
+- **The label allow-list is closed.** Route TEMPLATE, HTTP method, status CLASS, model,
+  judge slug, gateway outcome, `cost_priced`, and the limiter's decision. A label not on
+  that list needs a reason written down beside it.
+- **No key id, org id, panel id, trace id, `request_id`, annotator id, raw URL path or
+  artifact-derived value may ever be a metric label** (ADR-0042). Per-key usage is a SQL
+  `GROUP BY` against Postgres, which is also the source M8's billing must read from: a SQL
+  group costs a query, a Prometheus label costs a time series forever. The rule is
+  **machine-enforced** (`metrics.cardinality.test.ts`, ADR-0016) rather than remembered,
+  because its violation is silent — an id label passes every other check in the repo — and
+  its reversal is breaking, since a label cannot be dropped without breaking every
+  dashboard built on it. The test checks label NAMES and label VALUE SHAPES, so renaming
+  the label does not evade it.
+- Judge slug is the one label bounded by product rather than by traffic: judges are
+  per failure category, not per request. It is allowed, and it is the label to watch if
+  panel counts ever grow faster than that assumption.
+- Metrics degrade, never the request path. The reader is bounded like the span processor —
+  bounded export timeout, a per-instrument series cap — and an unset
+  `OTEL_EXPORTER_OTLP_ENDPOINT` removes the reader while leaving every instrument a legal
+  call that goes nowhere (ADR-0009).
+
 ## Logging
 - One structured JSON logger (pino) via `hono-pino` middleware: a request-scoped child
   logger on context (`c.var.logger`) carrying `request_id` automatically, with the

@@ -33,6 +33,41 @@ storage:
     wal:
       path: /var/tempo/wal
 
-# No metrics_generator. It would turn spans into RED metrics automatically, which is
-# genuinely useful and is exactly the kind of thing ADR-0007 asks to be a decision rather
-# than a default — M3, with the dashboards.
+# The metrics generator, ON as of M3 — and explicitly NOT AUTHORITATIVE (ADR-0041).
+#
+# It turns spans into RED metrics and remote-writes them to Prometheus. Two things are true
+# at once and both are the decision:
+#
+#   1. It is enabled because without a generator Grafana's Traces Drilldown answers
+#      `error finding generators: empty ring` and is simply broken. Two blocks of
+#      configuration to fix that is a good trade.
+#   2. **No dashboard is built on these series.** The application emits its own metrics
+#      through its own MeterProvider, and those are the ones every panel and the one alert
+#      rule read. Cardinality is then decided where a metric is DEFINED rather than
+#      inferred from whatever attributes a span happened to carry — which is what makes
+#      ADR-0042's "no identifier is ever a label" a rule that can be enforced at all.
+#
+# `external_labels` is how the two are told apart: everything from here carries
+# `source="tempo"`, so a query can never quietly mix a generated series with a real one.
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      # Prometheus runs with `--web.enable-remote-write-receiver` for this one writer and
+      # nothing else. The API does not remote-write and never will: it talks to the
+      # collector, which is the rule the collector's own config states.
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  traces_storage:
+    path: /var/tempo/generator/traces
+
+overrides:
+  defaults:
+    metrics_generator:
+      # `local-blocks` is the one Traces Drilldown actually needs — the RED processors are
+      # what the generator is famous for, and the drilldown's own queries run against
+      # locally retained blocks.
+      processors: [service-graphs, span-metrics, local-blocks]

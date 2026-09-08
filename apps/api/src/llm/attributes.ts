@@ -59,3 +59,32 @@ export const ATTR_ERROR_CODE = 'labelloop.error_code'
 export const ATTR_FAILURE_KIND = 'labelloop.failure_kind'
 /** How long the retry loop slept before the next attempt. Makes backoff visible as data. */
 export const ATTR_BACKOFF_MS = 'labelloop.backoff_ms'
+
+/**
+ * Metric names for model calls, beside the span attribute names and under the same rule:
+ * an industry convention keeps its own name, anything of ours is namespaced `labelloop.*`.
+ *
+ * `gen_ai.client.operation.duration` is the convention's own name for exactly this
+ * measurement, so it is used. The token counters are NOT `gen_ai.client.token.usage`,
+ * deliberately — that convention is a histogram of per-call usage, and what a cost
+ * dashboard needs is a monotonic total. Borrowing the name for different semantics would
+ * be worse than not using it, because the name is what tells a reader which one they have.
+ */
+export const METRIC_JUDGE_DURATION = 'gen_ai.client.operation.duration'
+export const METRIC_JUDGE_CALLS = 'labelloop.judge.calls'
+export const METRIC_JUDGE_INPUT_TOKENS = 'labelloop.judge.tokens.input'
+export const METRIC_JUDGE_OUTPUT_TOKENS = 'labelloop.judge.tokens.output'
+export const METRIC_JUDGE_REASONING_TOKENS = 'labelloop.judge.tokens.reasoning'
+/**
+ * Spend, carrying `labelloop.cost_priced` as a label so the two are never summed together.
+ * A single total folds a genuinely-free fake call and an unpriced model's missing figure
+ * into real money and reports less than was spent.
+ */
+export const METRIC_JUDGE_COST_USD = 'labelloop.judge.cost_usd'
+export const METRIC_JUDGE_ATTEMPTS = 'labelloop.judge.attempts'
+/**
+ * `0` closed, `1` half-open, `2` open — an observable gauge, read from the registry at
+ * collection time rather than pushed on state change, so a breaker that has been open for
+ * an hour still reports open on every scrape instead of once.
+ */
+export const METRIC_JUDGE_BREAKER_STATE = 'labelloop.judge.breaker_state'

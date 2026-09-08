@@ -8,7 +8,7 @@ import {
   newId,
 } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
-import { trace } from '@opentelemetry/api'
+import { metrics, trace } from '@opentelemetry/api'
 import { eq } from 'drizzle-orm'
 import { createFixedClock } from '../../../adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from '../../../adapters/noop-error-reporter.ts'
@@ -247,6 +247,8 @@ let queue: ReturnType<typeof fakeQueue>
  * telemetry being configured to work.
  */
 const noopTracer = trace.getTracer('test')
+/** The same, for metrics: a real meter with a no-op implementation behind it. */
+const noopMeter = metrics.getMeter('test')
 
 /** The real app, with the real database, and the provider swapped through the same seam. */
 const appWith = (
@@ -262,10 +264,12 @@ const appWith = (
       provider,
       clock: createFixedClock(),
       tracer: noopTracer,
+      meter: noopMeter,
       random: () => 1,
     }),
     jobs: queue,
     tracer: noopTracer,
+    meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore,
   })
