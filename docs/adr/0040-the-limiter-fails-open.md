@@ -4,7 +4,7 @@
 **To be revisited at:** M8 (per-org `QUOTA_EXCEEDED`)
 
 > **Stub.** Created by `/approve_plan` from the "Decisions made" section of
-> `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
+> `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
 > decision is challenged or its consequences grow.
 
 ## Decision
@@ -35,6 +35,6 @@ unreachable is the difference between a resilience layer and a new single point 
   report are the decision's other half, not decoration — and the fail-open path is asserted
   directly in tests, because it only ever runs when something is already wrong.
 
-Plan: `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`
+Plan: `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`
 Provenance: `thoughts/shared/research/2026-09-04_m2-resilience-load-baseline.md`
 Related: ADR-0038, ADR-0039, ADR-0012

@@ -4,7 +4,7 @@
 **Amends:** STACK_DECISIONS **D4**
 
 > **Stub.** Created by `/approve_plan` from the "Decisions made" section of
-> `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
+> `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
 > decision is challenged or its consequences grow.
 
 ## Decision
@@ -35,6 +35,6 @@ with the reversal recorded rather than glossed.
 - A new container in every local stack and in CI, and a second data store to reason about at
   M3's observability and M8's deploy.
 
-Plan: `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`
+Plan: `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`
 Provenance: `thoughts/shared/research/2026-09-04_m2-resilience-load-baseline.md`
 Log: `thoughts/shared/progress/decisions-log.md` (2026-09-04) · Register: STACK_DECISIONS D4 (amended)
