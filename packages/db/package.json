@@ -6,7 +6,8 @@
   "description": "Schema and forward-only migrations. Owns the two-role privilege split and the append-only audit guarantee.",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./test-support": "./src/test-support.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

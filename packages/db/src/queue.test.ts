@@ -1,6 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { QUEUE_SCHEMA, QUEUES } from './queue.ts'
-import { appClient, migratorClient, rejection, sqlStateOf } from './test-support.ts'
+import {
+  appClient,
+  EPHEMERAL_QUEUE_PREFIX,
+  migratorClient,
+  rejection,
+  sqlStateOf,
+} from './test-support.ts'
 
 /**
  * The queue's schema is the one part of this database a library wrote, which makes it the
@@ -25,8 +31,19 @@ const INSUFFICIENT_PRIVILEGE = '42501'
 
 describe('the queue schema (installed by the migrator, worked by the app role)', () => {
   test('every declared queue exists, created by the migration step rather than at runtime', async () => {
+    // Equality, not containment: the claim is that the migration installed the queues we
+    // declare AND nothing else — a queue created at runtime by a stray `createQueue` would
+    // show up here as the extra row it is.
+    //
+    // The one exclusion is `ephemeralQueue`'s prefix (`test-support.ts`). A test that
+    // provisions its own queue drops it again on the way out and on the way back in, so a
+    // row with that prefix means a run was killed between the two — a fact about the last
+    // test run rather than about the migration this test is asserting on. Left in, it would
+    // turn one interrupted `bun test` into a failure here that says nothing true.
     const rows = (await app`
-      SELECT name FROM pgboss.queue ORDER BY name
+      SELECT name FROM pgboss.queue
+      WHERE name NOT LIKE ${`${EPHEMERAL_QUEUE_PREFIX}%`}
+      ORDER BY name
     `) as Array<{ name: string }>
     expect(rows.map((row) => row.name).sort()).toEqual([...QUEUES].sort())
   })
