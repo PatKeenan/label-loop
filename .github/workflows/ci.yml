@@ -61,9 +61,14 @@ jobs:
 
     env:
       # 5432 here rather than compose's 5433: a runner has nothing else on the port, and
-      # the value that matters is that all three roles point at the same database.
+      # the value that matters is that all four connection strings point at the same
+      # database.
       DATABASE_URL: postgres://labelloop_app:localdev@localhost:5432/labelloop
       DATABASE_MIGRATION_URL: postgres://labelloop_migrator:localdev@localhost:5432/labelloop
+      # The dashboard credential (ADR-0045). Needed here even though nothing in CI draws a
+      # dashboard: `db:bootstrap` sets the role's password FROM this string, and
+      # `roles.test.ts` connects with it to prove the role can only SELECT.
+      DATABASE_READONLY_URL: postgres://labelloop_readonly:localdev@localhost:5432/labelloop
       DATABASE_ADMIN_URL: postgres://postgres:localdev@localhost:5432/labelloop
       # 6379 here rather than compose's 6380, for the same reason Postgres is on 5432: a
       # runner has nothing else on the port.
