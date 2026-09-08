@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { errorEnvelopeSchema, requestIdSchema } from '@labelloop/contracts'
-import { trace } from '@opentelemetry/api'
+import { metrics, trace } from '@opentelemetry/api'
 import { createFixedClock } from './adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from './adapters/noop-error-reporter.ts'
 import { createApp } from './app.ts'
@@ -39,12 +39,15 @@ const config: Config = loadConfig({
  * is tracing. `otel.test.ts` and `middleware/tracing.test.ts` own the spans.
  */
 const noopTracer = trace.getTracer('test')
+/** The same, for metrics: a real meter with a no-op implementation behind it. */
+const noopMeter = metrics.getMeter('test')
 
 const testGateway = () =>
   createModelGateway({
     provider: createFakeProvider(),
     clock: createFixedClock(),
     tracer: noopTracer,
+    meter: noopMeter,
   })
 
 let reporter: ReturnType<typeof createRecordingErrorReporter>
@@ -60,6 +63,7 @@ beforeEach(() => {
     modelGateway: testGateway(),
     jobs: fakeQueue(),
     tracer: noopTracer,
+    meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore: createMemoryRateLimitStore(),
   })
@@ -205,6 +209,7 @@ describe('contract-validation auto-mapping', () => {
       modelGateway: testGateway(),
       jobs: fakeQueue(),
       tracer: noopTracer,
+      meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
     })
@@ -270,6 +275,7 @@ describe('/readyz', () => {
       modelGateway: testGateway(),
       jobs: fakeQueue(queue),
       tracer: noopTracer,
+      meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
     })

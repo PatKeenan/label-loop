@@ -1,5 +1,15 @@
 import type { ErrorCode, JudgeOutput } from '@labelloop/contracts'
-import { context, SpanKind, SpanStatusCode, type Tracer, trace } from '@opentelemetry/api'
+import {
+  type Attributes,
+  context,
+  type Meter,
+  metrics as metricsApi,
+  SpanKind,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from '@opentelemetry/api'
+import { instrumentsFor } from '../metrics.ts'
 import type { Clock } from '../ports/clock.ts'
 import {
   ATTR_ATTEMPTS,
@@ -17,6 +27,7 @@ import {
   ATTR_JUDGE_VERSION_ID,
   ATTR_OUTCOME,
   ATTR_REASONING_TOKENS,
+  METRIC_JUDGE_BREAKER_STATE,
 } from './attributes.ts'
 import {
   type BreakerPolicy,
@@ -125,10 +136,30 @@ export type ModelGatewayOptions = {
    * produces without registering a process-wide tracer provider it then has to live with.
    */
   tracer: Tracer
+  /**
+   * Where the model-call metrics come from, injected for the same reason the tracer is.
+   * Optional so every existing construction site — and every test that only cares about
+   * spans — keeps working; absent, it falls back to the API's no-op meter, which records
+   * legally and nowhere.
+   */
+  meter?: Meter
   retryPolicy?: RetryPolicy
   breakerPolicy?: BreakerPolicy
   /** Jitter source. Injected so a backoff schedule can be asserted rather than hoped at. */
   random?: () => number
+}
+
+/** The name a fallback meter is fetched under, when no meter was injected. */
+const GATEWAY_METER = 'labelloop-api.llm'
+
+/**
+ * The gauge's three values. Ordered by severity rather than alphabetically, so a panel
+ * showing `max` over models answers "is anything broken" without a legend.
+ */
+const BREAKER_STATE_VALUE: Record<BreakerState, number> = {
+  closed: 0,
+  half_open: 1,
+  open: 2,
 }
 
 /** Which failures are worth another call, and which are the same answer twice. */
@@ -172,11 +203,13 @@ export const createModelGateway = ({
   provider,
   clock,
   tracer,
+  meter = metricsApi.getMeter(GATEWAY_METER),
   retryPolicy = DEFAULT_RETRY_POLICY,
   breakerPolicy,
   random,
 }: ModelGatewayOptions): ModelGateway => {
   let stateLogger: CallLogger | undefined
+  const instruments = instrumentsFor(meter)
 
   const breakers = createBreakerRegistry({
     clock,
@@ -193,6 +226,22 @@ export const createModelGateway = ({
       else stateLogger?.info(line, 'circuit closed')
     },
   })
+
+  // An OBSERVABLE gauge, read from the registry when the reader collects rather than
+  // written when a breaker changes state. The difference is the one that matters for this
+  // particular number: a breaker that opened an hour ago and has stayed open is still the
+  // most important fact on the dashboard, and a push-on-change gauge would have said it
+  // once and then gone quiet. Labelled by MODEL only — a breaker is per model, and nothing
+  // about the caller belongs on a series (ADR-0042).
+  meter
+    .createObservableGauge(METRIC_JUDGE_BREAKER_STATE, {
+      description: 'Circuit state per model: 0 closed, 1 half-open, 2 open.',
+    })
+    .addCallback((result) => {
+      for (const { key, state } of breakers.states()) {
+        result.observe(BREAKER_STATE_VALUE[state], { [ATTR_GEN_AI_REQUEST_MODEL]: key })
+      }
+    })
 
   return {
     breakerState: (model) => breakers.for(model).state,
@@ -234,6 +283,32 @@ export const createModelGateway = ({
           [ATTR_OUTCOME]: outcome.status,
           [ATTR_ATTEMPTS]: outcome.attempts,
         })
+
+        // **The metrics leave through the same funnel, for the same reason.** Five ways
+        // out of `judge()`, one place that records them, so the outcome that gets
+        // forgotten is not the one the dashboard needed.
+        //
+        // The labels: model, judge slug and outcome. Model and outcome are small closed
+        // sets. The slug is bounded by how many judges exist rather than by traffic —
+        // which is what makes "latency by judge" a panel we can afford — while the panel,
+        // key and org ids that WOULD grow with traffic are absent by rule (ADR-0042).
+        const labels: Attributes = {
+          [ATTR_GEN_AI_SYSTEM]: provider.name,
+          [ATTR_GEN_AI_REQUEST_MODEL]: call.model,
+          [ATTR_OUTCOME]: outcome.status,
+          ...(slug === undefined ? {} : { [ATTR_JUDGE_SLUG]: slug }),
+        }
+        instruments.judgeCalls.add(1, labels)
+        // Seconds, matching the HTTP histogram and what the convention this instrument is
+        // named for specifies. `latencyMs` is the gateway's own measurement — retries and
+        // backoff included — which is what a caller actually waited.
+        instruments.judgeDuration.record(outcome.latencyMs / 1_000, labels)
+        // Attempts as a COUNTER rather than a label: attempt counts are a small integer
+        // today and a bigger one the day the retry policy changes, and a label would turn
+        // a policy change into a cardinality change. Divided by the call count it gives
+        // the number worth watching — calls per judge call.
+        instruments.judgeAttempts.add(outcome.attempts, labels)
+
         if (outcome.status === 'evaluated') {
           span.setAttributes({
             [ATTR_GEN_AI_RESPONSE_MODEL]: outcome.servedBy,
@@ -248,6 +323,27 @@ export const createModelGateway = ({
             ...(outcome.cost.reasoningTokens === undefined
               ? {}
               : { [ATTR_REASONING_TOKENS]: outcome.cost.reasoningTokens }),
+          })
+
+          const billed: Attributes = {
+            ...labels,
+            // The model that ANSWERED, on the money metrics specifically: a provider that
+            // aliases or routes bills for what it served, and a cost series labelled with
+            // what we asked for would attribute spend to a model that never ran.
+            [ATTR_GEN_AI_RESPONSE_MODEL]: outcome.servedBy,
+          }
+          instruments.judgeInputTokens.add(outcome.cost.inputTokens, billed)
+          instruments.judgeOutputTokens.add(outcome.cost.outputTokens, billed)
+          if (outcome.cost.reasoningTokens !== undefined) {
+            instruments.judgeReasoningTokens.add(outcome.cost.reasoningTokens, billed)
+          }
+          // `cost_priced` is a LABEL rather than a filter, so the dashboard splits on it
+          // instead of dropping half the data. A single total would fold M0's genuinely
+          // free fake and an unpriced model's missing figure into real spend and report
+          // less than was spent — and a zero would be ambiguous between the two.
+          instruments.judgeCostUsd.add(outcome.cost.costUsd, {
+            ...billed,
+            [ATTR_COST_PRICED]: outcome.cost.priced,
           })
         } else if (outcome.status === 'error') {
           span.setAttribute(ATTR_ERROR_CODE, outcome.code)

@@ -46,6 +46,31 @@ exporters:
       # port; the collector is the only thing that talks to Tempo.
       insecure: true
 
+  # Application metrics, on a SECOND port for Prometheus to scrape (M3, ADR-0041).
+  #
+  # A scrape rather than a remote-write, deliberately. It is the topology already in use —
+  # Prometheus scrapes 8888 below for the collector's own telemetry — so M3 adds a target
+  # instead of a mechanism, and it preserves this file's stated rule that the API talks to
+  # ONE endpoint and never to Prometheus directly. The exporter holds the last value of
+  # each series in memory and answers on demand; a scrape that is late reads a stale value
+  # rather than losing one, which is the tradeoff a pull model makes on purpose.
+  #
+  # Names are translated on the way out: OTel's dotted `labelloop.judge.cost_usd` becomes
+  # Prometheus's `labelloop_judge_cost_usd_total`, and `http.server.request.duration`
+  # becomes `http_server_request_duration_seconds_bucket`. Each convention stays correct on
+  # its own side of this line, which is why the SDK spells its names the OTel way.
+  prometheus/app:
+    endpoint: 0.0.0.0:8889
+    # LEFT OFF, and it is a cardinality decision rather than a default. Enabling it copies
+    # every resource attribute — `service.version`, `labelloop.git_sha`, the environment —
+    # onto every series, which multiplies the whole series set on each deploy. The
+    # information is not lost: the exporter publishes `target_info` carrying exactly those
+    # attributes, and a panel that needs the build joins to it
+    # (`... * on(job, instance) group_left(service_version) target_info`). That is OTel's
+    # own answer to this question, and it is the reason both signals share one Resource.
+    resource_to_telemetry_conversion:
+      enabled: false
+
 service:
   telemetry:
     logs:
@@ -65,5 +90,12 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlp_grpc/tempo]
+    # The same receiver and the same two processors as traces, in the same order and for
+    # the same reason: whatever the signal, the limiter has to be able to refuse data
+    # before the batcher spends memory assembling it.
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus/app]
   # No logs pipeline yet. ADR-0007's amendment puts the filelog receiver → Loki at M3;
   # until then logs are NDJSON on stdout and `docker compose logs` is the reader.

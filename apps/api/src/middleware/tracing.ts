@@ -1,4 +1,12 @@
-import { context, SpanKind, SpanStatusCode, type Tracer, trace } from '@opentelemetry/api'
+import {
+  type Attributes,
+  context,
+  type Meter,
+  SpanKind,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from '@opentelemetry/api'
 import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
@@ -7,6 +15,7 @@ import {
   ATTR_URL_SCHEME,
 } from '@opentelemetry/semantic-conventions'
 import type { MiddlewareHandler } from 'hono'
+import { ATTR_STATUS_CLASS, instrumentsFor, statusClass } from '../metrics.ts'
 
 /**
  * One span per HTTP request, written by hand (ADR-0007). It is the root of every trace
@@ -28,12 +37,21 @@ import type { MiddlewareHandler } from 'hono'
  * Hono's placeholder for "no route matched". Excluded rather than recorded: `http.route`
  * is meant to be the low-cardinality template a metric can group by, and a 404's route is
  * not a route at all.
+ *
+ * It is the METRIC label as well now, and this is where the rule earns its keep: labelling
+ * a series with `c.req.path` would mint one time series per URL a stranger on the internet
+ * decided to try. Unmatched requests are counted under this single bucket instead, so a
+ * 404 flood costs one series rather than as many as the flood has imagination.
  */
 const UNMATCHED = '/*'
 
-export const tracing =
-  (tracer: Tracer): MiddlewareHandler =>
-  async (c, next) => {
+export const tracing = (tracer: Tracer, meter: Meter): MiddlewareHandler => {
+  // Built once, at composition, rather than per request: `createCounter` on every request
+  // would allocate an instrument object per request to reach an aggregation the SDK has
+  // already keyed by name.
+  const { httpDuration, httpRequests } = instrumentsFor(meter)
+
+  return async (c, next) => {
     const span = tracer.startSpan(c.req.method, {
       // We are the server end of a remote call. The kind is what makes Tempo draw this as
       // the entry point rather than as an internal step.
@@ -47,6 +65,10 @@ export const tracing =
         [ATTR_URL_SCHEME]: new URL(c.req.url).protocol.replace(':', ''),
       },
     })
+    // Monotonic, and deliberately not the injected `Clock`. That port exists so backoff
+    // and breaker windows can be asserted against a fixed time; a latency histogram wants
+    // real elapsed time and would be measuring the fake if it read the same source.
+    const startedAt = performance.now()
 
     await context.with(trace.setSpan(context.active(), span), async () => {
       try {
@@ -79,7 +101,31 @@ export const tracing =
           // Marking those red would drown the ones that mean something.
           if (status >= 500) span.setStatus({ code: SpanStatusCode.ERROR })
         }
+
+        // **This `finally` is the metric funnel too** — the same reason it is the span's.
+        // Every request leaves through here, including the ones the error handler turned
+        // into a 500 and the ones that never matched a route, so there is one place to
+        // forget rather than five.
+        //
+        // THREE labels, and no fourth. Route template, method and status CLASS are each
+        // bounded by things this codebase controls; a status code would be five times the
+        // series to answer the same question, and anything identifying a caller is banned
+        // outright (ADR-0042) — per-key usage is a SQL query, not a label.
+        const labels: Attributes = {
+          // `route` is already `UNMATCHED` when nothing matched, which is the bucket the
+          // constant's comment describes — recorded rather than dropped, because "how many
+          // 404s" is a real question and one series is a fine price for it.
+          [ATTR_HTTP_ROUTE]: route,
+          [ATTR_HTTP_REQUEST_METHOD]: c.req.method,
+          ...(status === undefined ? {} : { [ATTR_STATUS_CLASS]: statusClass(status) }),
+        }
+        // Seconds, per the HTTP semantic convention this histogram is named for, and what
+        // `histogram_quantile` in a Grafana panel expects to be handed.
+        httpDuration.record((performance.now() - startedAt) / 1_000, labels)
+        httpRequests.add(1, labels)
+
         span.end()
       }
     })
   }
+}

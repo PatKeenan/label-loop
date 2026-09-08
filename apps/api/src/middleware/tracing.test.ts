@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { context } from '@opentelemetry/api'
+import { context, metrics } from '@opentelemetry/api'
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks'
 import { Hono } from 'hono'
 import { createFixedClock } from '../adapters/fixed-clock.ts'
@@ -36,6 +36,13 @@ const config = loadConfig({
   DATABASE_URL: 'postgres://labelloop_app:localdev@localhost:5433/labelloop',
 })
 
+/**
+ * This file is about SPANS. The metrics the same middleware records are asserted in
+ * `metrics.test.ts`, so a no-op meter is passed here deliberately — it is also the
+ * assertion that the span behaviour does not depend on metrics being configured.
+ */
+const noopMeter = metrics.getMeter('test')
+
 let spans: ReturnType<typeof recordingSpans>
 beforeEach(() => {
   spans = recordingSpans()
@@ -55,7 +62,7 @@ const chain = () => {
     },
   })
   const app = new Hono<{ Variables: { requestId: string } }>()
-    .use('*', tracing(spans.tracer))
+    .use('*', tracing(spans.tracer, noopMeter))
     .use('*', requestContext())
     .use('*', httpLogger(logger))
     .get('/ping', (c) => c.json({ data: { ok: true }, request_id: c.var.requestId }))
@@ -149,6 +156,7 @@ describe('request_id, the log line, the envelope and the span', () => {
       }),
       jobs: fakeQueue(),
       tracer: spans.tracer,
+      meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
     })

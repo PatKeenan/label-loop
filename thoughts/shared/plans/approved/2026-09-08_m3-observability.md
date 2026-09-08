@@ -44,27 +44,27 @@ Branch: `feat/m3-p1-metrics`. PR title: `feat(api): app-emitted metrics, through
 
 ### The SDK
 
-- [ ] `apps/api/package.json` — add `@opentelemetry/sdk-metrics` and
+- [x] `apps/api/package.json` — add `@opentelemetry/sdk-metrics` and
       `@opentelemetry/exporter-metrics-otlp-http`. **Bump every `@opentelemetry/*` package to
       one aligned minor in the same commit**: the installed set is `sdk-trace-base@2.10.0` /
       `exporter-trace-otlp-http@0.221.0`, while the metrics packages publish at `2.11.0` /
       `0.222.0`, and the two exporters share `otlp-exporter-base`. Mixed minors across that
       shared package is the classic OTel-JS breakage.
-- [ ] **No new stack row.** D6 already decides OpenTelemetry; these are the metrics half of a
+- [x] **No new stack row.** D6 already decides OpenTelemetry; these are the metrics half of a
       technology already chosen. `architecture.test.ts` must still pass — none of these is an
       auto-instrumentation package, and that is asserted, not assumed (ADR-0016).
-- [ ] `apps/api/src/otel.ts` — a `MeterProvider` beside the tracer provider, sharing the same
+- [x] `apps/api/src/otel.ts` — a `MeterProvider` beside the tracer provider, sharing the same
       `Resource` (so `service.name`, `service.version` and `labelloop.git_sha` are identical
       across both signals — that identity is what lets a dashboard and a trace agree about
       which build they describe, ADR-0011).
-- [ ] **A `PeriodicExportingMetricReader`, bounded the way the span processor is.** Telemetry
+- [x] **A `PeriodicExportingMetricReader`, bounded the way the span processor is.** Telemetry
       degrades, never the request path (CONVENTIONS "Logging" states the principle; the
       `BatchSpanProcessor` config is the precedent). Export failures route to the SAME global
       error handler and `diag` bridge `startTelemetry` already installs — both, because they
       are two unrelated channels and a bridge on one leaves the likeliest failure silent.
-- [ ] **Unset endpoint stays a supported state (ADR-0009).** No `OTEL_EXPORTER_OTLP_ENDPOINT`
+- [x] **Unset endpoint stays a supported state (ADR-0009).** No `OTEL_EXPORTER_OTLP_ENDPOINT`
       → no metric reader, and the process still boots and serves. Same shape as tracing.
-- [ ] `apps/api/src/app-env.ts` — a `Meter` on `AppDeps`, injected exactly as `tracer` is, so
+- [x] `apps/api/src/app-env.ts` — a `Meter` on `AppDeps`, injected exactly as `tracer` is, so
       a test substitutes it through the same seam rather than reading a global.
 
 ### The instruments, at funnels that already exist
@@ -72,62 +72,62 @@ Branch: `feat/m3-p1-metrics`. PR title: `feat(api): app-emitted metrics, through
 Three call sites, chosen because each already computes the number a metric wants. **No new
 instrumentation points**, which is the whole reason this milestone is small.
 
-- [ ] `apps/api/src/middleware/tracing.ts` (its `finally`) — request duration histogram and
+- [x] `apps/api/src/middleware/tracing.ts` (its `finally`) — request duration histogram and
       request counter, labelled `http.route` and status class. The route template is already
       kept low-cardinality here *"so a metric can group by it"* — this is the metric it meant.
-- [ ] `apps/api/src/llm/index.ts` (the `finish()` funnel) — judge-call duration, token counters
+- [x] `apps/api/src/llm/index.ts` (the `finish()` funnel) — judge-call duration, token counters
       (input/output/reasoning), cost counter, and attempts. Every exit passes through `finish`,
       which is why one funnel covers five outcomes.
-- [ ] `apps/api/src/middleware/rate-limit.ts` — allowed/refused counter, and a counter for
+- [x] `apps/api/src/middleware/rate-limit.ts` — allowed/refused counter, and a counter for
       fail-open events. The last one matters: ADR-0040 says a fail-open limiter is invisible
       when it breaks, and a metric is the second half of that visibility.
-- [ ] **A breaker-state gauge**, read through `ModelGateway.breakerState`, which `llm/index.ts`
+- [x] **A breaker-state gauge**, read through `ModelGateway.breakerState`, which `llm/index.ts`
       already exposes *"for the readiness and telemetry surfaces that want it"*.
-- [ ] `apps/api/src/llm/attributes.ts` — metric NAMES live beside the span attribute names,
+- [x] `apps/api/src/llm/attributes.ts` — metric NAMES live beside the span attribute names,
       same file, same rule: `gen_ai.*` spelled out, anything ours namespaced `labelloop.*`.
 
 ### Cardinality, stated as a rule rather than left to judgement
 
-- [ ] **No key id, org id, panel id, trace id or artifact-derived value may ever be a metric
+- [x] **No key id, org id, panel id, trace id or artifact-derived value may ever be a metric
       label.** Per-key usage comes from Postgres (stakeholder, 2026-09-08), so the label that
       would have carried the risk is simply never created.
-- [ ] `docs/CONVENTIONS.md` — **a "Metrics" section**, which the document currently lacks
+- [x] `docs/CONVENTIONS.md` — **a "Metrics" section**, which the document currently lacks
       entirely. Naming, the label allow-list, the cardinality rule, and the statement that
       metrics are app-emitted and authoritative. The "Logging" section is the model.
 
 ### The pipeline
 
-- [ ] `infra/otel-collector/config.yaml` — a metrics pipeline beside the traces one: the
+- [x] `infra/otel-collector/config.yaml` — a metrics pipeline beside the traces one: the
       existing `otlp` receiver, the same `memory_limiter` + `batch` processors, and a
       **`prometheus` exporter on a second port**. Prometheus then SCRAPES the collector, which
       is the shape already in use (it scrapes `otel-collector:8888` for the collector's own
       telemetry) and needs no new flag on Prometheus.
-- [ ] `infra/prometheus/prometheus.yml` — a scrape job for that port. The file's header already
+- [x] `infra/prometheus/prometheus.yml` — a scrape job for that port. The file's header already
       says *"M3 adds targets rather than a service"*; this is that.
-- [ ] `infra/docker-compose.yml` — expose the collector's new metrics port on the compose
+- [x] `infra/docker-compose.yml` — expose the collector's new metrics port on the compose
       network. No new service.
-- [ ] **Tempo's `metrics_generator` is enabled too, and is explicitly NOT authoritative.** Two
+- [x] **Tempo's `metrics_generator` is enabled too, and is explicitly NOT authoritative.** Two
       config lines plus `--web.enable-remote-write-receiver` on Prometheus. It exists so
       Grafana's Traces Drilldown stops answering `error finding generators: empty ring`; no
       dashboard in phase 2 may be built on it.
 
 ### Tests
 
-- [ ] `apps/api/src/otel.test.ts` — the meter provider is created, shares the tracer's
+- [x] `apps/api/src/otel.test.ts` — the meter provider is created, shares the tracer's
       Resource, and is absent when the endpoint is unset. Extends the existing file's pattern.
-- [ ] `apps/api/src/metrics.test.ts` (or beside each funnel) — the instruments record on the
+- [x] `apps/api/src/metrics.test.ts` (or beside each funnel) — the instruments record on the
       paths that produce them: a request records duration once, a judge call records cost and
       tokens, a refused request increments the refusal counter, a fail-open increments its own.
-- [ ] **A cardinality test.** Assert that no recorded metric carries a label from the banned
+- [x] **A cardinality test.** Assert that no recorded metric carries a label from the banned
       list. This is the one rule whose violation is silent, cheap to introduce and expensive to
       remove — a label cannot be dropped later without breaking every dashboard built on it.
 
 ### Automated verification
 
-- [ ] `bun run lint`, `bun run typecheck`, `bun test` all green.
-- [ ] `docker compose -f infra/docker-compose.yml up -d --wait` healthy.
-- [ ] `curl` the collector's metrics port and see `labelloop_*` series.
-- [ ] Prometheus reports the new scrape job UP, and the app series are queryable.
+- [x] `bun run lint`, `bun run typecheck`, `bun test` all green.
+- [x] `docker compose -f infra/docker-compose.yml up -d --wait` healthy.
+- [x] `curl` the collector's metrics port and see `labelloop_*` series.
+- [x] Prometheus reports the new scrape job UP, and the app series are queryable.
 
 ### Manual verification
 
@@ -327,6 +327,46 @@ Branch: `feat/m3-p5-soak`. PR title: `feat(k6): a soak, and retention sized from
 - **Touching the error taxonomy, the breaker, or the limiter.** M3 observes; it does not change
   behaviour. If a dashboard suggests a threshold is wrong, that is a finding for its own change.
 - **Auto-instrumentation**, in any form, forever (ADR-0016, machine-enforced).
+
+## Deviations
+
+Recorded as they happen, because they are decision provenance too (CLAUDE.md).
+
+### Phase 1
+
+- **Open question 3 answered: OTel-dotted metric names, not Prometheus-underscored.**
+  Instruments are named `labelloop.judge.cost_usd` and `http.server.request.duration`, and
+  the collector's `prometheus` exporter translates them to `labelloop_judge_cost_usd_total`
+  and `http_server_request_duration_seconds_bucket` on the way out. Each convention then
+  stays correct on its own side of the collector, rather than one leaking into the other,
+  and it keeps the metric names spelled the same way as the span attribute names they sit
+  beside. Verified against the running exporter's output, not assumed.
+- **`unit: 'USD'` was removed from the cost counter after reading the exporter's output.**
+  The OTLP-to-Prometheus translation APPENDS the unit to the name, so the declared unit
+  published `labelloop_judge_cost_usd_USD_total`. The name carries the unit instead. The
+  token counters keep `{token}`, which is a UCUM annotation the same translation correctly
+  omits. This is exactly the class of thing that is invisible until you look at the wire.
+- **The metric reader's export timeout is 8s, not the span processor's 30s.** The SDK
+  refuses a timeout longer than the export interval, and rightly: an export still running
+  when the next is due either overlaps itself or skips a window. Same posture, different
+  number, for a different reason.
+- **`createBreakerRegistry` gained a `states()` accessor.** The plan says the breaker gauge
+  is read through `ModelGateway.breakerState`, which takes a model — but an OBSERVABLE
+  gauge has to enumerate the models that have breakers, and only the registry knows them,
+  since a breaker is created lazily on first call. Three lines, inside `llm/`.
+- **A second metric instrument name file was not created.** Judge metric names went into
+  `llm/attributes.ts` as the plan says; the HTTP and rate-limit names went into the new
+  `metrics.ts`, which also builds every instrument from an injected `Meter` and memoises
+  them per meter. The `Meter` is the seam on `AppDeps`, as planned.
+- **The global export-failure log message changed** from "span export failed" to
+  "telemetry export failed — spans or metrics are being dropped". Both the batch span
+  processor and the periodic metric reader report to that one handler, so naming one of
+  them would have mislabelled the other.
+- **`resource_to_telemetry_conversion` is left OFF on the collector's prometheus
+  exporter**, with `target_info` as the documented join for build identity. Enabling it
+  would copy `service.version` and `labelloop.git_sha` onto every series and multiply the
+  series set on each deploy — which would be an odd thing to do inside the milestone that
+  writes down a cardinality rule.
 
 ## Open questions
 

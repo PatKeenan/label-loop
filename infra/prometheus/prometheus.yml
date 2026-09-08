@@ -1,10 +1,8 @@
-# Prometheus. At M0 it scrapes the observability stack ITSELF rather than the application:
-# the API emits no metrics yet (ADR-0007 amendment puts application metrics and dashboards
-# at M3), and the question worth answering today is "is the telemetry pipeline healthy",
-# which is a question about the collector.
-#
-# It is here at M0 because the plan's topology is the deliverable: the datasource exists,
-# provisioned as code, so M3 adds targets rather than a service.
+# Prometheus. At M0 it scraped the observability stack ITSELF and nothing else, because the
+# API emitted no metrics. M3 adds the application, and — as that header predicted — it does
+# so by adding a TARGET rather than a service: the API still exports OTLP to the one
+# collector endpoint it knows about, and the collector republishes those series on a port
+# this file scrapes (ADR-0041).
 
 global:
   scrape_interval: 15s
@@ -21,6 +19,17 @@ scrape_configs:
     # a running collector rather than copied from documentation — 0.159 publishes these
     # without the `_total` suffix older examples use.
 
+  # **The application's own metrics** (M3). Not the collector's health — that is the job
+  # above — but `labelloop_*` and the HTTP and gen_ai series the API emits, republished by
+  # the collector's `prometheus` exporter on its second port.
+  #
+  # The API is NEVER a target here. It does not serve a `/metrics` endpoint and is not
+  # going to: it exports OTLP to one place, which is what makes swapping a backend a change
+  # to the collector's configuration rather than to the application's.
+  - job_name: labelloop-api
+    static_configs:
+      - targets: ['otel-collector:8889']
+
   - job_name: tempo
     static_configs:
       - targets: ['tempo:3200']
@@ -29,5 +38,12 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-# No alerting rules and no recording rules. M3 (BUILD_SPINE) owns those, together with the
-# dashboards; shipping empty rule files now would be scaffolding, not topology.
+# Still no rule files here. M3's one alert rule (ADR-0043) is provisioned as Grafana-managed
+# alerting alongside the dashboards, so it lives with the panel it is about rather than in a
+# second alerting system that would need its own notification path to be worth having.
+#
+# Prometheus is started with `--web.enable-remote-write-receiver` (see the compose file).
+# That is for TEMPO's `metrics_generator`, which remote-writes span-derived RED metrics so
+# Grafana's Traces Drilldown works. Those series are explicitly NOT authoritative and no
+# dashboard is built on them (ADR-0041) — the `source="tempo"` label they carry is how to
+# tell them apart from the application's own.

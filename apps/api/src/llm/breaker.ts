@@ -161,6 +161,17 @@ export const createBreakerRegistry = (defaults: Omit<BreakerOptions, 'key'>) => 
       breakers.set(key, breaker)
       return breaker
     },
+    /**
+     * Every breaker that exists, and its state right now.
+     *
+     * Added for M3's breaker gauge, which is an OBSERVABLE instrument: it is read at
+     * collection time rather than written on state change, so a breaker that opened an
+     * hour ago still reports open on this scrape instead of having reported it once.
+     * Reading that way needs the set of keys, which only the registry knows — a lazily
+     * created breaker has no existence anywhere else until a call reaches its model.
+     */
+    states: (): Array<{ key: string; state: BreakerState }> =>
+      [...breakers.entries()].map(([key, breaker]) => ({ key, state: breaker.state })),
   }
 }
 

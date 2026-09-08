@@ -47,8 +47,8 @@ logger.info(
     endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
   },
   telemetry.exporting
-    ? 'tracing enabled, exporting spans'
-    : 'tracing enabled, spans are NOT exported (OTEL_EXPORTER_OTLP_ENDPOINT is unset)',
+    ? 'telemetry enabled, exporting spans and metrics'
+    : 'tracing enabled, spans and metrics are NOT exported (OTEL_EXPORTER_OTLP_ENDPOINT is unset)',
 )
 
 const errorReporter = await createErrorReporter(config)
@@ -85,6 +85,7 @@ const modelGateway = createModelGateway({
   }),
   clock: systemClock,
   tracer: telemetry.tracer,
+  meter: telemetry.meter,
 })
 logger.info(
   {
@@ -137,6 +138,7 @@ const app = createApp({
   modelGateway,
   jobs,
   tracer: telemetry.tracer,
+  meter: telemetry.meter,
   auth,
   rateLimitStore,
 })

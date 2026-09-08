@@ -243,6 +243,10 @@ services:
       # these mappings are a developer convenience in the same way Postgres's 5433 is.
       - '${OTLP_GRPC_PORT:-4317}:4317'
       - '${OTLP_HTTP_PORT:-4318}:4318'
+      # The application metrics Prometheus scrapes (M3). Published for the same reason the
+      # OTLP ports are — so `curl localhost:8889/metrics` from the host is how you check
+      # whether the API is emitting anything, without going through Grafana to find out.
+      - '${OTEL_METRICS_PORT:-8889}:8889'
     depends_on:
       - tempo
     restart: unless-stopped
@@ -263,6 +267,11 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      # For TEMPO's metrics generator and nothing else (M3). The application's metrics
+      # arrive by SCRAPE, from the collector; this receiver exists because a generator has
+      # no scrape endpoint to offer and must push. Those series are not authoritative and
+      # carry `source="tempo"` so they can be told apart (ADR-0041).
+      - '--web.enable-remote-write-receiver'
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus

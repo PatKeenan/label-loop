@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { errorEnvelopeSchema } from '@labelloop/contracts'
-import { trace } from '@opentelemetry/api'
+import { metrics, trace } from '@opentelemetry/api'
 import { Hono } from 'hono'
 import { createFixedClock, type FixedClock } from '../adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from '../adapters/noop-error-reporter.ts'
@@ -35,6 +35,8 @@ const config: Config = loadConfig({
 })
 
 const noopTracer = trace.getTracer('test')
+/** The same, for metrics: a real meter with a no-op implementation behind it. */
+const noopMeter = metrics.getMeter('test')
 
 /** A store that remembers whether it was asked anything — the "consumes nothing" assertion. */
 const countingStore = (inner: RateLimitStore = createMemoryRateLimitStore()) => {
@@ -86,9 +88,11 @@ const hostWith = (
       provider: createFakeProvider(),
       clock: createFixedClock(),
       tracer: noopTracer,
+      meter: noopMeter,
     }),
     jobs: fakeQueue(),
     tracer: noopTracer,
+    meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore,
   })
