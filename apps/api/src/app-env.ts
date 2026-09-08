@@ -9,6 +9,7 @@ import type { AuthenticatedKey } from './middleware/api-key-auth.ts'
 import type { AuthenticatedSession } from './middleware/session.ts'
 import type { Clock } from './ports/clock.ts'
 import type { ErrorReporter } from './ports/error-reporter.ts'
+import type { RateLimitStore } from './ports/rate-limit-store.ts'
 
 /**
  * Everything the app needs from the outside world, wired once at composition
@@ -55,6 +56,16 @@ export type AppDeps = {
    * grants access there (CONVENTIONS.md "Keys & auth").
    */
   auth: Auth
+  /**
+   * Where the rate limiter's counters live (ADR-0038). Injected rather than constructed in
+   * the middleware for the same reason the gateway is: it is STATEFUL — it is nothing but
+   * state — and one rebuilt per request would hold a fresh empty bucket every time, which
+   * is to say it would never limit anything.
+   *
+   * The port, not Redis, so a test passes the in-memory peer and M2's phase 3 can reverse
+   * the store choice without touching anything above this line (ADR-0039).
+   */
+  rateLimitStore: RateLimitStore
 }
 
 /** The Hono environment: what lives on `c.var` for every request. */

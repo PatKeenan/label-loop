@@ -9,6 +9,7 @@ import {
 import type { AppEnv } from '../../../app-env.ts'
 import { API_KEY_SECURITY_SCHEME } from '../../../docs.ts'
 import { apiKeyAuth } from '../../../middleware/api-key-auth.ts'
+import { byApiKey, rateLimit } from '../../../middleware/rate-limit.ts'
 import { evaluate } from '../../../services/evaluate.ts'
 import { validationHook } from './index.ts'
 
@@ -38,7 +39,12 @@ const evaluateRoute = createRoute({
   security: [{ [API_KEY_SECURITY_SCHEME]: [] }],
   // Authentication runs as route middleware so an unauthenticated caller is turned away
   // before any work is done on their behalf.
-  middleware: [apiKeyAuth()] as const,
+  //
+  // **The order is load-bearing and has its own test.** Rate limiting runs SECOND, on the
+  // key `apiKeyAuth` just established: limiting first would let an anonymous flood — no
+  // key, guessing at a panel id — burn a real customer's allowance, which is the denial of
+  // service the limiter exists to prevent (ADR-0040).
+  middleware: [apiKeyAuth(), rateLimit({ subject: byApiKey })] as const,
   request: {
     params: panelIdParamSchema,
     headers: idempotencyKeyHeaderSchema,
@@ -58,6 +64,10 @@ const evaluateRoute = createRoute({
     ),
     404: errorResponse('No such panel, or the panel has no live version to run.'),
     422: errorResponse('The request body failed contract validation. `issues[]` says where.'),
+    429: errorResponse(
+      'This key has spent its allowance. `Retry-After` says how many seconds until the ' +
+        'next request will be accepted — it is computed from the bucket, not a constant.',
+    ),
     503: errorResponse('No judge could be reached, or the circuit for their model is open.'),
     504: errorResponse('No judge answered within the gateway’s timeout.'),
   },

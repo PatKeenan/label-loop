@@ -1,6 +1,6 @@
 # STACK_DECISIONS.md — technology choices (stakeholder-owned)
 
-REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29; D16 added 2026-08-30; D3 amended 2026-08-30). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
+REGISTER LOCKED 2026-08-19 (D13 added 2026-08-20; D14 added 2026-08-28; D15 added 2026-08-29; D10 amended 2026-08-29; D16 added 2026-08-30; D3 amended 2026-08-30; D4 amended 2026-09-04). Docs and ADRs stay implementation-agnostic until a row here is DECIDED. Each decision,
 once made, gets a short ADR recording the why. Options listed are starting points, not
 a menu limit.
 
@@ -9,7 +9,7 @@ a menu limit.
 | D1 | API language + framework | — | **DECIDED: Bun + Hono + TypeScript.** Public `/v1` = versioned REST via OpenAPIHono (Zod-driven spec); internal console surface = Hono RPC. | 0004 |
 | D2 | Web framework (console + annotator) | — | **DECIDED: React SPA on Vite + TanStack Router + TanStack Query.** No SSR framework. | 0005 |
 | D3 | Database + migrations | — | **DECIDED: Postgres + Drizzle**, forward-only migrations. Amended 2026-08-30: the Drizzle driver is **`node-postgres`** over a `pg.Pool`, not Bun's native `SQL`. The original saving ("driver is the runtime, not a dependency") was already spent — `pg` is in the tree via pg-boss — and the Drizzle + Bun-SQL pairing silently double-encoded jsonb twice in one afternoon; under `pg` that bug is unrepresentable. | 0006, 0031 |
-| D4 | Async queue | — | **DECIDED: pg-boss (Postgres-backed). No Redis until the k6 breaking-point doc proves the need.** | 0006 |
+| D4 | Async queue + rate-limit counters | — | **DECIDED: pg-boss (Postgres-backed) for the queue** — unchanged, and this amendment does not touch it. **Amended 2026-09-04: Redis IS adopted, as the rate-limit counter store only.** The original row said "no Redis until the k6 breaking-point doc proves the need", and that gate can never open on its own terms: `docs/BREAKING_POINT.md` is an M2 deliverable produced by the very milestone that needs the store. The knot was cut rather than solved — the decision was taken **on design grounds, ahead of its own evidence** — and it is recorded here rather than left to contradict the build. The reversal is what makes the `RateLimitStore` port load-bearing (ADR-0039): a store chosen ahead of its evidence must stay swappable, and BREAKING_POINT must report what the numbers actually showed, including that a single instance never needed it. No npm dependency: the adapter is Bun's built-in `RedisClient`. | 0006, 0038, 0039, 0040 |
 | D5 | Integration surface | — | **DECIDED: no SDK.** OpenAPI spec + Scalar docs at `/docs` + fetch/curl snippets. | 0002 |
 | D6 | Observability stack | — | **DECIDED: OpenTelemetry (manual instrumentation via Hono middleware + the `llm/` module) → self-hosted Grafana stack in containers; Sentry (free tier) for error reporting.** | 0007 |
 | D7 | Inference server | — | **DECIDED: vLLM** (multi-LoRA dynamic adapter serving). | 0006 |

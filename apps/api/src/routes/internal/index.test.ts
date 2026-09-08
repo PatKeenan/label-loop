@@ -10,6 +10,7 @@ import { createAuth } from '../../auth.ts'
 import { loadConfig } from '../../config.ts'
 import { createFakeProvider, createModelGateway } from '../../llm/index.ts'
 import { sha256Hex } from '../../middleware/api-key-auth.ts'
+import { createMemoryRateLimitStore } from '../../rate-limit/memory-store.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
 
 /**
@@ -78,6 +79,7 @@ const app = () =>
     jobs: fakeQueue(),
     tracer: noopTracer,
     auth,
+    rateLimitStore: createMemoryRateLimitStore(),
   })
 
 /** One trace per org, so "the list is scoped to my org" has something to get wrong. */

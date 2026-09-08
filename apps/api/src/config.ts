@@ -141,6 +141,23 @@ const configSchema = z
       .refine(isHttpUrl, HTTP_URL_MESSAGE)
       .transform((url) => new URL(url).origin)
       .default('http://localhost:5173'),
+    /**
+     * Where the rate limiter's counters live (ADR-0038, M2).
+     *
+     * Defaulted, unlike `DATABASE_URL`, and the difference is deliberate rather than
+     * inconsistent. A production deploy pointed at a Redis that is not there does not
+     * silently talk to nothing — it fails open, loudly, per request (ADR-0040), which is
+     * the runtime surprise `DATABASE_URL`'s missing default exists to prevent and this one
+     * therefore does not need. It is not a secret either, so ADR-0009's zero-secret boot is
+     * untouched: the value below is what `infra/docker-compose.yml` starts.
+     */
+    REDIS_URL: z
+      .url()
+      .refine(
+        (url) => url.startsWith('redis://') || url.startsWith('rediss://'),
+        'must be a redis:// or rediss:// connection string',
+      )
+      .default('redis://localhost:6380'),
     /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
     /**

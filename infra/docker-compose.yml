@@ -61,6 +61,32 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  redis:
+    # The rate limiter's counter store (ADR-0038), and nothing else's: pg-boss stays on
+    # Postgres (D4), so this container holds counters and no durable state whatsoever.
+    # Never `:latest`, for the same reason Postgres is not.
+    image: redis:8.2-alpine
+    ports:
+      # Published so the host's `bun test` can reach it while the API still runs on the
+      # host — the same developer convenience as Postgres's mapping.
+      #
+      # 6380 rather than 6379, and for the identical reason 5433 is not 5432: a developer
+      # machine very often already has a Redis on the default port, and the collision does
+      # not announce itself. It would simply share buckets with whatever else is running.
+      - '${REDIS_PORT:-6380}:6379'
+    # **NO VOLUME, deliberately.** These counters are ephemeral BY DESIGN: a restart losing
+    # them hands every key a full bucket, which is correct behaviour rather than data loss.
+    # Persisting them would buy nothing and cost a disk write on the request path.
+    healthcheck:
+      # "The container started" is not "Redis is accepting commands", and `depends_on`
+      # below gates the API on the second.
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
   # ---------------------------------------------------------------------------------
   # The application. Two images built from the repo root, and one short-lived container
   # that prepares the database before either of them is allowed to matter.
@@ -131,6 +157,9 @@ services:
       # Over the compose network now, not the published port: inside the stack the
       # collector is a hostname, and 4318 is its own port rather than the host's mapping.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Over the compose network too, so the API uses Redis's own port rather than the
+      # host's 6380 mapping (ADR-0038).
+      REDIS_URL: redis://redis:6379
       # Forwarded from your shell, absent when unset — see the note on the migrate service
       # for why the bare form matters. Without it the registry holds `fake:` alone, so a
       # judge the seed pinned to a real model would answer `unavailable` on every call.
@@ -145,6 +174,11 @@ services:
       - '${API_PORT:-3000}:3000'
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        # Gated the same way Postgres is, even though the API would boot without it: the
+        # limiter fails OPEN (ADR-0040), so an ungated start would serve unlimited traffic
+        # for a few seconds and log a warning about it on every request. Waiting is free.
         condition: service_healthy
       migrate:
         # The API refuses to start against an unmigrated database — `/readyz` reports the

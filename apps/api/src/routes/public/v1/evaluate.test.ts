@@ -19,6 +19,8 @@ import { createOpenRouterProvider } from '../../../llm/openrouter-provider.ts'
 import type { ModelProvider } from '../../../llm/provider.port.ts'
 import { createProviderRegistry } from '../../../llm/provider-registry.ts'
 import { sha256Hex } from '../../../middleware/api-key-auth.ts'
+import type { RateLimitStore } from '../../../ports/rate-limit-store.ts'
+import { createMemoryRateLimitStore } from '../../../rate-limit/memory-store.ts'
 import { fakeAuth } from '../../../testing/fake-auth.ts'
 import { fakeQueue } from '../../../testing/fake-queue.ts'
 
@@ -247,7 +249,10 @@ let queue: ReturnType<typeof fakeQueue>
 const noopTracer = trace.getTracer('test')
 
 /** The real app, with the real database, and the provider swapped through the same seam. */
-const appWith = (provider: ModelProvider = createFakeProvider()) =>
+const appWith = (
+  provider: ModelProvider = createFakeProvider(),
+  rateLimitStore: RateLimitStore = createMemoryRateLimitStore(),
+) =>
   createApp({
     config,
     clock: createFixedClock(),
@@ -262,7 +267,19 @@ const appWith = (provider: ModelProvider = createFakeProvider()) =>
     jobs: queue,
     tracer: noopTracer,
     auth: fakeAuth(),
+    rateLimitStore,
   })
+
+/**
+ * A store with nothing left, at any time. Cheaper and clearer than spending the real
+ * capacity of 60 first: what this file needs to prove is that the endpoint sits BEHIND the
+ * limiter, and the bucket arithmetic that decides `allowed` is asserted exhaustively in
+ * `rate-limit/token-bucket.test.ts`.
+ */
+const exhaustedRateLimitStore = (): RateLimitStore => ({
+  consume: async () => ({ allowed: false, remaining: 0, retryAfterMs: 4_200, resetMs: 60_000 }),
+  close: async () => {},
+})
 
 const evaluateRequest = (
   body: unknown,
@@ -685,5 +702,43 @@ describe('a panel that is not there', () => {
     expect(res.status).toBe(404)
     const parsed = errorEnvelopeSchema.safeParse(await res.json())
     expect(parsed.data?.error.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('429 — the key has spent its allowance (M2)', () => {
+  test('refuses BEFORE any judge is called, which is the whole point of limiting here', async () => {
+    // A judge call is the expensive thing on this path — seconds of latency and real money
+    // at M1's provider. A limiter that refused after the fan-out would protect nothing.
+    const provider = createFakeProvider()
+    const res = await appWith(provider, exhaustedRateLimitStore()).request(
+      evaluateRequest({ artifact: ARTIFACT }),
+    )
+
+    expect(res.status).toBe(429)
+    expect(provider.calls).toBe(0)
+  })
+
+  test('answers in the taxonomy, with a Retry-After the console can turn into a timer', async () => {
+    const res = await appWith(createFakeProvider(), exhaustedRateLimitStore()).request(
+      evaluateRequest({ artifact: ARTIFACT }),
+    )
+
+    const parsed = errorEnvelopeSchema.safeParse(await res.json())
+    expect(parsed.success).toBe(true)
+    // `RATE_LIMITED`, never `QUOTA_EXCEEDED`: they share a status and mean the opposite
+    // things, and `apps/web`'s error map branches on the code for exactly that reason.
+    expect(parsed.data?.error.code).toBe('RATE_LIMITED')
+    // Rounded up from the bucket's 4200ms. A truncated 4 would send the caller back into a
+    // bucket that is still empty.
+    expect(res.headers.get('retry-after')).toBe('5')
+  })
+
+  test('and nothing is persisted — a refused call is not an evaluation', async () => {
+    const before = await db.select().from(schema.traces)
+    await appWith(createFakeProvider(), exhaustedRateLimitStore()).request(
+      evaluateRequest({ artifact: ARTIFACT }),
+    )
+    const after = await db.select().from(schema.traces)
+    expect(after.length).toBe(before.length)
   })
 })
