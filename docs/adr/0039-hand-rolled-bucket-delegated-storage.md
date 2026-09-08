@@ -4,7 +4,7 @@
 **Applies:** ADR-0012
 
 > **Stub.** Created by `/approve_plan` from the "Decisions made" section of
-> `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
+> `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`. Expand if the
 > decision is challenged or its consequences grow.
 
 ## Decision
@@ -44,6 +44,6 @@ counters and atomic read-modify-write — go behind a port with a real adapter a
   tightly than ADR-0004's "swap the entrypoint" claim assumes — bounded here to one adapter
   file behind the port.
 
-Plan: `thoughts/shared/plans/approved/2026-09-04_m2-resilience-load-baseline.md`
+Plan: `thoughts/shared/plans/complete/2026-09-04_m2-resilience-load-baseline.md`
 Provenance: `thoughts/shared/research/2026-09-04_m2-resilience-load-baseline.md`
 Related: ADR-0012, ADR-0038, ADR-0004

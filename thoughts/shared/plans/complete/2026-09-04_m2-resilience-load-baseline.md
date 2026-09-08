@@ -1,9 +1,11 @@
 ---
 date: 2026-09-04T16:00:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-04T17:00:00Z
 approved_by: pat
+completed_at: 2026-09-08T14:52:00Z
+shipped_in: v0.3.0
 milestone: M2
 topic: m2-resilience-load-baseline
 related_adrs: [0038, 0039, 0040, 0012, 0003, 0006, 0009, 0024]
@@ -24,6 +26,35 @@ with real numbers — including if the numbers are unimpressive.
 
 **Milestone: M2** (`docs/BUILD_SPINE.md`, Category 5). It completes three of the four
 Category-5 rows in `docs/SENIORITY_CHECKLIST.md:37-43`; the fourth (quota) is M8 by decision.
+
+## Completed — 2026-09-08, shipped in v0.3.0
+
+All three phases shipped, one PR each per CLAUDE.md, plus one fix that fell out of the work:
+
+| | PR | What landed |
+|---|---|---|
+| Phase 1 | [#40](https://github.com/PatKeenan/label-loop/pull/40) | The limiter: a hand-rolled token bucket behind `RateLimitStore`, Redis and in-memory adapters on one contract suite, 60/min burst 60, after auth, failing open |
+| Phase 2 | [#43](https://github.com/PatKeenan/label-loop/pull/43) | Deterministic fake latency, `ramp.js`, `spike.js`, `load-lib.js` |
+| Phase 3 | [#46](https://github.com/PatKeenan/label-loop/pull/46) | `docs/BREAKING_POINT.md` v0 |
+| — | [#44](https://github.com/PatKeenan/label-loop/pull/44) | Not planned: the queue privilege probe, fixed after Phase 2 exposed it |
+
+**The milestone's headline is a negative result**, and `BREAKING_POINT.md` leads with it: with
+one key at 60/minute the limiter binds long before capacity does, so the instance's knee was
+never reached. Nothing failed across 1.81M requests. A single instance never needed Redis —
+one key, 1.20 MiB — which ADR-0038 committed the document to saying.
+
+**Seventeen deviations are recorded below**, and four of them changed the work rather than
+merely annotating it: the Redis adapter needed a command deadline before fail-open could work
+at all (2), Bun's client stops reconnecting permanently (3), the load thresholds as specified
+measured nothing (7), and `compose run` silently recreates the API and voids a run (9).
+
+**Three manual-verification boxes are deliberately left unticked.** Approval is a human act
+(CLAUDE.md), and these were performed and reported by the agent rather than by the
+stakeholder: Phase 1's two — driving the seeded key past the limit by hand, and confirming
+fail-open with Redis stopped — and Phase 3's "read it as a sceptical reader". The evidence for
+the first two is in the session record and in the PRs; the third is a judgement only a reader
+can make. The plan is marked complete on the strength of the automated gates and the
+stakeholder's decision to ship, not because those boxes were ticked.
 
 ## Why three phases, and why this order
 
