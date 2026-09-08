@@ -66,7 +66,18 @@ const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_
 const modelGateway = createModelGateway({
   provider: createProviderRegistry({
     providers: {
-      fake: createFakeProvider(),
+      // Latency is off unless the environment asks for it, so this is `createFakeProvider()`
+      // in every configuration except a deliberate load run (M2).
+      fake: createFakeProvider(
+        config.FAKE_PROVIDER_LATENCY_MS === 0
+          ? {}
+          : {
+              latency: {
+                meanMs: config.FAKE_PROVIDER_LATENCY_MS,
+                spreadMs: config.FAKE_PROVIDER_LATENCY_SPREAD_MS,
+              },
+            },
+      ),
       ...(config.OPENROUTER_API_KEY === undefined
         ? {}
         : { openrouter: createOpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY }) }),
@@ -76,7 +87,12 @@ const modelGateway = createModelGateway({
   tracer: telemetry.tracer,
 })
 logger.info(
-  { routes: config.OPENROUTER_API_KEY === undefined ? ['fake'] : ['fake', 'openrouter'] },
+  {
+    routes: config.OPENROUTER_API_KEY === undefined ? ['fake'] : ['fake', 'openrouter'],
+    // Said out loud, because a stack answering in four seconds for a reason nobody
+    // remembers configuring is a debugging session waiting to happen.
+    fake_latency_ms: config.FAKE_PROVIDER_LATENCY_MS,
+  },
   'model provider registry composed',
 )
 

@@ -92,6 +92,9 @@ describe('config', () => {
       // Defaulted, unlike DATABASE_URL: a missing Redis fails open loudly per request
       // (ADR-0040) rather than silently talking to nothing, and it is not a secret.
       REDIS_URL: 'redis://localhost:6380',
+      // Off unless a load run asks for it — see the note in config.ts.
+      FAKE_PROVIDER_LATENCY_MS: 0,
+      FAKE_PROVIDER_LATENCY_SPREAD_MS: 0,
       BETTER_AUTH_SECRET: DEV_AUTH_SECRET,
       API_BASE_URL: 'http://localhost:3000',
       WEB_ORIGIN: 'http://localhost:5173',

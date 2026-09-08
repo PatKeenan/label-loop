@@ -232,6 +232,11 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           APP_VERSION: ${{ steps.version.outputs.value }}
           GIT_SHA: ${{ github.sha }}
+        # SMOKE ONLY, deliberately. `ramp.js` and `spike.js` sit in the same mounted
+        # directory and are operator-run (M2): minutes of load per pull request buys nothing
+        # and is flaky on a shared runner, where part of what gets measured is whatever else
+        # that runner was doing. The numbers that mean something live in
+        # `docs/BREAKING_POINT.md`, produced by hand against a known machine.
         run: docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
 
       - name: Logs, if any of that failed

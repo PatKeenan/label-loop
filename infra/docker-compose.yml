@@ -3,9 +3,9 @@
 # (ADR-0018). The developer inner loop lives in `docker-compose.dev.yml` and never touches
 # this one.
 #
-# It contains the whole system: the API, the console, Postgres, the one-shot that migrates
-# and seeds, the four telemetry containers, and — behind a profile, so it never starts with
-# the rest — the k6 smoke test.
+# It contains the whole system: the API, the console, Postgres, Redis, the one-shot that
+# migrates and seeds, the four telemetry containers, and — behind a profile, so they never
+# start with the rest — the k6 scripts.
 #
 # ZERO REQUIRED SECRETS (ADR-0009). Every value below has a working default, so the demo is
 # `docker compose -f infra/docker-compose.yml up -d --wait` on a fresh clone and nothing
@@ -160,6 +160,18 @@ services:
       # Over the compose network too, so the API uses Redis's own port rather than the
       # host's 6380 mapping (ADR-0038).
       REDIS_URL: redis://redis:6379
+      # M2's load knob, and OFF unless you set it. It makes the FAKE provider answer like a
+      # real judge — the measured 4000ms ± 1500 of `llm/fake-provider.ts` — so a k6 ramp
+      # measures this system under a realistic dependency instead of benchmarking a hash
+      # function, and does it for free. Recreate the api service after changing it:
+      #
+      #   FAKE_PROVIDER_LATENCY_MS=4000 FAKE_PROVIDER_LATENCY_SPREAD_MS=1500 \
+      #     docker compose -f infra/docker-compose.yml up -d --wait api
+      #
+      # Unlike OPENROUTER_API_KEY above, the defaulted `${VAR:-0}` form is correct here:
+      # config.ts coerces these to numbers with a default of 0, so an empty value is legal.
+      FAKE_PROVIDER_LATENCY_MS: ${FAKE_PROVIDER_LATENCY_MS:-0}
+      FAKE_PROVIDER_LATENCY_SPREAD_MS: ${FAKE_PROVIDER_LATENCY_SPREAD_MS:-0}
       # Forwarded from your shell, absent when unset — see the note on the migrate service
       # for why the bare form matters. Without it the registry holds `fake:` alone, so a
       # judge the seed pinned to a real model would answer `unavailable` on every call.
@@ -282,10 +294,22 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------------
-  # Load testing (SENIORITY_CHECKLIST 5). Behind a profile, so `up` never starts it and
-  # it exists only when asked for:
+  # Load testing (SENIORITY_CHECKLIST 5). Behind a profile, so `up` never starts these and
+  # they exist only when asked for. Three scripts, and the split is deliberate:
+  #
+  #   smoke.js  — CI's gate. One virtual user, one pass, seconds. Asserts the stack WORKS.
+  #   ramp.js   — M2. Staged climb to find the knee. Minutes. Operator-run.
+  #   spike.js  — M2. A step change, to see the cliff rather than the slope. Operator-run.
   #
   #   docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/smoke.js
+  #   docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/ramp.js
+  #   docker compose -f infra/docker-compose.yml --profile k6 run --rm k6 run /scripts/spike.js
+  #
+  # **Only smoke.js runs in CI**, and that is a decision rather than an omission: minutes of
+  # load per pull request buys nothing and is flaky on a shared runner, where the latency
+  # measured is partly whatever else that runner was doing. Point the two load scripts at a
+  # stack whose fake has latency (see FAKE_PROVIDER_LATENCY_MS on the api service) — against
+  # the default zero-latency fake they measure a hash function.
   #
   # In a container rather than a host install, so "can I run the load test" has the same
   # answer on every machine and in CI.

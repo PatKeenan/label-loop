@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { createFakeProvider, FAKE_MODEL, FAKE_SENTINELS } from './fake-provider.ts'
+import {
+  createFakeProvider,
+  FAKE_MODEL,
+  FAKE_SENTINELS,
+  MEASURED_JUDGE_LATENCY,
+} from './fake-provider.ts'
 import { describeModelProviderContract, expectProviderFailure } from './provider.contract-test.ts'
 
 /**
@@ -97,5 +102,77 @@ describe('the failure knobs', () => {
 
     controller.abort()
     await expectProviderFailure(pending, 'timeout')
+  })
+})
+
+describe('latency, so a load run measures something (M2)', () => {
+  const elapsed = async (work: () => Promise<unknown>): Promise<number> => {
+    const startedAt = Bun.nanoseconds()
+    await work()
+    return (Bun.nanoseconds() - startedAt) / 1_000_000
+  }
+
+  test('is ZERO by default — no existing test slows down', async () => {
+    // The load-bearing default. A fake that were slow unless told otherwise would add
+    // seconds to every test in this repo, and the knob would be something a test had to
+    // remember to turn off rather than something a load run turns on.
+    expect(await elapsed(() => createFakeProvider().evaluate(call))).toBeLessThan(50)
+  })
+
+  test('is applied when asked for', async () => {
+    const provider = createFakeProvider({ latency: { meanMs: 120 } })
+    const took = await elapsed(() => provider.evaluate(call))
+    expect(took).toBeGreaterThanOrEqual(100)
+    // Generously bounded above: this asserts "the delay happened", not the scheduler's
+    // precision on a loaded machine.
+    expect(took).toBeLessThan(1_500)
+  })
+
+  test('is DETERMINISTIC per call, which is what makes two load runs comparable', async () => {
+    // The property that separates a repeatable ramp from two samples of noise: the same
+    // artifact draws the same delay from any instance, because it comes from the same
+    // digest the verdict does. Measured through two fresh providers at a spread wide
+    // enough that an accidental collision is implausible rather than merely unlikely.
+    const timeFor = (artifact: string) =>
+      elapsed(() =>
+        createFakeProvider({ latency: { meanMs: 200, spreadMs: 180 } }).evaluate({
+          ...call,
+          artifact,
+        }),
+      )
+
+    const first = await timeFor('deterministic artifact')
+    const second = await timeFor('deterministic artifact')
+    expect(Math.abs(second - first)).toBeLessThan(60)
+  })
+
+  test('spreads across calls — a constant would make every judge identically slow', async () => {
+    // Scaled down so the assertion costs milliseconds rather than a minute; the shape is
+    // what is under test, and the shape does not depend on the magnitude. Twenty different
+    // artifacts must not all land on the same delay.
+    const provider = createFakeProvider({ latency: { meanMs: 30, spreadMs: 25 } })
+    const times: number[] = []
+    for (let i = 0; i < 20; i++) {
+      times.push(await elapsed(() => provider.evaluate({ ...call, artifact: `artifact ${i}` })))
+    }
+    expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(10)
+  })
+
+  test('a latency past the deadline is ended BY the abort, exactly as a slow provider is', async () => {
+    // Otherwise the fake would outlive the timeout that exists to bound it, and the
+    // gateway's whole per-attempt deadline would be advisory against it.
+    const provider = createFakeProvider({ latency: { meanMs: 10_000 } })
+    const controller = new AbortController()
+    const call$ = provider.evaluate({ ...call, signal: controller.signal })
+    setTimeout(() => controller.abort(), 20)
+    await expectProviderFailure(call$, 'timeout')
+  })
+
+  test('MEASURED_JUDGE_LATENCY is the figure retry.ts measured, not a round guess', () => {
+    // 4s sits inside the 1877–5304ms range the M1 pin verification recorded, and the spread
+    // covers it rather than pretending every judge is identically slow. If retry.ts's table
+    // is ever re-measured, this is the other number that has to move.
+    expect(MEASURED_JUDGE_LATENCY.meanMs).toBe(4_000)
+    expect(MEASURED_JUDGE_LATENCY.spreadMs).toBe(1_500)
   })
 })

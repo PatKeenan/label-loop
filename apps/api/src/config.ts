@@ -158,6 +158,22 @@ const configSchema = z
         'must be a redis:// or rediss:// connection string',
       )
       .default('redis://localhost:6380'),
+    /**
+     * How long the FAKE provider takes to answer, in milliseconds. Zero — off — unless a
+     * load run asks for it (M2).
+     *
+     * It exists so `infra/k6/ramp.js` can be pointed at a stack whose judges behave like
+     * real ones without a code edit or a provider bill: a ramp against a zero-latency fake
+     * measures the throughput of a hash function, which is not a fact about this system.
+     * `MEASURED_JUDGE_LATENCY` in `llm/fake-provider.ts` carries the figure and where it
+     * came from.
+     *
+     * It configures the fake and nothing else. A real provider's latency is the real
+     * provider's, and no setting here can change it.
+     */
+    FAKE_PROVIDER_LATENCY_MS: z.coerce.number().int().min(0).max(120_000).default(0),
+    /** Half-width of that latency: a call takes mean ± spread, drawn from the call's hash. */
+    FAKE_PROVIDER_LATENCY_SPREAD_MS: z.coerce.number().int().min(0).max(120_000).default(0),
     /** Bounded on purpose: an unbounded pool turns one slow query into a connection storm. */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
     /**
