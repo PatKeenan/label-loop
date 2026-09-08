@@ -175,19 +175,19 @@ system that no longer exists, and a ramp against a zero-latency fake measures a 
 
 Branch: `docs/m2-p3-breaking-point`. PR title: `docs: the breaking point, with real numbers`.
 
-- [ ] Run ramp and spike against the composed stack and record what actually happened.
-- [ ] `docs/BREAKING_POINT.md` — v0: the topology tested, the numbers, where it broke first,
+- [x] Run ramp and spike against the composed stack and record what actually happened.
+- [x] `docs/BREAKING_POINT.md` — v0: the topology tested, the numbers, where it broke first,
       how it degraded, and **what was not measured** (real provider latency and cost, multi
       instance, sustained soak). The last section is the one that makes the rest trustworthy.
-- [ ] State plainly whether a single instance ever needed Redis. If it did not, say so and
+- [x] State plainly whether a single instance ever needed Redis. If it did not, say so and
       note that the store was chosen on design grounds — D4's amendment already says this, and
       the document should agree with it rather than quietly imply evidence it does not have.
-- [ ] `docs/SENIORITY_CHECKLIST.md` — check rows 38, 41 and 43. Row 42 (quota) stays open,
+- [x] `docs/SENIORITY_CHECKLIST.md` — check rows 38, 41 and 43. Row 42 (quota) stays open,
       annotated M8.
 
 ### Automated verification
 
-- [ ] Nothing changes in code; `lint`, `typecheck`, `test` must be untouched, exactly as P3's
+- [x] Nothing changes in code; `lint`, `typecheck`, `test` must be untouched, exactly as P3's
       prose sweep argued.
 
 ### Manual verification
@@ -380,6 +380,39 @@ Recorded as they happened, because they are decision provenance too (CLAUDE.md).
       series. **Deliberately NOT done here** — stakeholder decision, 2026-09-05: it is M3 by
       the register's own words, and pulling it into M2 to make one checkbox tickable is the
       wrong reason to move a milestone boundary.
+
+### Phase 3
+
+14. **Checklist row 38 stays OPEN, against the plan's instruction to check it.** The plan says
+    to check rows 38, 41 and 43. Row 38 reads *"k6 scenarios: smoke, ramp, spike, soak"* — and
+    this plan's own "Explicitly NOT doing" defers soak to M3. Three of four is not four, and
+    `CLAUDE.md` says to check an item only when the artifact is live. Ticking it would be
+    exactly the rounding-up the checklist exists to prevent, so the row is annotated with what
+    shipped and what did not instead. Rows 41 and 43 are checked; row 42 stays open annotated
+    M8 as planned.
+
+15. **The headline is a negative result, and the document leads with it.** The plan expected
+    numbers showing where the system breaks. What the runs show is that **the limiter binds
+    long before capacity does**: 99.97% of offered load is refused, and one key cannot push
+    more than ~1 served request per second, so no amount of load reaches the knee. Nothing
+    broke — 0 failures across 1.81M requests, 0 errors, 0 breaker trips, 0 fail-open events —
+    and served latency was flat between 60 and 150 VUs, sitting inside the fake judge's own
+    distribution at both. `BREAKING_POINT.md` says so in its first paragraph rather than
+    burying it behind numbers that look more impressive than they are.
+
+16. **The one thing that actually broke was the observability stack, days before the load.**
+    The first attempt at the full 60-VU ramp on 2026-09-05 was OOM-killed (exit 137) against
+    Docker's 7.65 GiB, on a stack that had been up two days accumulating spans. The identical
+    script on a freshly restarted stack peaked at 1.60 GiB. Tempo was the largest consumer in
+    both runs — **542–569 MiB against the API's 322–351 MiB** — so a host sized from the
+    API's footprint is wrong by roughly 3×. Recorded in §4 as the answer to "where did it
+    break first", because it is the true one.
+
+17. **The Redis verdict, stated as ADR-0038 required.** One key, 1.20 MiB, in a container that
+    never exceeded 12 MiB — and zero keys once the TTL expired after the load stopped. A
+    single instance never needed it, and §7 says that plainly rather than implying evidence it
+    does not have. What Redis buys is the multi-instance case, which this run did not test and
+    the document does not pretend to have tested.
 
 ### Noted, not fixed
 
