@@ -4,7 +4,7 @@
 # this one.
 #
 # It contains the whole system: the API, the console, Postgres, Redis, the one-shot that
-# migrates and seeds, the four telemetry containers, and — behind a profile, so they never
+# migrates and seeds, the five telemetry containers, and — behind a profile, so they never
 # start with the rest — the k6 scripts.
 #
 # ZERO REQUIRED SECRETS (ADR-0009). Every value below has a working default, so the demo is
@@ -15,8 +15,8 @@
 # Calling it production here would mean either inventing a secret to satisfy the guard or
 # weakening the guard, and both are worse than saying what this is.
 #
-# The telemetry stack is FOUR DISCRETE CONTAINERS — collector, Tempo, Prometheus, Grafana —
-# and never the bundled `grafana/otel-lgtm` image. The topology is part of what M0 exists to
+# The telemetry stack is FIVE DISCRETE CONTAINERS — collector, Tempo, Prometheus, Loki,
+# Grafana — and never the bundled `grafana/otel-lgtm` image. The topology is part of what M0 exists to
 # demonstrate, an all-in-one image hides the wiring an operator has to understand, and it is
 # not what anyone runs in production.
 
@@ -241,8 +241,26 @@ services:
     # config incompatibility than choosing it now.
     image: otel/opentelemetry-collector-contrib:0.159.0
     command: ['--config=/etc/otel-collector/config.yaml']
+    # **Root, and only because Docker's log directory is `drwx--x--- root:root`.** The image
+    # runs as UID 10001 by default, which cannot LIST that directory — so the filelog
+    # receiver's glob matches nothing and the logs pipeline silently collects zero files,
+    # with no error anywhere. (`otelcol_fileconsumer_open_files` reporting 0 is how that
+    # shows up, which is a thing worth knowing before spending an afternoon on it.)
+    #
+    # The trade is stated rather than hidden: this container reads every container's logs on
+    # the host, which is exactly what a log collector does and exactly why the mount below
+    # is READ-ONLY. The alternatives are worse — relaxing the directory's permissions is not
+    # portable, and using the Docker socket instead grants strictly more than this does.
+    user: '0:0'
     volumes:
       - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+      # **Docker's own container logs, READ-ONLY** (M3, ADR-0007's amendment). This is what
+      # makes log collection out-of-process: the API writes NDJSON to stdout, Docker writes
+      # that to a file here, and the collector's filelog receiver tails it. The application
+      # ships nothing and cannot be slowed down by a log backend.
+      #
+      # Read-only because a process whose job is READING logs has no business writing them.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     ports:
       # Published so the API can export while it still runs on the HOST. From P8 the API is
       # a container and reaches the collector over the compose network, at which point
@@ -255,6 +273,29 @@ services:
       - '${OTEL_METRICS_PORT:-8889}:8889'
     depends_on:
       - tempo
+      - loki
+    restart: unless-stopped
+
+  loki:
+    # The third signal's store (ADR-0007's 2026-08-20 amendment). Never `:latest`, for the
+    # same reason nothing else here is.
+    #
+    # **No new stack row** (STACK_DECISIONS D6): ADR-0007 says Loki "needs no new stack row
+    # — it is inside D6's self-hosted Grafana stack". Same decision as Tempo and Prometheus.
+    image: grafana/loki:3.6.2
+    command: ['-config.file=/etc/loki/loki.yaml']
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    # No published ports, exactly like Tempo. Loki is written to by the collector and read
+    # by Grafana, both over the compose network; nothing on the host needs it.
+    #
+    # **No healthcheck, and not for lack of trying.** The image is distroless — no shell, no
+    # `wget`, no `curl` — so there is nothing to run a `CMD-SHELL` probe with, and a
+    # healthcheck that cannot execute reports `unhealthy` forever and takes `up --wait` down
+    # with it. Tempo and Prometheus have none either, for the ordinary reason: nothing in
+    # this stack is gated on them. Loki being slow to start costs the collector a few
+    # retried exports and nothing else — it is not on the request path, by design.
     restart: unless-stopped
 
   tempo:
@@ -325,6 +366,7 @@ services:
     depends_on:
       - tempo
       - prometheus
+      - loki
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------------
@@ -369,5 +411,6 @@ services:
 volumes:
   postgres-data:
   tempo-data:
+  loki-data:
   prometheus-data:
   grafana-data:

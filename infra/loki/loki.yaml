@@ -1,0 +1,92 @@
+# Loki, single-binary, local filesystem. The third signal (ADR-0007's amendment).
+#
+# **No new stack row** (STACK_DECISIONS D6). ADR-0007 says it outright: Loki "needs no new
+# stack row — it is inside D6's self-hosted Grafana stack". This is the same decision as
+# Tempo and Prometheus, not another one.
+#
+# Sized like Tempo's config is: a development stack where a line should be queryable seconds
+# after the request that produced it. Production would trade almost every number here.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  # Loki is chatty at `info` about every flush and compaction. `warn` keeps
+  # `docker compose logs` readable, which matters more than usual here — this is the
+  # container whose job is making other containers' logs readable.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  # Single binary, single replica. A replication factor above one on one node means Loki
+  # waits for acknowledgements that can never come.
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # TSDB and schema v13 — the only combination Loki 3 accepts for new deployments. An
+    # older schema here boots and then fails on the first query, which is a worse way to
+    # find out.
+    - from: 2024-04-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # **The setting the whole ingest design rests on.** Structured metadata is where
+  # `request_id` lands: queryable, but NOT a stream label. That distinction is the same one
+  # ADR-0042 makes about metric labels — a label is a stream that exists forever, and a
+  # `request_id` is unique per request, so making it one would mint a stream per HTTP call
+  # and fall over inside a day. Loki 3 puts OTel log-record attributes here by default.
+  allow_structured_metadata: true
+  # A development stack with a throwaway volume. Phase 5 tunes retention from what the soak
+  # actually shows, for this and for Tempo.
+  retention_period: 168h
+  # Generous for a local stack: a k6 ramp produces a burst of lines and a rejected batch
+  # would look like a pipeline bug rather than a rate limit.
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+  # Which RESOURCE attributes become stream labels. Loki 3 promotes a default set
+  # (`service.name` among them) and drops everything else into structured metadata, so
+  # `container_id` needs naming explicitly or the collector's careful promotion of it
+  # achieves nothing visible.
+  #
+  # It earns a label because it is the only thing that separates the containers that have
+  # no service name of their own — Loki, Tempo, Prometheus and the collector all arrive as
+  # `unknown_service`, and "which one said that" is the first question you ask of them. It
+  # is bounded by the size of the stack, which is the test every label here has to pass.
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: false
+      attributes_config:
+        - action: index_label
+          attributes:
+            - container_id
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+# No ruler and no alerting from Loki. M3 ships exactly one alert rule and it is
+# Grafana-managed, on a metric (ADR-0043) — a second alerting system would be a second
+# place to look.
+ruler:
+  enable_api: false
+
+analytics:
+  reporting_enabled: false

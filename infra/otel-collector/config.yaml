@@ -9,6 +9,96 @@
 # an operator has to understand. It is also not what anyone runs in production.
 
 receivers:
+  # **Logs are collected OUT OF PROCESS, and that asymmetry is the decision** (ADR-0007's
+  # 2026-08-20 amendment, CONVENTIONS' "zero pino transports, ever").
+  #
+  # The API ships nothing. It writes raw NDJSON to stdout and Docker writes that to a file;
+  # this receiver tails the file. In-process shipping would couple API availability to the
+  # log backend — a slow or unreachable Loki would block the request path, buffer without
+  # bound, or drop silently — and it loses whatever is buffered when the process crashes,
+  # which is exactly the moment the lines matter most.
+  #
+  # The asymmetry with traces and metrics is principled rather than inconsistent: spans have
+  # no stdout convention, so the SDK exports them over OTLP with a bounded, drop-on-full
+  # processor. Logs have a universal one, so the platform owns delivery. 12-factor XI.
+  # `file_log`, not the bare `filelog` alias — deprecated, and this file's existing rule
+  # about `otlp_grpc` applies identically: a config that warns on every boot trains people
+  # to skip the boot logs.
+  file_log:
+    include: ['/var/lib/docker/containers/*/*-json.log']
+    # A restart re-reads from where it stopped rather than from the top of every file.
+    start_at: end
+    include_file_path: true
+    include_file_name: false
+    # `poll_interval` rather than inotify: the log directory lives inside Docker Desktop's
+    # VM, and filesystem events do not cross that boundary reliably.
+    poll_interval: 500ms
+    operators:
+      # 1. Unwrap Docker's json-file envelope: {"log":"...","stream":"stdout","time":"..."}
+      - type: json_parser
+        id: docker
+        timestamp:
+          parse_from: attributes.time
+          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+
+      # 2. Which container this came from. The file PATH is the only place the id appears —
+      # the line itself has no idea. Truncated to 12 characters, the same short form
+      # `docker ps` prints, because a 64-character hex string as a stream label is a
+      # readability problem rather than a cardinality one.
+      - type: regex_parser
+        id: container-id
+        parse_from: attributes["log.file.path"]
+        regex: '^/var/lib/docker/containers/(?P<container_id>[a-f0-9]{12})[a-f0-9]*/'
+
+      # 3. The unwrapped line becomes the body, so the next parser sees pino's JSON.
+      - type: move
+        from: attributes.log
+        to: body
+
+      # 4. Parse the application's own line. `if` guards it: not every container in this
+      #    stack writes JSON — Loki, Tempo and Prometheus write logfmt and plain text — and
+      #    a parser that failed on those would fill the collector's own log with errors
+      #    about lines it was never meant to understand. Non-JSON bodies pass through whole.
+      - type: json_parser
+        id: pino
+        if: 'body matches "^\\{"'
+        parse_from: body
+        severity:
+          # pino writes the LEVEL AS A NUMBER, so this maps its numbers onto OTel's
+          # severities rather than parsing words. `severity_text` keeps pino's own `30`,
+          # which is what the OTel spec asks for — the source's own representation — while
+          # `severity_number` becomes 9, which is what anything filtering by level reads.
+          parse_from: attributes.level
+          mapping:
+            debug: 20
+            info: 30
+            warn: 40
+            error: 50
+            fatal: 60
+
+      # 5. **Promote two fields to RESOURCE attributes, because only those become Loki
+      #    stream labels.** Everything else the parser produced stays a log-record
+      #    attribute and lands in structured metadata — queryable, but not a stream.
+      #
+      #    That distinction is the whole cardinality design and it is easy to get wrong in
+      #    a way that looks like it works: a `resource` PROCESSOR cannot do this, because it
+      #    reads resource attributes and these are log-record attributes at this point. The
+      #    symptom is silent — every line ingests fine under `service_name="unknown_service"`
+      #    and you notice when a query by service returns nothing.
+      - type: move
+        id: service-name
+        # Only the API writes this field. Other containers keep `unknown_service`, which is
+        # honest: they are not this application and have no service name of their own.
+        if: 'attributes.service != nil'
+        from: attributes.service
+        to: resource["service.name"]
+      - type: move
+        id: container-label
+        # Bounded by the number of containers in the stack, which is what makes it safe as a
+        # label — unlike `request_id`, which is unique per request and stays metadata.
+        from: attributes.container_id
+        to: resource["container_id"]
+
   otlp:
     protocols:
       # Both wire protocols, though only HTTP is used today. The API's exporter is
@@ -35,6 +125,7 @@ processors:
     send_batch_size: 512
     send_batch_max_size: 1024
 
+
 exporters:
   # `otlp_grpc`, not the bare `otlp` alias — the collector deprecated that spelling and
   # warns about it on every boot, and a config that warns on boot trains people to skip
@@ -59,6 +150,20 @@ exporters:
   # Prometheus's `labelloop_judge_cost_usd_total`, and `http.server.request.duration`
   # becomes `http_server_request_duration_seconds_bucket`. Each convention stays correct on
   # its own side of this line, which is why the SDK spells its names the OTel way.
+  # Loki over OTLP, not the collector's old `loki` exporter — that one is deprecated and on
+  # its way out, and Loki 3 ingests OTLP natively. It also gives the mapping we want for
+  # free: RESOURCE attributes become stream labels, and log-record attributes become
+  # structured metadata.
+  #
+  # That split is the whole cardinality story, and it is the same argument ADR-0042 makes
+  # about metric labels. `request_id` is unique per HTTP request, so a stream label carrying
+  # it would mint a stream per call and take Loki down inside a day. As structured metadata
+  # it stays queryable — and queryable is all the Tempo link needs.
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
   prometheus/app:
     endpoint: 0.0.0.0:8889
     # LEFT OFF, and it is a cardinality decision rather than a default. Enabling it copies
@@ -97,5 +202,10 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [prometheus/app]
-  # No logs pipeline yet. ADR-0007's amendment puts the filelog receiver → Loki at M3;
-  # until then logs are NDJSON on stdout and `docker compose logs` is the reader.
+    # The third signal, and the only pipeline whose receiver is not `otlp` — because the
+    # application does not send its logs anywhere. It writes them to stdout and this
+    # collector goes and gets them.
+    logs:
+      receivers: [file_log]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/loki]

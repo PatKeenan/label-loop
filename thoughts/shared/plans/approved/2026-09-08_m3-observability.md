@@ -220,25 +220,25 @@ Branch: `feat/m3-p3-dashboards`. PR title: `feat(grafana): dashboards as code, a
 
 Branch: `feat/m3-p4-logs`. PR title: `feat(infra): logs to Loki, by out-of-process collection`.
 
-- [ ] `infra/docker-compose.yml` — a `loki` service, pinned (`grafana/loki:3.6.2`, confirmed to
+- [x] `infra/docker-compose.yml` — a `loki` service, pinned (`grafana/loki:3.6.2`, confirmed to
       exist), with a volume. **No new stack row**: ADR-0007 states Loki *"needs no new stack row
       — it is inside D6's self-hosted Grafana stack"*.
-- [ ] `infra/otel-collector/config.yaml` — a **filelog receiver** reading Docker's container
+- [x] `infra/otel-collector/config.yaml` — a **filelog receiver** reading Docker's container
       logs, and a logs pipeline exporting to Loki. **The app ships nothing** — pino writes NDJSON
       to stdout and the platform owns delivery (ADR-0007's amendment, CONVENTIONS' "zero pino
       transports, ever"). Verified as feasible on this host: a container can read
       `/var/lib/docker/containers/*/*-json.log`.
-- [ ] `infra/grafana/provisioning/datasources/loki.yaml` — with **`derivedFields` linking
+- [x] `infra/grafana/provisioning/datasources/loki.yaml` — with **`derivedFields` linking
       `request_id` to Tempo**. This is the payoff ADR-0010 was designed for: `request_id` IS the
       W3C trace id and is on every log line, so a log jumps to its trace in one click.
-- [ ] `docs/BUILD_SPINE.md` — **amend M3's "Not now: log aggregation products" line.** ADR-0007
+- [x] `docs/BUILD_SPINE.md` — **amend M3's "Not now: log aggregation products" line.** ADR-0007
       instructs this by name: it means Datadog/Splunk/ELK-class platforms, not Loki, and the
       amendment was explicitly deferred to *"when M3 is planned"*.
 
 ### Automated verification
 
-- [ ] `bun test` untouched — no application code changes in this phase.
-- [ ] Logs from the `api` container are queryable in Loki within seconds of a request.
+- [x] `bun test` untouched — no application code changes in this phase.
+- [x] Logs from the `api` container are queryable in Loki within seconds of a request.
 
 ### Manual verification
 
@@ -450,6 +450,47 @@ Recorded as they happen, because they are decision provenance too (CLAUDE.md).
   the question is real. Recorded so nobody reads a local `EXPLAIN` as the index being dead.
 - **No notification channel and no contact point were provisioned** (ADR-0043). Grafana's
   built-in default receives the alert and does nothing, which is the intended end state.
+
+### Phase 4
+
+- **The collector runs as root, and this is the phase's one real privilege change.** Docker's
+  log directory is `drwx--x--- root:root` and the collector image runs as UID 10001, which
+  cannot LIST it — so the filelog glob matched nothing and the logs pipeline collected zero
+  files *with no error anywhere*. `otelcol_fileconsumer_open_files` reporting 0 is the only
+  symptom. Mitigated by the read-only mount; the alternatives are worse (relaxing the
+  directory's permissions is not portable, and the Docker socket grants strictly more).
+- **`service.name` and `container_id` are promoted to RESOURCE attributes by stanza
+  operators, not by the `resource` processor.** The processor reads resource attributes and
+  these are log-record attributes at that point, so the first version was a silent no-op:
+  every line ingested happily under `service_name="unknown_service"`, and the failure only
+  showed up as a query returning nothing. Only resource attributes become Loki stream
+  labels, which is the whole cardinality design.
+- **`container_id` needed naming in Loki's `otlp_config` as well.** Loki 3 promotes a
+  default set of resource attributes to labels and drops the rest into structured metadata,
+  so the collector-side promotion alone achieved nothing visible. It earns a label because
+  it is the only thing separating the four containers that have no service name of their
+  own, and it is bounded by the size of the stack.
+- **`request_id` is deliberately NOT a stream label.** It is unique per request, so a label
+  would mint a Loki stream per HTTP call — the identical argument ADR-0042 makes about
+  metric labels. As structured metadata it stays queryable, which is all the Tempo link
+  needs. Verified: `/loki/api/v1/labels` returns exactly `container_id` and `service_name`.
+- **`file_log` and `otlp_http`, not the `filelog` and `otlphttp` aliases.** Both are
+  deprecated and warn on every boot, and the collector config's existing note about
+  `otlp_grpc` says why that matters: a config that warns on boot trains people to skip the
+  boot logs. Caught by reading the boot output rather than assuming it was clean.
+- **Loki gets NO healthcheck**, unlike Postgres and Redis. The image is distroless — no
+  shell, no `wget`, no `curl` — so a `CMD-SHELL` probe cannot execute, and one that cannot
+  execute reports `unhealthy` forever and takes `up --wait` down with it. Tempo and
+  Prometheus have none either. Nothing in the stack is gated on Loki by design.
+- **`severity_text` keeps pino's numeric `30` rather than being rewritten to `info`.** The
+  OTel spec asks for the source's own representation, and `severity_number` is mapped
+  correctly (30 → 9 → INFO), which is what anything filtering by level actually reads. The
+  cost is that Loki's `detected_level` displays the number.
+- **The round trip is verified end to end, not assumed.** API `request_id` →
+  the line in Loki → the `derivedFields` regex extracting exactly that id → `HTTP 200` from
+  Tempo with all three spans (`POST /v1/panels/:panel_id/evaluate`, `judge needs-human`,
+  `provider call fake:deterministic`). That chain is the entire reason ADR-0010 keeps
+  `request_id` and `trace_id` distinct, and the reason the log pipeline is out-of-process.
 
 ## Open questions
 
