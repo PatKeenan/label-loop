@@ -72,12 +72,30 @@
 - `audit_events` is append-only: the app role has INSERT and SELECT only; no UPDATE
   or DELETE grants exist. This is enforced by Postgres grants, not application code,
   and proven by a test asserting the app role's UPDATE/DELETE are rejected.
-- **Two database roles from the first migration.** A *migrator* role owns DDL and runs
-  migrations; the *app* role the API connects with holds DML only and can never alter
-  schema. `ALTER DEFAULT PRIVILEGES` grants the app role on future tables automatically
-  (a forgotten grant would break production silently); `audit_events` then carries an
-  explicit `REVOKE UPDATE, DELETE` as the one deliberate exception. pg-boss installs its
-  own schema as the migrator, never at app runtime.
+- **Three database roles.** A *migrator* role owns DDL and runs migrations; the *app* role
+  the API connects with holds DML only and can never alter schema; a *readonly* role holds
+  SELECT and nothing else. The first two exist from the first migration; the third arrives
+  at migration 10 (ADR-0045). `ALTER DEFAULT PRIVILEGES` grants on future tables
+  automatically (a forgotten grant would break production silently); `audit_events` then
+  carries an explicit `REVOKE UPDATE, DELETE` as the one deliberate exception for the app
+  role. pg-boss installs its own schema as the migrator, never at app runtime.
+- **The readonly role exists because a dashboard must not be able to write** (ADR-0045).
+  Grafana needs a database credential — per-key usage is read from Postgres, not from a
+  metric label (ADR-0042) — and neither other role is safe to hand it: one owns DDL, the
+  other can `INSERT` and `DELETE`, which is precisely the capability the migrator/app split
+  exists to withhold. `audit_events` stays append-only for it by construction, a SELECT-only
+  grant having nothing to violate with. The shape of the rule is unchanged: privilege is
+  enforced by Postgres grants and proven by tests asserting SQLSTATE `42501`, never by
+  trusting the client.
+- **A role added after migration 1 needs BOTH halves of the grant.** `ALTER DEFAULT
+  PRIVILEGES` only ever covers objects created after it runs, so a role introduced at
+  migration 10 is on the wrong side of every table created in 1 through 9 and needs an
+  explicit `GRANT SELECT ON ALL TABLES` as well. Each half is tested separately, because
+  they fail independently and one test would hide it.
+- **The readonly credential is given to Grafana and withheld from the API.** `config.ts`
+  cannot express it, the same treatment the migrator credential gets: a role the API cannot
+  name is a role a bug cannot reach for. Only `db:bootstrap` (which sets its password) and
+  the database tests read `DATABASE_READONLY_URL` outside compose.
 - Raw provider payloads stored alongside normalized fields (rerunnable, auditable).
 - Every `traces` row stores the `request_id` of the execution that produced it, so a
   stored evaluation links back to its spans (ADR-0010).

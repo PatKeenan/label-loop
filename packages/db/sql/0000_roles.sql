@@ -5,8 +5,9 @@
 -- surface stays as small as it can be and is reviewable in one screen.
 --
 -- No passwords appear here. `db:bootstrap` sets each role's password from the password
--- already in DATABASE_URL / DATABASE_MIGRATION_URL, so the connection strings stay the
--- single source of truth and this file never has to hold a credential.
+-- already in DATABASE_URL / DATABASE_MIGRATION_URL / DATABASE_READONLY_URL, so the
+-- connection strings stay the single source of truth and this file never has to hold a
+-- credential.
 --
 -- Idempotent by construction: re-running it is a no-op, which matters because it runs on
 -- every `db:setup` and on every fresh CI database.
@@ -19,13 +20,19 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'labelloop_app') THEN
     CREATE ROLE labelloop_app LOGIN;
   END IF;
+  -- The dashboard credential (ADR-0045). Created here with the others because CREATE ROLE
+  -- is the one thing a superuser must do; every grant it holds is issued by the migrator
+  -- in `0010_readonly_role.sql`, where it can be reviewed as a privilege change.
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'labelloop_readonly') THEN
+    CREATE ROLE labelloop_readonly LOGIN;
+  END IF;
 END
 $$;
 
 DO $$
 BEGIN
   EXECUTE format(
-    'GRANT CONNECT ON DATABASE %I TO labelloop_migrator, labelloop_app',
+    'GRANT CONNECT ON DATABASE %I TO labelloop_migrator, labelloop_app, labelloop_readonly',
     current_database()
   );
   -- CREATE on the DATABASE, which is a different privilege from owning a schema: it is
@@ -45,4 +52,8 @@ ALTER SCHEMA public OWNER TO labelloop_migrator;
 -- will: an app role without DDL means a SQL-injection bug cannot drop `traces`, and the
 -- migrator/app split stops being a naming convention and starts being a privilege boundary.
 GRANT USAGE ON SCHEMA public TO labelloop_app;
+-- Entering the schema is not reading anything in it. `0010_readonly_role.sql` issues the
+-- SELECT grants, and this role gets no CREATE here for the same reason the app role does
+-- not: a credential handed to a dashboard must not be able to change the database.
+GRANT USAGE ON SCHEMA public TO labelloop_readonly;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
