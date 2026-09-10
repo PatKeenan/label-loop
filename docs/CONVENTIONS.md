@@ -182,8 +182,19 @@
 - Durations are **seconds**, with explicit bucket boundaries taken from measurements
   (`docs/BREAKING_POINT.md`), never the SDK's millisecond-shaped defaults.
 - **The label allow-list is closed.** Route TEMPLATE, HTTP method, status CLASS, model,
-  judge slug, gateway outcome, `cost_priced`, and the limiter's decision. A label not on
-  that list needs a reason written down beside it.
+  judge slug, gateway outcome, `failure_kind`, `cost_priced`, and the limiter's decision. A
+  label not on that list needs a reason written down beside it. Each is bounded by
+  something this codebase controls rather than by traffic.
+- **`failure_kind` is on the judge metrics because `outcome` cannot carry an alert.**
+  `error` holds every timeout, 503, open circuit and unpaid bill at once, and the taxonomy
+  code does not separate them either — `misconfigured` maps to `INTERNAL`, and so does an
+  adapter bug. Five bounded values, present only on failures (ADR-0043).
+- **`cost_priced` is on the TOKEN counters, not only on cost.** An unpriced call records a
+  cost of zero, so a cost series split on the label has a `false` line that is flat zero
+  forever: it says a blind spot exists and cannot size it. Tokens are roughly proportional
+  to spend, so "unpriced tokens in this window" is the number that says how much money a
+  cost panel is not showing. The money line itself FILTERS to `cost_priced="true"` rather
+  than summing across the label.
 - **No key id, org id, panel id, trace id, `request_id`, annotator id, raw URL path or
   artifact-derived value may ever be a metric label** (ADR-0042). Per-key usage is a SQL
   `GROUP BY` against Postgres, which is also the source M8's billing must read from: a SQL

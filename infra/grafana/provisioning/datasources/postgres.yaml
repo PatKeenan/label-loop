@@ -1,0 +1,40 @@
+# The application's own database, read-only (ADR-0042, ADR-0045).
+#
+# **Why a dashboard talks to Postgres at all.** Per-key usage is the one panel that cannot
+# come from Prometheus: expressing "usage by API key" as a metric label means one time
+# series per key, forever, which is fine against today's single seeded key and a liability
+# the moment customers mint their own. A SQL `GROUP BY` costs a query; a Prometheus label
+# costs a series for as long as the retention window. So the question is asked of the
+# system that already has the answer — and which is the same source M8's billing has to
+# read from, because a dashboard is not an invoice.
+#
+# **It connects as `labelloop_readonly`, which can only SELECT.** Neither other role was
+# safe to hand a dashboard: the migrator owns DDL and the app role can INSERT and DELETE.
+# `packages/db/src/roles.test.ts` proves the grant is what it says it is.
+
+apiVersion: 1
+
+datasources:
+  - name: Postgres
+    type: postgres
+    uid: postgres
+    # Fields rather than a DSN — this datasource has nowhere to put a connection string,
+    # which is why the compose file hands Grafana the pieces.
+    url: $LABELLOOP_DB_HOST
+    database: $LABELLOOP_DB_NAME
+    user: $LABELLOOP_READONLY_USER
+    isDefault: false
+    secureJsonData:
+      password: $LABELLOOP_READONLY_PASSWORD
+    jsonData:
+      # Plaintext inside the compose network only, exactly as the collector reaches Tempo.
+      # A hosted deployment would not do this — and is not what M3 ships (ADR-0044).
+      sslmode: disable
+      postgresVersion: 1800
+      # Small on purpose. This is a dashboard's connection pool against the SAME Postgres
+      # the request path uses, and the number that matters to the database is the sum
+      # across every client. A panel refreshing every fifteen seconds does not need more.
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      timescaledb: false

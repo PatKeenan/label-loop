@@ -1,0 +1,23 @@
+# Dashboards as code (ADR-0007: "dashboards-as-code live in infra/ and deploy with
+# compose"). This directory did not exist before M3.
+#
+# The point is the same one the datasources make: a dashboard configured by clicking exists
+# only in one person's Grafana volume, and `docker compose down -v` deletes it. Everything
+# under `../../dashboards/` is mounted read-only and re-provisioned on every start, so a
+# fresh volume opens with all three already there and nothing has to be rebuilt by hand.
+
+apiVersion: 1
+
+providers:
+  - name: labelloop
+    orgId: 1
+    folder: LabelLoop
+    type: file
+    # Read-only mount, so a well-meaning edit in the UI cannot silently become the version
+    # nobody can reproduce. Change the JSON, restart, and the change is in git.
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

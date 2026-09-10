@@ -192,6 +192,50 @@ describe('the judge funnel', () => {
     expect(cost?.series[0]?.attributes).toMatchObject({ 'gen_ai.response.model': FAKE_MODEL })
   })
 
+  test('a failure is labelled with its KIND, which is what the alert rule needs', async () => {
+    // `outcome` alone is not enough: every timeout, 503, open circuit and unpaid bill is
+    // `error`, and the taxonomy code does not separate them either — `misconfigured` and
+    // an adapter bug both map to `INTERNAL`. ADR-0043's whole claim is that the one alert
+    // rule fires on a condition that never self-heals and never on a flaky afternoon, and
+    // this label is what makes those two different series.
+    await gateway().judge(
+      { ...CALL, artifact: `${FAKE_SENTINELS.misconfigured} no key` },
+      { slug: 'is-fine' },
+    )
+
+    const calls = await recorded.named(METRIC_JUDGE_CALLS)
+    expect(calls?.series[0]?.attributes).toMatchObject({
+      'labelloop.outcome': 'error',
+      'labelloop.failure_kind': 'misconfigured',
+    })
+  })
+
+  test('an unreachable provider is a DIFFERENT series from a misconfigured one', async () => {
+    const gw = gateway()
+    await gw.judge({ ...CALL, artifact: `${FAKE_SENTINELS.misconfigured} x` }, { slug: 's' })
+    await gw.judge({ ...CALL, artifact: `${FAKE_SENTINELS.unavailable} x` }, { slug: 's' })
+
+    const kinds = (await recorded.named(METRIC_JUDGE_CALLS))?.series
+      .map((series) => series.attributes['labelloop.failure_kind'])
+      .filter((kind) => kind !== undefined)
+      .sort()
+    // Two series, not one. If these collapsed, the alert would fire every time a provider
+    // had a bad afternoon — which is the false-positive rate ADR-0043 claims is zero.
+    expect(kinds).toEqual(['misconfigured', 'unavailable'])
+  })
+
+  test('the token counters carry cost_priced, so the blind spot has a SIZE', async () => {
+    await gateway().judge({ ...CALL }, { slug: 'is-fine' })
+
+    // An unpriced call records a cost of ZERO, so a cost series split on this label has a
+    // `false` line that is flat zero forever — it says a blind spot exists and cannot say
+    // how big. Tokens are roughly proportional to spend, so they can.
+    const input = await recorded.named(METRIC_JUDGE_INPUT_TOKENS)
+    expect(input?.series[0]?.attributes['labelloop.cost_priced']).toBeBoolean()
+    const output = await recorded.named(METRIC_JUDGE_OUTPUT_TOKENS)
+    expect(output?.series[0]?.attributes['labelloop.cost_priced']).toBeBoolean()
+  })
+
   test('a failed call is counted with its outcome rather than not counted', async () => {
     // The trap this guards: five ways out of `judge()`, and a metric recorded only on the
     // happy path makes a broken provider look like an idle one.

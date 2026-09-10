@@ -1,0 +1,183 @@
+{
+  "uid": "labelloop-judge",
+  "title": "LabelLoop — Judges",
+  "description": "The evaluation path: calls by model and outcome, latency by judge, retry behaviour, and breaker state. Every series is app-emitted from the gateway's one funnel (ADR-0041).",
+  "tags": ["labelloop", "m3"],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Judge calls by model and outcome",
+      "description": "`evaluated` is a verdict. `failed` means the call WORKED and the answer was unusable — a rubric problem, not an incident. `error` means it did not complete.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (gen_ai_request_model, labelloop_outcome) (rate(labelloop_judge_calls_total[5m]))",
+          "legendFormat": "{{gen_ai_request_model}} · {{labelloop_outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Failures by kind",
+      "description": "The label that makes the alert rule possible. `misconfigured` never self-heals and is our fault; `timeout` and `unavailable` are a provider having a bad afternoon. Collapsing them is how an alert earns false positives (ADR-0043).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*misconfigured.*" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (labelloop_failure_kind) (rate(labelloop_judge_calls_total{labelloop_failure_kind!=\"\"}[5m]))",
+          "legendFormat": "{{labelloop_failure_kind}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Judge latency p95 by judge",
+      "description": "By SLUG, which is the question worth asking — several judges share one model, and \"which judge is slow\" is not \"which model is slow\". Includes retries and backoff, because that is what a caller waited.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "min": 0, "custom": { "fillOpacity": 0, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le, labelloop_judge_slug) (rate(gen_ai_client_operation_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{labelloop_judge_slug}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Provider calls per judge call",
+      "description": "Attempts divided by calls. One means every judge call reached the provider once; above one means retries are happening, which a success-only view would hide entirely.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "fillOpacity": 0, "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1.5 }]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (gen_ai_request_model) (rate(labelloop_judge_attempts_total[5m])) / sum by (gen_ai_request_model) (rate(labelloop_judge_calls_total[5m]))",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Circuit breaker state by model",
+      "description": "0 closed · 1 half-open · 2 open. An OBSERVABLE gauge, so a breaker that opened an hour ago still reports open on every scrape rather than having said so once. Half-open is the interesting one — it is recovery being tested.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 2,
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "lineInterpolation": "stepAfter" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max by (gen_ai_request_model) (labelloop_judge_breaker_state)",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tokens per second by kind",
+      "description": "Input, output and — where the provider reports it — reasoning. Reasoning is kept separate because it is the part of the bill nobody can read back: one model's effort dial moved it 0 → 269 tokens and its cost 1.8x with nothing else changing.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(labelloop_judge_tokens_input_total[5m]))",
+          "legendFormat": "input"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(labelloop_judge_tokens_output_total[5m]))",
+          "legendFormat": "output"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(labelloop_judge_tokens_reasoning_total[5m]))",
+          "legendFormat": "reasoning"
+        }
+      ]
+    }
+  ]
+}

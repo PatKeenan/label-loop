@@ -1,0 +1,292 @@
+{
+  "uid": "labelloop-cost",
+  "title": "LabelLoop \u2014 Cost and usage",
+  "description": "What judging costs, and who is using it. Spend comes from Prometheus; per-key usage comes from Postgres, because a key id must never be a metric label (ADR-0042).",
+  "tags": ["labelloop", "m3"],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Spend per minute (priced calls only)",
+      "description": "FILTERED to cost_priced=\"true\", not summed across the label. A call whose model has no price on file records a cost of zero \u2014 so summing everything folds unknown spend in as free and reports less than was spent, silently and always in the same direction. This line says what it measures; the panel to the right says what it is missing.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "min": 0,
+          "decimals": 4,
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["mean", "max"]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (gen_ai_response_model) (rate(labelloop_judge_cost_usd_total{labelloop_cost_priced=\"true\"}[5m])) * 60",
+          "legendFormat": "{{gen_ai_response_model}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Unpriced tokens in window",
+      "description": "How much money the panel on the left is NOT showing. Sized in tokens rather than dollars on purpose: an unpriced call records a cost of zero, so a cost series split on cost_priced has a `false` line that is flat zero forever \u2014 it proves a blind spot exists and cannot measure it. Tokens are roughly proportional to spend, so they can. Zero is the healthy case.",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(labelloop_judge_tokens_input_total{labelloop_cost_priced=\"false\"}[$__range])) + sum(increase(labelloop_judge_tokens_output_total{labelloop_cost_priced=\"false\"}[$__range]))) or vector(0)",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cost per verdict",
+      "description": "The number the whole product argument rests on \u2014 \"your judging costs 10x less and still agrees with Sarah\" is a claim about cost per verdict (ADR-0019). Priced, evaluated calls only, so it is a real ratio rather than an average diluted by free ones.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "min": 0,
+          "decimals": 6,
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(labelloop_judge_cost_usd_total{labelloop_cost_priced=\"true\"}[10m])) / sum by (gen_ai_request_model) (rate(labelloop_judge_calls_total{labelloop_outcome=\"evaluated\"}[10m]))",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Tokens per second, priced vs unpriced",
+      "description": "The same split as the stat above, over time, so a model quietly falling off the price list shows up as a shape rather than as a number nobody was looking at.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unpriced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(labelloop_judge_tokens_input_total{labelloop_cost_priced=\"true\"}[5m])) + sum(rate(labelloop_judge_tokens_output_total{labelloop_cost_priced=\"true\"}[5m]))",
+          "legendFormat": "priced"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(rate(labelloop_judge_tokens_input_total{labelloop_cost_priced=\"false\"}[5m])) + sum(rate(labelloop_judge_tokens_output_total{labelloop_cost_priced=\"false\"}[5m]))) or vector(0)",
+          "legendFormat": "unpriced"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Usage by API key (from Postgres)",
+      "description": "The one panel that cannot come from Prometheus. Expressing usage-by-key as a metric label means one time series per key forever; a SQL GROUP BY costs a query (ADR-0042). It reads as labelloop_readonly, which can only SELECT (ADR-0045), and uses the (api_key_id, created_at) index migration 0010 added \u2014 traces had no index on that column at all.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "evaluations"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "evaluations",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  coalesce(k.name, t.api_key_id, '(no key)') AS \"key\",\n  coalesce(k.last4, '\u2014') AS \"last 4\",\n  count(*) AS \"evaluations\",\n  max(t.created_at) AS \"last seen\"\nFROM traces t\nLEFT JOIN api_keys k ON k.id = t.api_key_id\nWHERE t.created_at BETWEEN $__timeFrom() AND $__timeTo()\nGROUP BY 1, 2\nORDER BY 3 DESC\nLIMIT 50"
+        }
+      ]
+    }
+  ]
+}
