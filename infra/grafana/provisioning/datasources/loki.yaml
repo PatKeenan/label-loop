@@ -1,0 +1,37 @@
+# Loki, and the one-click jump from a log line to its trace.
+#
+# **This is the payoff ADR-0010 was designed for.** That ADR keeps two identifiers strictly
+# apart: `request_id` is the W3C trace id of one HTTP execution and is on EVERY line the API
+# writes, while `trace_id` is a `tr_` ULID naming a stored evaluation row. Because the first
+# of those IS the trace id rather than merely resembling one, a log line already contains
+# everything needed to find its spans — no correlation table, no join, no second lookup.
+#
+# `derivedFields` below is what turns that property into a link. It is also why the log
+# pipeline is out-of-process rather than in-process: the round trip has to work for lines
+# written during a crash, and an in-process shipper loses exactly those.
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    jsonData:
+      # `request_id` arrives as STRUCTURED METADATA rather than as a stream label — the
+      # collector's OTLP export puts log-record attributes there deliberately, because a
+      # label unique per request would mint a Loki stream per HTTP call. Structured metadata
+      # is queryable without being a stream, which is exactly what a link needs.
+      derivedFields:
+        - name: TraceID
+          # Matches the field wherever it appears: as structured metadata, and as raw JSON
+          # in the body for any line that reached Loki before parsing.
+          matcherType: regex
+          matcherRegex: '"request_id":"([a-f0-9]{32})"'
+          # Tempo takes the 32-hex trace id verbatim. There is nothing to transform, which
+          # is the whole point of the two identifiers never having been conflated.
+          url: '$${__value.raw}'
+          datasourceUid: tempo
+          urlDisplayLabel: 'View trace'

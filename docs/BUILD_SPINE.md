@@ -80,9 +80,19 @@ k6: smoke + ramp + spike scripts committed. `docs/BREAKING_POINT.md` v0 with rea
 ## M3 — Observability (Category 7)
 Distributed tracing with LLM spans (tokens, cost, latency, provider), metrics
 dashboards (p50/p95/p99, error rate, cost/min, per-key usage), error tracking, one
-alert rule. Tooling per STACK_DECISIONS.md D6.
+alert rule, and logs to Loki by out-of-process collection. Tooling per
+STACK_DECISIONS.md D6.
 **Demo moment:** live dashboards during a k6 run.
-**Not now:** log aggregation products, SLO tooling.
+**Not now:** log aggregation PRODUCTS — Datadog, Splunk, ELK-class platforms — and SLO
+tooling.
+
+> **Amended 2026-09-10, as ADR-0007 instructed.** The original line read "not now: log
+> aggregation products", which was ambiguous enough to look like it excluded logs from M3
+> altogether. It never meant that: ADR-0007's 2026-08-20 amendment puts the OTel Collector's
+> filelog receiver exporting to Loki *at* M3, and says Loki "needs no new stack row — it is
+> inside D6's self-hosted Grafana stack". What is deferred is the class of hosted platform
+> that would be a stack decision of its own. The amendment was explicitly left until "when
+> M3 is planned", which is now.
 
 ## M4 — Console + auth + the interviewer flow (Categories 6, 1)
 OIDC login; roles admin/engineer/annotator enforced server-side. Minimal engineer
