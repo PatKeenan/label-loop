@@ -1,0 +1,80 @@
+# **M3 ships exactly one alert rule** (ADR-0043), and the restraint is the decision.
+#
+# `misconfigured` was nominated in the decisions log on 2026-08-29, when the failure kind
+# was introduced, as "the strongest candidate for M3's single alert rule, being 100%
+# actionable with no false positives". Four properties earn it that:
+#
+#   1. It NEVER self-heals. A rejected key is still rejected on the next call, which is why
+#      the gateway does not retry it (ADR-0024) — retrying is the same answer twice, paid
+#      for three times.
+#   2. It takes EVERY judge on every panel down at once, because it is about the credential
+#      rather than about any one model.
+#   3. It is OUR fault, and there is an action: fix the key. An alert nobody can act on is
+#      an alert people learn to close.
+#   4. It has its own `failure_kind`, so this rule cannot fire because a provider had a bad
+#      afternoon. That distinction did not exist in the metrics until M3 phase 3 added the
+#      label — `outcome="error"` alone holds timeouts, 503s and open circuits too, and the
+#      taxonomy code does not separate them either since `misconfigured` maps to `INTERNAL`.
+#
+# **No notification channel, deliberately.** A destination — PagerDuty, Slack, email, a
+# webhook — needs a credential, and that would break the zero-secret boot ADR-0009 promises.
+# Nothing is deployed for it to page about anyway (ADR-0044): the stack is compose-only, and
+# a real destination becomes a live question the day something is deployed, which is M8.
+# What ships here is a rule that visibly fires, demonstrated by driving the fake into the
+# condition with the `__misconfigured__` artifact sentinel.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: labelloop
+    folder: LabelLoop
+    # Matches Prometheus's own evaluation interval. Evaluating faster than the data changes
+    # buys nothing but load.
+    interval: 1m
+    rules:
+      - uid: labelloop-misconfigured
+        title: Provider rejected the request in a way no retry can fix
+        condition: FIRING
+        # `for: 0s`. Every other kind gets a grace period because it might be a blip; this
+        # one cannot be. A single occurrence is already the permanent state, so waiting five
+        # minutes to say so would only delay the fix.
+        for: 0s
+        annotations:
+          summary: >-
+            Judge calls are failing with failure_kind=misconfigured. This never recovers on
+            its own and takes every judge on every panel down with it.
+          description: >-
+            The provider is refusing our requests for a reason no retry fixes — a rejected
+            or missing API key, most likely (ADR-0024). Check OPENROUTER_API_KEY on the api
+            service. The judge dashboard's "Failures by kind" panel shows the rate, and the
+            matching spans carry labelloop.failure_kind=misconfigured for the drill-down.
+          runbook_url: https://github.com/PatKeenan/label-loop/blob/main/docs/adr/0024-misconfigured-is-a-fourth-failure-kind.md
+        labels:
+          severity: critical
+          milestone: m3
+        # No data is NOT an alert here. An idle stack makes no judge calls, and a rule that
+        # fired every quiet night is a rule that gets muted — which would cost us the one
+        # condition it exists to catch.
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        data:
+          - refId: RATE
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: RATE
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum(rate(labelloop_judge_calls_total{labelloop_failure_kind="misconfigured"}[5m]))
+          - refId: FIRING
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: FIRING
+              type: threshold
+              expression: RATE
+              conditions:
+                - evaluator: { type: gt, params: [0] }

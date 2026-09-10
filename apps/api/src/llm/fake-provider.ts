@@ -35,6 +35,17 @@ export const FAKE_SENTINELS = {
   invalidOutput: '__invalid__',
   /** The call never returns, so the gateway's timeout is what ends it. */
   slow: '__slow__',
+  /**
+   * The provider refuses in a way no retry can fix (ADR-0024) — a rejected key, in the
+   * real world. NOT retried, does not count against the breaker, and logged at `error`.
+   *
+   * Added at M3 because it is the condition the one alert rule fires on (ADR-0043), and a
+   * rule nobody can trigger is a rule nobody has tested. It is the same argument the rest
+   * of this list is built on: a failure you can drive BY HAND with `curl` is one you can
+   * show working on a running system, and "watch the alert fire" is precisely that kind of
+   * demonstration.
+   */
+  misconfigured: '__misconfigured__',
 } as const
 
 /**
@@ -205,6 +216,14 @@ export const createFakeProvider = ({
 
       if (call.artifact.startsWith(FAKE_SENTINELS.unavailable)) {
         throw new ProviderError('unavailable', 'fake provider sentinel: unavailable')
+      }
+      if (call.artifact.startsWith(FAKE_SENTINELS.misconfigured)) {
+        // `raw` carries a payload exactly as the real adapter's does, so the path that
+        // deliberately keeps a provider's body OUT of the logs is the path this exercises
+        // too (`llm/index.ts` sets no `err` on this branch).
+        throw new ProviderError('misconfigured', 'fake provider sentinel: misconfigured', {
+          raw: { sentinel: FAKE_SENTINELS.misconfigured },
+        })
       }
       if (call.artifact.startsWith(FAKE_SENTINELS.invalidOutput)) {
         throw new ProviderError('invalid_output', 'fake provider sentinel: unusable answer', {

@@ -302,12 +302,21 @@ services:
       # handing a dashboard the ability to `INSERT` or `DELETE` is precisely the capability
       # the migrator/app split exists to withhold.
       #
-      # Consumed by the Postgres datasource that phase 3 provisions. It is set here first,
-      # in the phase that creates the role, so the credential exists before the thing that
-      # uses it rather than arriving in the same diff as a dashboard.
-      DATABASE_READONLY_URL: postgres://labelloop_readonly:localdev@postgres:5432/labelloop
+      # **Fields rather than a connection string**, unlike every other service here. That is
+      # not a style choice: Grafana's Postgres datasource is provisioned with host, database,
+      # user and password as separate keys and has nowhere to put a DSN. Phase 2 set a
+      # `DATABASE_READONLY_URL` here on the assumption the datasource would take one; it
+      # cannot, so these replaced it. The role and its grants are unaffected.
+      LABELLOOP_READONLY_USER: labelloop_readonly
+      LABELLOOP_READONLY_PASSWORD: localdev
+      LABELLOOP_DB_HOST: postgres:5432
+      LABELLOOP_DB_NAME: labelloop
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Mounted READ-ONLY, and the provider is configured `allowUiUpdates: false`, so the
+      # dashboards in git are the dashboards Grafana serves. An edit made in the UI cannot
+      # become the version nobody can reproduce.
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       # 3001, not Grafana's default 3000: that is the API's port, and a developer running

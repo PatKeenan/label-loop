@@ -278,10 +278,24 @@ export const createModelGateway = ({
        * outcome, end it, answer. One funnel rather than five, because there are five ways
        * out and the one that gets forgotten is always the one you needed.
        */
-      const finish = (outcome: JudgeCallOutcome): JudgeCallOutcome => {
+      const finish = (
+        outcome: JudgeCallOutcome,
+        /**
+         * Why it failed, for the outcomes that have a why. Passed in rather than derived
+         * from `outcome` because the taxonomy code cannot answer it: `misconfigured` and an
+         * adapter bug both map to `INTERNAL`, and telling those two apart is the entire
+         * point of M3's one alert rule (ADR-0043). Absent on the success path.
+         */
+        failureKind?: ProviderFailureKind | 'circuit_open',
+      ): JudgeCallOutcome => {
         span.setAttributes({
           [ATTR_OUTCOME]: outcome.status,
           [ATTR_ATTEMPTS]: outcome.attempts,
+          // On the JUDGE span, not only the attempt span beneath it. Previously only the
+          // circuit-open path set this here, so a Tempo search for misconfigured judges
+          // found nothing at the level that has the judge and the version on it — and the
+          // alert's "show me one" drill-down is exactly that search.
+          ...(failureKind === undefined ? {} : { [ATTR_FAILURE_KIND]: failureKind }),
         })
 
         // **The metrics leave through the same funnel, for the same reason.** Five ways
@@ -297,6 +311,13 @@ export const createModelGateway = ({
           [ATTR_GEN_AI_REQUEST_MODEL]: call.model,
           [ATTR_OUTCOME]: outcome.status,
           ...(slug === undefined ? {} : { [ATTR_JUDGE_SLUG]: slug }),
+          // **The label M3's alert rule is built on.** `outcome` alone puts every timeout,
+          // every 503, every open circuit and every unpaid bill in one `error` bucket, and
+          // the taxonomy code does not separate them either — `misconfigured` maps to
+          // `INTERNAL`, so does an adapter bug. Five bounded values, present only on the
+          // outcomes that failed, which is what lets a rule fire on the one condition that
+          // never self-heals without also firing on a provider having a bad afternoon.
+          ...(failureKind === undefined ? {} : { [ATTR_FAILURE_KIND]: failureKind }),
         }
         instruments.judgeCalls.add(1, labels)
         // Seconds, matching the HTTP histogram and what the convention this instrument is
@@ -331,20 +352,23 @@ export const createModelGateway = ({
             // aliases or routes bills for what it served, and a cost series labelled with
             // what we asked for would attribute spend to a model that never ran.
             [ATTR_GEN_AI_RESPONSE_MODEL]: outcome.servedBy,
+            // **On the TOKENS as well as the cost, and that is the point.** An unpriced
+            // call records `cost_usd` of ZERO — so a cost series split on this label has a
+            // `false` line that is flat zero forever, which signals that a blind spot
+            // exists but cannot size it. Tokens can: they are the unit spend is roughly
+            // proportional to, so "unpriced tokens in this window" is the number that says
+            // how much money the cost panel is not showing you.
+            [ATTR_COST_PRICED]: outcome.cost.priced,
           }
           instruments.judgeInputTokens.add(outcome.cost.inputTokens, billed)
           instruments.judgeOutputTokens.add(outcome.cost.outputTokens, billed)
           if (outcome.cost.reasoningTokens !== undefined) {
             instruments.judgeReasoningTokens.add(outcome.cost.reasoningTokens, billed)
           }
-          // `cost_priced` is a LABEL rather than a filter, so the dashboard splits on it
-          // instead of dropping half the data. A single total would fold M0's genuinely
-          // free fake and an unpriced model's missing figure into real spend and report
-          // less than was spent — and a zero would be ambiguous between the two.
-          instruments.judgeCostUsd.add(outcome.cost.costUsd, {
-            ...billed,
-            [ATTR_COST_PRICED]: outcome.cost.priced,
-          })
+          // The cost panel then FILTERS to `cost_priced="true"` rather than summing across
+          // the label: a money line should say what it measures, not quietly average in
+          // calls whose price nobody knows.
+          instruments.judgeCostUsd.add(outcome.cost.costUsd, billed)
         } else if (outcome.status === 'error') {
           span.setAttribute(ATTR_ERROR_CODE, outcome.code)
           // Only `error` sets the span's status. A `failed` outcome means the call WORKED
@@ -471,16 +495,20 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, retry_after_ms: error.retryAfterMs },
             'provider call refused by an open circuit',
           )
-          span.setAttribute(ATTR_FAILURE_KIND, 'circuit_open')
-          return finish({
-            ...base,
-            status: 'error',
-            code: 'CIRCUIT_OPEN',
-            message: 'The circuit for this model is open. Retry after the stated delay.',
-            // Rounded UP: a Retry-After that expires a millisecond early sends the caller
-            // straight back into a circuit that is still open.
-            retryAfterSeconds: Math.max(1, Math.ceil(error.retryAfterMs / 1_000)),
-          })
+          // The span attribute is set by `finish` now, from this same argument, so span
+          // and metric cannot disagree about why a call failed.
+          return finish(
+            {
+              ...base,
+              status: 'error',
+              code: 'CIRCUIT_OPEN',
+              message: 'The circuit for this model is open. Retry after the stated delay.',
+              // Rounded UP: a Retry-After that expires a millisecond early sends the caller
+              // straight back into a circuit that is still open.
+              retryAfterSeconds: Math.max(1, Math.ceil(error.retryAfterMs / 1_000)),
+            },
+            'circuit_open',
+          )
         }
 
         const kind = kindOf(error)
@@ -490,12 +518,15 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, attempts },
             'provider answered with unusable output',
           )
-          return finish({
-            ...base,
-            status: 'failed',
-            message: 'The judge did not produce a usable answer.',
-            raw: isProviderError(error) ? error.raw : undefined,
-          })
+          return finish(
+            {
+              ...base,
+              status: 'failed',
+              message: 'The judge did not produce a usable answer.',
+              raw: isProviderError(error) ? error.raw : undefined,
+            },
+            kind,
+          )
         }
 
         // Before the generic branch, because it is the one kind that is OUR fault. The
@@ -520,15 +551,18 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, kind, attempts },
             'provider rejected the request in a way no retry can fix',
           )
-          return finish({
-            ...base,
-            status: 'error',
-            // The existing code, so no published contract changes: from the caller's side
-            // this is our problem, not something for them to retry or route around.
-            code: 'INTERNAL',
-            message: 'The judge could not be run.',
-            cause: error,
-          })
+          return finish(
+            {
+              ...base,
+              status: 'error',
+              // The existing code, so no published contract changes: from the caller's side
+              // this is our problem, not something for them to retry or route around.
+              code: 'INTERNAL',
+              message: 'The judge could not be run.',
+              cause: error,
+            },
+            kind,
+          )
         }
 
         if (kind !== undefined) {
@@ -536,12 +570,15 @@ export const createModelGateway = ({
             { provider: provider.name, model: call.model, kind, attempts },
             'provider call failed',
           )
-          return finish({
-            ...base,
-            status: 'error',
-            code: TAXONOMY[kind],
-            message: 'The judge could not be reached.',
-          })
+          return finish(
+            {
+              ...base,
+              status: 'error',
+              code: TAXONOMY[kind],
+              message: 'The judge could not be reached.',
+            },
+            kind,
+          )
         }
 
         // Not a `ProviderError`: the adapter broke its own contract, which is a bug in

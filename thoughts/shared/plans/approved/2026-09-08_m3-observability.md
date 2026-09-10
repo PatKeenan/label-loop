@@ -181,35 +181,35 @@ answers the question.
 
 Branch: `feat/m3-p3-dashboards`. PR title: `feat(grafana): dashboards as code, and one alert rule`.
 
-- [ ] `infra/grafana/provisioning/dashboards/` — **the directory does not exist yet.** A
+- [x] `infra/grafana/provisioning/dashboards/` — **the directory does not exist yet.** A
       provider YAML plus dashboard JSON, mounted read-only exactly as `datasources/` is, so a
       `docker compose down -v` loses nothing and no dashboard exists only in one person's volume.
-- [ ] **Service dashboard**: request rate, error rate, and p50/p95/p99 by route. The p95 numbers
+- [x] **Service dashboard**: request rate, error rate, and p50/p95/p99 by route. The p95 numbers
       to sanity-check against are in `docs/BREAKING_POINT.md` (served 5.29–5.35 s, refused
       9.5–31.9 ms).
-- [ ] **Judge dashboard**: calls by model and outcome, latency by judge, attempts, breaker state,
+- [x] **Judge dashboard**: calls by model and outcome, latency by judge, attempts, breaker state,
       tokens.
-- [ ] **Cost dashboard**: cost/min, **two series split on `cost_priced`**. A single sum would
+- [x] **Cost dashboard**: cost/min, **two series split on `cost_priced`**. A single sum would
       fold genuinely-free fake calls and unpriced-model calls into real spend and understate it;
       the attribute exists precisely so a zero is not ambiguous. *(Planner's call, flagged in the
       research — say so if one number with a caveat is preferred.)*
-- [ ] **Per-key usage, queried from Postgres** (stakeholder, 2026-09-08), through a Grafana
+- [x] **Per-key usage, queried from Postgres** (stakeholder, 2026-09-08), through a Grafana
       Postgres datasource provisioned as code and connecting as **`labelloop_readonly`** (phase 2).
       Grouped by key id, which is safe here in a way it would never be as a metric label: a SQL
       `GROUP BY` costs a query, while a Prometheus label costs a time series forever.
-- [ ] **One alert rule: `misconfigured`**, pre-nominated by the decisions log on 2026-08-29 as
+- [x] **One alert rule: `misconfigured`**, pre-nominated by the decisions log on 2026-08-29 as
       *"100% actionable with no false positives"* — it never self-heals, takes every judge down
       at once, and already has its own `failure_kind` attribute so a dashboard cannot conflate
       "the provider is flaky" with "we did not pay the bill".
-- [ ] **Grafana-visible only, no notification channel** (stakeholder, 2026-09-08). A destination
+- [x] **Grafana-visible only, no notification channel** (stakeholder, 2026-09-08). A destination
       would need a credential and would break ADR-0009's zero-secret boot. The deliverable is a
       rule that visibly fires.
 
 ### Automated verification
 
-- [ ] Dashboards provision from a cold `down -v` / `up` with no manual step.
-- [ ] Every panel returns data rather than "No data" after a short k6 smoke.
-- [ ] The alert rule loads and evaluates.
+- [x] Dashboards provision from a cold `down -v` / `up` with no manual step.
+- [x] Every panel returns data rather than "No data" after a short k6 smoke.
+- [x] The alert rule loads and evaluates.
 
 ### Manual verification
 
@@ -403,6 +403,53 @@ Recorded as they happen, because they are decision provenance too (CLAUDE.md).
 - **`.env.example` gained the row, and a local `.env` needs it too.** `bun run db:setup`
   fails by name without it, which is the intended behaviour (CONVENTIONS "Config") but is
   worth saying out loud: anyone pulling this branch re-copies the row or re-runs setup.
+
+### Phase 3
+
+- **Two labels added to phase 1's judge instruments, both stakeholder-approved.**
+  `labelloop.failure_kind` (five bounded values, failures only) and `labelloop.cost_priced`
+  moved onto the token counters. CONVENTIONS' label allow-list is amended for both.
+- **The alert rule could not have been built without `failure_kind`, and this was found by
+  trying.** ADR-0043 says `misconfigured` "already has its own `failure_kind` attribute" —
+  true of the SPAN, not the metric. On the metrics as phase 1 shipped them, every timeout,
+  503, open circuit and unpaid bill sat in one `outcome="error"` bucket, and the taxonomy
+  code did not separate them either since `misconfigured` maps to `INTERNAL` alongside an
+  adapter bug. The rule's "100% actionable, no false positives" claim was unbuildable.
+- **`failure_kind` is now set on the judge SPAN too, in the same place.** Previously only
+  the circuit-open path set it at judge level, so a Tempo search for misconfigured judges
+  found nothing at the level carrying the judge and its version — which is exactly the
+  drill-down an alert wants. Span and metric now take the value from one argument, so they
+  cannot disagree.
+- **The fake gained a `__misconfigured__` sentinel.** The plan's own manual verification is
+  "drive the fake into `misconfigured` and watch the rule fire", and there was no way to do
+  it — the fake had sentinels for unavailable, invalid-output and slow only. A rule nobody
+  can trigger is a rule nobody has tested. Same argument the existing sentinels are built
+  on: a failure drivable by hand with `curl` is one that can be shown working.
+- **Per-key usage is a panel on the COST dashboard rather than a fourth dashboard.** The
+  plan lists it as its own bullet without saying where it lives; "who is using this" and
+  "what does it cost" are the same question asked twice.
+- **Phase 2's `DATABASE_READONLY_URL` on the `grafana` service was replaced with fields.**
+  Grafana's Postgres datasource is provisioned with host, database, user and password as
+  separate keys and has nowhere to put a connection string. My wrong assumption in phase 2;
+  the role and its grants are unaffected.
+- **The cost/min question is settled the third way, not either way the plan offered.**
+  Neither one summed number nor two series: the money line FILTERS to `cost_priced="true"`
+  so it says what it measures, and a companion stat sizes the blind spot in TOKENS. The
+  reason is that an unpriced call records a cost of zero, so a cost series split on the
+  label has a `false` line that is flat zero forever — it proves a blind spot exists and
+  cannot measure it. Tokens are roughly proportional to spend, so they can.
+- **Four panels returned "No data" on first assembly and one was a real bug.** "Cost per
+  verdict" divided series grouped by `gen_ai_response_model`, which the calls counter does
+  not carry — two disjoint label sets, matching nothing. Regrouped on
+  `gen_ai_request_model`, which both carry. The other three were the HEALTHY state
+  rendering as "No data"; the two that must read zero rather than blank (`fail-open events`
+  and `unpriced tokens`) now use `or vector(0)`.
+- **The per-key query plans as a Seq Scan today, and that is correct.** `traces` holds 74
+  rows on a demo stack, where a sequential scan beats an index. Phase 2's
+  `(api_key_id, created_at)` was verified on a 200k-row probe, which is the size at which
+  the question is real. Recorded so nobody reads a local `EXPLAIN` as the index being dead.
+- **No notification channel and no contact point were provisioned** (ADR-0043). Grafana's
+  built-in default receives the alert and does nothing, which is the intended end state.
 
 ## Open questions
 
