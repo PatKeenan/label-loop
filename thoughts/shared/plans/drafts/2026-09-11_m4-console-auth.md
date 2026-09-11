@@ -256,45 +256,83 @@ saturation point).
 
 ---
 
-## Phase 6 — `panel-create.html` (Phase A, partial resume) · HUMAN REVIEW GATE
+## Phase 6 — The console's frame: flow map, shell, then the wizard screen · HUMAN REVIEW GATE
 
-Phase A resumes for this screen alone (decision 1). The other two load-bearing screens stay
-paused, and the six blockers in the harvest stay open — none of them gate this one.
+Phase A resumes for the console's FRAME plus one room (decision 1, revised 2026-09-11). The
+other two load-bearing screens stay paused, and the six harvest blockers stay open — none of
+them gate any artifact here.
 
-### Changes
-- `mockups/panel-create.html` — **new.** Plain HTML + CSS importing `tokens.css`, header
-  comment per the BRIEF convention (screen, role, PRODUCT sections, open questions).
-  `data-surface="console"`.
-- `mockups/BRIEF.md` — record the partial resume and this screen's status.
+**Why the frame is in scope and the other screens are not.** The console's navigation model
+was decided inside `console-trace-explorer`, a screen that was deleted and whose successor the
+BRIEF defers as unstyled. The decision survives only in the harvest: *"THE APP SHELL LIVES
+HERE. Persistent left rail with the classifier switcher, section nav, and saved views."* It
+names a "classifier switcher" — vocabulary ADR-0019 retired — and phase 1 has since added an
+**org** switcher. So the console shell currently has two switchers, a nav and a role indicator
+that no reviewed artifact describes, and a wizard drawn without one would invent all of it
+implicitly. Drawing the remaining screens instead is the failure this project already ran
+once: four mockups made six product decisions ahead of PRODUCT.md, which is why Phase A is
+paused at all.
 
-### What the screen must express
-- The wizard producing version 1: panel name, the artifact it judges, judges added one at a
-  time, each with its question, polarity, weight and `required`.
-- The model picker as the measurements demand: cost, measured latency **and its spread**,
-  endpoint count surviving the pin, and the effort dial's per-model cost/latency consequence.
-  A median would have hidden `flash-lite` at 847–972 ms against `haiku` at 3078–15092 ms.
-- Where quantization is offerable, what constraining it **costs in failover** — 13 endpoints
-  down to 6 on the one open-weights model measured, most of the loss being endpoints that
-  simply do not declare a precision.
-- The unsatisfiable-pin form error, with a real reason string.
-- The one-time key reveal, and that it cannot be shown again.
+**Order within the phase is load-bearing:** the flow map says what exists, the shell reflects
+it, the wizard is drawn inside it. A sidebar cannot be designed before its contents are known.
 
-### Steps
-- [ ] Screen drafted with realistic fake data drawn from the measurement table (no lorem ipsum)
-- [ ] Header comment with open questions, per the BRIEF rule that survived deletion
-- [ ] `mockups/BRIEF.md` updated to record the partial resume
-- [ ] Renders correctly beside `tokens-preview.html`, no ad-hoc colours, fonts or spacing
+### 6a — `mockups/CONSOLE_FLOW.md`
+A plain document, not a design. Every console screen M4 → M8, how a user reaches each, and
+what the entry points are. This is where "does the app flow cohesively" is actually answered:
+flow is an information-architecture property, and a map answers it for a fraction of what
+drawing eight screens costs — without inventing the contents of screens whose product
+decisions are unmade.
+
+- [ ] Every console screen named, with its milestone and its entry point
+- [ ] Screens that do not exist yet marked as such, so the map is a plan rather than a claim
+- [ ] Referenced from `mockups/BRIEF.md`
+
+### 6b — `mockups/console-shell.html`
+The frame, reviewed on its own terms. **Navigation is a persistent left SIDEBAR** (stakeholder
+decision, 2026-09-11), which re-confirms the harvest's orphaned decision rather than replacing it.
+
+- [ ] Sidebar: section nav, populated from the flow map
+- [ ] **Org switcher** — reads the membership list phase 1 returns from `/internal/me`
+- [ ] **Panel switcher** — the harvest's "classifier switcher" in current vocabulary (ADR-0019)
+- [ ] Signed-in identity and role indicator, and the way out
+- [ ] Where a modal appears (the one-time key reveal needs one) and where errors surface
+- [ ] Sections M4 does not build are drawn **visible but inert**, so the shell is honest about
+      where the app is going without committing to those screens' contents
+- [ ] `data-surface="console"`, plain HTML + CSS on `tokens.css`, header comment per the BRIEF
+
+### 6c — `mockups/panel-create.html`
+The wizard, drawn INSIDE the approved shell.
+
+- [ ] Panel details → judges (question, polarity, weight, `required`) → model picker → review
+- [ ] Model picker shows cost, measured latency **and its spread**, and the endpoint count
+      surviving the pin. A median would have hidden `flash-lite` at 847–972 ms against
+      `haiku` at 3078–15092 ms — the spread is the number that matters to a caller
+- [ ] The effort dial's per-model cost and latency consequence (one model's own range spanned
+      1.8x cost and 1.7x latency, and two of its efforts were indistinguishable)
+- [ ] Where quantization is offerable, what constraining it **costs in failover** — 13
+      endpoints down to 6, most of the loss being endpoints that never declared a precision
+- [ ] The unsatisfiable-pin form error, carrying a real reason string
+- [ ] The one-time key reveal, and that it cannot be shown again
+- [ ] Realistic data drawn from the measurement table — no lorem ipsum (BRIEF rule)
+
+### Also
+- [ ] `mockups/BRIEF.md` records the partial resume, the sidebar decision, and the three artifacts
 
 ### Automated verification
-- [ ] `bun run lint` clean (the file is static; this is a formatting check)
+- [ ] `bun run lint` clean (static files; this is a formatting check)
 
 ### Manual verification
-- [ ] **Human review and explicit approval of the screen.** This is the gate — Phase C
-      rebuilds from an approved screen, and phase 8 is blocked until this is signed off.
+- [ ] **Human review and approval of the flow map, then the shell, then the wizard — in that
+      order.** This is the gate: Phase C rebuilds from approved screens, so phases 7 and 8 are
+      blocked until the shell in particular is signed off, because phase 7 BUILDS it.
 
 ---
 
-## Phase 7 — Console foundation: shadcn/ui, themed by the approved tokens (D17 / ADR-0046)
+## Phase 7 — The frame, built: shadcn/ui, the converted tokens, and the shell (D17 / ADR-0046)
+
+Phase 7 now builds the shell rather than only re-skinning screens (stakeholder, 2026-09-11).
+Building the frame here is what stops phase 8's three screens from each inventing their own
+layout — they become things that go *inside* something that already exists.
 
 ### Changes
 - `apps/web` — Tailwind + shadcn/ui installed and configured in `vite.config.ts`.
@@ -305,17 +343,23 @@ paused, and the six blockers in the harvest stay open — none of them gate this
     single `--border`, and it has no `data-density` equivalent at all.
   - The **selector convention stays ours** — three attribute axes (`data-tone`,
     `data-surface`, `data-density`), not a `.dark` class — via Tailwind v4 `@custom-variant`.
-- `apps/web/src/routes/{root,login,traces}.tsx` — re-skinned on the new foundation. Doing the
-  existing three screens here proves the conversion on real screens **before** the wizard
-  depends on it.
-- `apps/web/src/components/ui/*` — the shadcn components actually used, copied in (they are
-  ours to maintain; ADR-0046 names that cost).
+- `apps/web/src/components/shell/` — **new.** The sidebar shell from 6b: section nav,
+  `org-switcher.tsx` (moved here from phase 8 — it is shell furniture, not a screen),
+  `panel-switcher.tsx`, the role indicator, the modal and error slots.
+- `apps/web/src/routes/root.tsx` — becomes the shell's mount point rather than an ad-hoc header.
+- `apps/web/src/routes/{login,traces}.tsx` — re-skinned and moved inside the shell (login
+  stays outside it: there is nothing to navigate when signed out). Doing the existing screens
+  here proves the conversion and the shell on real screens **before** the wizard depends on both.
+- `apps/web/src/components/ui/*` — the shadcn components actually used, copied in (ours to
+  maintain; ADR-0046 names that cost).
 
 ### Steps
 - [ ] Tailwind + shadcn configured; build produces a working bundle
 - [ ] Token conversion complete, with a comment naming ADR-0046 and the alias rule
 - [ ] Every value in the approved palette still reachable — nothing dropped in translation
-- [ ] Existing three screens re-skinned; behaviour unchanged
+- [ ] Sidebar shell built to the approved 6b screen, with inert sections rendered as such
+- [ ] Org switcher sends the active org header phase 1 validates; switching re-scopes the view
+- [ ] Existing screens re-skinned inside the shell; behaviour unchanged
 - [ ] `apps/web/nginx.conf` still serves the bundle correctly (ADR-0020: SPA fallback, a real
       404 for a missing fingerprinted asset, `immutable` on `/assets/`, `no-store` on the shell)
 
@@ -327,16 +371,17 @@ paused, and the six blockers in the harvest stay open — none of them gate this
       CI fails a PR on any high advisory
 
 ### Manual verification
-- [ ] The re-skinned console renders in both tones and both surfaces, matching
-      `tokens-preview.html`
+- [ ] The shell renders in both tones and both surfaces, matching `tokens-preview.html`
 - [ ] Diff the converted tokens against the approved `mockups/tokens.css` and confirm by eye
-      that no approved value was lost — this is the check ADR-0046 exists to make possible
+      that no approved value was lost — the check ADR-0046 exists to make possible
+- [ ] Switching org in the sidebar changes what the trace table shows, and cannot reach an org
+      the signed-in account is not a member of
 
 ---
 
 ## Phase 8 — The console: keys, the wizard, and the trace table
 
-Built from the screen approved in phase 6, against the APIs built in phases 3–5. Phase C
+The rooms, built inside the frame phase 7 shipped, against the APIs from phases 3–5. Phase C
 rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 
 ### Changes
@@ -349,11 +394,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
   pin rendered as a field error.
 - `apps/web/src/routes/keys.tsx` — issue, list, revoke; one-time plaintext reveal.
 - `apps/web/src/routes/traces.tsx` — extended, not replaced.
-- `apps/web/src/components/org-switcher.tsx` — reads `memberships` from `/internal/me`, sends
-  the active org header.
 
 ### Steps
-- [ ] Org switcher in the shell, sending the active org on every internal call
+- [ ] All three screens mount inside the phase 7 shell; none invents its own layout
 - [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [ ] Wizard: panel details → judges (question, polarity, weight, required) → model picker →
       review → create
@@ -412,10 +455,28 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0046 is 
 9. **The catalogue is an in-memory TTL cache with a last-good-snapshot fallback** (decision 7)
    — over a Postgres snapshot with a refresh job, which buys restart survival for a table, a
    migration and a job handler.
-10. **The existing three screens are re-skinned in phase 7, before the wizard is built** — so
-    the token conversion is proven on real screens rather than debugged underneath new ones.
-11. **Phase A resumes for `panel-create.html` alone** (decision 1), with the other two
-    load-bearing screens and all six harvest blockers left untouched.
+10. **The existing screens are re-skinned in phase 7, before the wizard is built** — so the
+    token conversion and the shell are proven on screens that already work, rather than
+    debugged underneath new ones.
+11. **Phase A resumes for the console's FRAME plus one room** — a flow map, the shell, and
+    `panel-create.html` — not for a screen alone, and not for every screen (stakeholder,
+    2026-09-11, revising decision 1). Drawing one screen alone would have let it invent the
+    app shell implicitly; drawing them all would repeat the failure that paused Phase A, since
+    four mockups previously made six product decisions ahead of PRODUCT.md. The other two
+    load-bearing screens and all six harvest blockers stay untouched.
+12. **Console navigation is a persistent left SIDEBAR** (stakeholder, 2026-09-11). This
+    re-confirms the decision the deleted `console-trace-explorer` mockup made and that survived
+    only in the harvest, restoring it as a reviewed choice rather than an orphaned one. Its
+    "classifier switcher" becomes a PANEL switcher (ADR-0019 retired `cls_`), beside the org
+    switcher phase 1 introduces.
+13. **The flow map precedes the shell, which precedes the wizard** — a sidebar cannot be
+    designed before its contents are known, and a wizard drawn without a shell invents one.
+14. **The shell is BUILT in phase 7, not phase 8** (stakeholder, 2026-09-11) — so phase 8's
+    three screens are things that go inside something that exists, rather than three screens
+    each inventing a layout that has to be reconciled afterwards.
+15. **Sections the shell shows but M4 does not build are drawn visible-but-inert** — the shell
+    is honest about where the app is going without committing to the contents of screens whose
+    product decisions (harvest blockers 1–5) are still open.
 
 ## Explicitly NOT doing
 - **No client SDK.** ADR-0002 descoped it 2026-08-19; D5 records "no SDK"; `packages/sdk` has
@@ -442,7 +503,11 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0046 is 
    leaks less (it does not confirm the org exists); `403` is more honest to a user who really
    is a member of something else. The API-key path chose the non-confirming answer for exactly
    this reason, which argues for `404`.
-3. **Does the trace table get the harvest's design decisions applied** (judge and human as
+3. **What does the sidebar do when a section is inert — hide it, or show it disabled?** The
+   plan says visible-but-inert, on the argument that it makes the app's direction legible. The
+   counter-argument is that a console full of dead links reads as unfinished in a demo, which
+   is the one context this project is optimised for. Worth a look at the 6b screen.
+4. **Does the trace table get the harvest's design decisions applied** (judge and human as
    separate columns, agreement derived, raw payloads expanding rather than inline), or does it
    stay a plain table until M5? The harvest's `console-trace-explorer` notes are usable but
    reference the retired `cls_` vocabulary and its Q1 (ten columns will not fit a laptop)
