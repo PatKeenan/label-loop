@@ -68,19 +68,19 @@ that safety, which is why the negative tests are part of this phase and not a fo
 - `apps/api/src/middleware/session.test.ts`, `require-role.test.ts` — new/extended.
 
 ### Steps
-- [ ] `listMemberships` + org-scoped `findMembership`, with the ordering rule preserved
-- [ ] `sessionAuth` resolves and validates the active org; unknown or non-member org is refused
-- [ ] `requireRole()` middleware, with `FORBIDDEN` and a non-enumerating message
-- [ ] `GET /internal/me` returns active org, role, and the membership list
-- [ ] Negative tests: a member of org A asking for org B gets `NOT_FOUND` (never `FORBIDDEN`,
+- [x] `listMemberships`, with the ordering rule preserved — **no `findMembership`, see Deviation 1**
+- [x] `sessionAuth` resolves and validates the active org; unknown or non-member org is refused
+- [x] `requireRole()` middleware, with `FORBIDDEN` and a non-enumerating message
+- [x] `GET /internal/me` returns active org, role, and the membership list
+- [x] Negative tests: a member of org A asking for org B gets `NOT_FOUND` (never `FORBIDDEN`,
       which would confirm it exists); an annotator hitting an admin-guarded route gets
       `FORBIDDEN`; a request with no header still works
-- [ ] The existing "an API key gets nowhere near the console" assertion still passes untouched
+- [x] The existing "an API key gets nowhere near the console" assertion still passes untouched
 
 ### Automated verification
-- [ ] `bun test apps/api/src/middleware/` passes
-- [ ] `bun test apps/api/src/routes/internal/` passes
-- [ ] `bun run typecheck` and `bun run lint` clean
+- [x] `bun test apps/api/src/middleware/` passes — 47 tests, 6 files
+- [x] `bun test apps/api/src/routes/internal/` passes — 9 tests, unchanged
+- [x] `bun run typecheck` and `bun run lint` clean (full suite also green: 663 tests, 56 files)
 
 ### Manual verification
 - [ ] Sign in locally; `GET /internal/me` shows the seeded org, `admin`, one membership
@@ -517,6 +517,52 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0046 is 
   is separate work.
 - **Phase A stays paused** for `annotator-session` and `console-dashboard`, and the six
   harvest blockers stay open.
+
+## Deviations
+
+Recorded as they happen; decision provenance, not a changelog.
+
+### Phase 1
+
+1. **`findMembership(db, userId, orgId)` was not written.** The plan asked for
+   `listMemberships` *plus* an org-scoped single read "for the validated single read". Once
+   `AuthenticatedSession` carries `memberships` — which the same plan requires, so the console
+   can render its switcher without a second round trip — the list is already in hand when the
+   requested org is validated. A second query would run on every console request to re-fetch a
+   row the middleware is holding, and the function would have no other caller, so it would ship
+   as dead code with a test. The active org is resolved by filtering the list instead. Nothing
+   about ADR-0047's validation changes: an org not in the list is refused.
+
+2. **`Membership` carries `orgName` and `orgSlug`, via a join onto `orgs`.** The plan's
+   membership shape was the three `org_members` columns. A switcher rendering `org_01J…` is not
+   a switcher, so phase 6b/7 would have had to add either a join here or a second endpoint —
+   and the plan's stated reason for putting `memberships` on the session is "so the console can
+   render a switcher without a second round trip". The join serves that intent; adding it later
+   would not have been cheaper.
+
+3. **The org-resolution tests live in `middleware/session.test.ts`, an integration test against
+   real Postgres and real better-auth.** The plan named that file, but it did not exist —
+   `testing/fake-auth.ts` has pointed at it since M0 ("the tests that ARE about the session path
+   use a real one, against a real database, in `middleware/session.test.ts`") and the tests had
+   actually been written in `routes/internal/index.test.ts`. Creating it makes that pointer true
+   and keeps the two concerns apart: `index.test.ts` owns "the two auth paths never cross",
+   `session.test.ts` owns "which org is this request about". `require-role.test.ts` is a fast
+   unit test with no database, since resolving *which* role applies is `sessionAuth`'s job and is
+   proven next door.
+
+4. **`ACTIVE_ORG_HEADER` was added to the CORS `allowHeaders` list**, which the plan's change
+   list did not mention. A custom request header is not on the CORS safelist, so a browser
+   preflights it and drops the request when the response does not name it. **No test in this
+   repo can catch it** — `app.request()` sends no preflight — so it would have failed only in a
+   real browser, and only once phase 7's switcher started sending the header.
+
+5. **The guard is exercised by a probe route, not a real one.** No route registers
+   `requireRole()` until phase 3's keys endpoints, so the plan's "an annotator hitting an
+   admin-guarded route gets `FORBIDDEN`" has no admin-guarded route to hit yet. It is asserted
+   against a probe mounted on the real app through the real error handler (the pattern
+   `rate-limit.test.ts` established), so the guard does not ship untested for two phases.
+
+---
 
 ## Open questions for the human
 Two of the original four were answered by the stakeholder on 2026-09-11 and are now decisions
