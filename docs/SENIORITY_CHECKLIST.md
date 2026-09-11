@@ -35,14 +35,16 @@ interviewer in under five minutes.
 - [ ] Side-by-side quality + cost comparison in product — M7 · dashboard
 
 ## 5. Reliability & Load
-- [ ] k6 scenarios: smoke, ramp, spike, soak — M0/M2 · scripts in repo
-      *(**Three of four, so the box stays open.** `infra/k6/smoke.js` runs in CI against the
-      composed stack (M0); `ramp.js` and `spike.js` landed at M2 and are operator-run, against
-      a fake provider given the measured latency of a real judge — without which a load run
-      measures a hash. **Soak is deliberately deferred to M3**: it measures leak behaviour
-      over hours, and it belongs where the observability to watch a leak actually exists.
-      Ticking this on three of four would be the kind of rounding-up this checklist is
-      supposed to prevent.)*
+- [x] k6 scenarios: smoke, ramp, spike, soak — M0/M2/M3 · scripts in repo
+      *(**Four of four.** `smoke.js` runs in CI against the composed stack (M0); `ramp.js`
+      and `spike.js` landed at M2, operator-run against a fake given the measured latency of
+      a real judge — without which a load run measures a hash. `soak.js` is M3, held
+      deliberately BELOW the rate limit so every iteration reaches a judge; a soak of 429s
+      would measure nothing. Run 2026-09-10 for 78 minutes and 3,517 iterations with zero
+      refusals: no leak in the API, and a 27% error found in our own p95 dashboard by
+      comparing it against k6 (`docs/BREAKING_POINT.md` §3). The soak was deferred to M3 on
+      the argument that watching a leak needs dashboards to watch it on, and it earned that
+      — the finding came from the comparison, not from the load.)*
 - [x] Circuit breakers, retries + backoff + jitter, timeouts — M2 · code + logs
       *(All three hand-rolled per ADR-0012 — `llm/retry.ts` (full jitter, measured 10s
       per-attempt timeout) and `llm/breaker.ts` (closed/open/half-open, one probe). Live on
@@ -68,12 +70,31 @@ interviewer in under five minutes.
 - [ ] Stripe metered billing + tier quotas (keys/panels/calls) — M8 · invoice demo
 
 ## 7. Observability
-- [ ] Distributed traces incl. LLM spans (tokens/cost/latency) — M3 · dashboard
-- [ ] Metrics dashboards (p50/95/99, error rate, cost/min, per-key) — M3 · Grafana
-- [ ] Structured logging with correlation ids; alerting; error tracking — M0/M3 · live
-      *(M0: NDJSON logs carrying `request_id`, and an `ErrorReporter` port with a Sentry
-      adapter. Alerting is M3, and there is nothing deployed for it to page about.)*
+- [x] Distributed traces incl. LLM spans (tokens/cost/latency) — M3 · dashboard
+      *(Manual instrumentation only (ADR-0007/0016): one span per request, one per judge
+      call, one per provider attempt. The Judges dashboard reads tokens split
+      input/output/reasoning, latency p95 by judge slug, attempts per call and breaker
+      state. `infra/grafana/dashboards/judge.json`.)*
+- [x] Metrics dashboards (p50/95/99, error rate, cost/min, per-key) — M3 · Grafana
+      *(Three dashboards as code, provisioned read-only so a UI edit cannot become the
+      version nobody can reproduce. App-emitted metrics are authoritative (ADR-0041);
+      per-key usage comes from Postgres because a key id must never be a metric label
+      (ADR-0042). Bucket boundaries were corrected against k6 after the histogram was
+      caught overstating p95 by 27% — `docs/BREAKING_POINT.md` §3.)*
+- [x] Structured logging with correlation ids; alerting; error tracking — M0/M3 · live
+      *(NDJSON on stdout carrying `request_id` on every line (M0); out-of-process collection
+      to Loki via the collector's filelog receiver, with `request_id` linking a log line to
+      its trace in Tempo in one click (M3, ADR-0007/0010); one alert rule on `misconfigured`,
+      provisioned as code and demonstrated firing (ADR-0043); `ErrorReporter` port with a
+      Sentry adapter. **The stack is compose-only and nothing observes production**
+      (ADR-0044) — there is nothing deployed for the rule to page about, which M8 revisits
+      with the deploy.)*
 - [ ] Live dashboards during a load test — M3 · recorded clip
+      *(**The dashboards and the load script both exist and work together** — the M3 soak
+      was run against them and produced the p95 finding above. The box stays open because
+      the artifact this row names is a RECORDED CLIP, and no clip has been recorded. Ticking
+      it on "the thing a clip would show works" is exactly the rounding-up this checklist
+      exists to prevent.)*
 
 ## 8. Delivery & Public Proof
 - [x] Public repo, ADR discipline (0001+), conventional commits — M0 · repo

@@ -249,23 +249,23 @@ Branch: `feat/m3-p4-logs`. PR title: `feat(infra): logs to Loki, by out-of-proce
 
 Branch: `feat/m3-p5-soak`. PR title: `feat(k6): a soak, and retention sized from what it shows`.
 
-- [ ] `infra/k6/soak.js` — a long, low-rate run on the shared `load-lib.js`, using the same
+- [x] `infra/k6/soak.js` — a long, low-rate run on the shared `load-lib.js`, using the same
       judge-latency guard. Deliberately BELOW the rate limit so the evaluation path is actually
       exercised: a soak of 429s would measure nothing, which is the trap `ramp.js` documents.
-- [ ] Run it, watching phase 3's dashboards. **This is the ordering the whole plan is built
+- [x] Run it, watching phase 3's dashboards. **This is the ordering the whole plan is built
       around** — M2 deferred soak here so a leak would be visible while it happened.
-- [ ] `infra/tempo/tempo.yaml` — retention tuned from evidence. `BREAKING_POINT.md` §4 is the
+- [x] `infra/tempo/tempo.yaml` — retention tuned from evidence. `BREAKING_POINT.md` §4 is the
       justification: Tempo used **542–569 MiB against the API's 322–351 MiB**, and the only thing
       that actually fell over in M2 was accumulated trace state on a two-day-old stack. Retention
       tuning was deferred here by name on 2026-08-21.
-- [ ] `docs/BREAKING_POINT.md` — a soak section, and **§6 updated**: "no soak" is one of its
+- [x] `docs/BREAKING_POINT.md` — a soak section, and **§6 updated**: "no soak" is one of its
       named gaps and stops being true. §8's list of what would make v1 worth reading loses an item.
-- [ ] `docs/SENIORITY_CHECKLIST.md` — Category 7's four rows, and **Category 5 row 38**, which has
+- [x] `docs/SENIORITY_CHECKLIST.md` — Category 7's four rows, and **Category 5 row 38**, which has
       stood at three of four since M2 and now has its fourth scenario.
 
 ### Automated verification
 
-- [ ] `bun test` green; the soak script parses and its thresholds can fail.
+- [x] `bun test` green; the soak script parses and its thresholds can fail.
 
 ### Manual verification
 
@@ -491,6 +491,48 @@ Recorded as they happen, because they are decision provenance too (CLAUDE.md).
   Tempo with all three spans (`POST /v1/panels/:panel_id/evaluate`, `judge needs-human`,
   `provider call fake:deterministic`). That chain is the entire reason ADR-0010 keeps
   `request_id` and `trace_id` distinct, and the reason the log pipeline is out-of-process.
+
+### Phase 5
+
+- **The soak ran 78 minutes of a planned 120 and was stopped early**, because the machine was
+  needed for a video call. 3,517 iterations with zero refusals is enough to separate a
+  plateau from a slope, and `BREAKING_POINT.md` states the duration rather than rounding it
+  up. What it does NOT close is multi-day behaviour — which is the timescale M2's only real
+  failure happened on, and which retention now bounds rather than measures.
+- **The headline result is negative and that is the good outcome: no leak.** The API warmed
+  140 → 196 MiB over the first half hour and then stopped, final-30-minute slope +5.8 MiB/h
+  against a figure 1.5 MiB under its own peak.
+- **Two containers looked like leaks and neither was, and only time could tell them apart.**
+  At 33 minutes Loki read +136 MiB/h and *steepening*; twenty minutes later it was flushing
+  at −74 MiB/h. Tempo's final half hour runs −96.9 MiB/h as the compactor reclaims. Both
+  judgements would have been wrong on under an hour of data, which is the argument for
+  soaking stated as evidence rather than as principle.
+- **The most valuable thing the run produced was a correction to our own dashboards**, and it
+  is a change to phase 1's code. Comparing k6's directly-measured p95 against the histogram's
+  showed the HTTP histogram overstating by **27%** (6.76s vs 5.33s) and the judge histogram
+  by 7%. Cause: boundaries jumping `1, 2.5, 5, 7.5` put the whole served population in one
+  2.5s-wide bucket, and `histogram_quantile` interpolates across ground the data never
+  occupied. The arithmetic reproduces Prometheus's answer exactly. Re-cut to half-second
+  resolution from 1s to 6s; both histograms now agree with k6 to within 20 ms.
+  **A dashboard that overstates p95 by a quarter is worse than no dashboard, because it gets
+  quoted — and this one was about to be quoted into `BREAKING_POINT.md`.**
+- **Tempo's `block_retention` goes 24h → 3h**, and the number comes from the evidence rather
+  than from taste: the soak showed Tempo well behaved over a session (216–340 MiB, compactor
+  reclaiming), so the exposure is purely cumulative — which is exactly what retention
+  controls, and exactly the failure mode §4 records.
+- **Loki's retention is left at 168h.** The plan's phase 4 comment said phase 5 would tune it
+  "for this and for Tempo"; the soak gives no evidence about Loki's cumulative behaviour,
+  because Loki is new at M3 and has no multi-day history to reason from. Tuning it to a
+  number nobody measured would be worse than leaving a default and saying so.
+- **A `docker stats` sampler, not a dashboard, produced the memory evidence.** No dashboard
+  in this repo shows container memory — the metrics are app-emitted (ADR-0041) and nothing
+  scrapes container resource usage. Adding cAdvisor or node-exporter would be a new service
+  and a stack decision, outside this plan. `docker stats` is also where M2's numbers in
+  §3 came from, so the two runs are measured the same way.
+- **Category 7's "live dashboards during a load test" row is NOT ticked.** The dashboards and
+  the load script demonstrably work together — this run is the proof — but the artifact that
+  row names is a recorded clip, and no clip exists. CLAUDE.md says to check items only when
+  the artifact is live.
 
 ## Open questions
 
