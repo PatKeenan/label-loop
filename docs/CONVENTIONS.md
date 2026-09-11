@@ -4,8 +4,12 @@
 - `apps/api` — the gateway + platform API (language/framework: STACK_DECISIONS.md D1)
 - `apps/web` — console + annotator surface (framework: STACK_DECISIONS.md D2)
 - `packages/contracts` — schema-validated request/response definitions; the single source of
-  type truth, imported by api, web, and sdk. No endpoint ships without a contract here.
-- `packages/sdk` — thin published client (M4). Generated FROM contracts, never drifts.
+  type truth, imported by api and web. No endpoint ships without a contract here.
+- **No `packages/sdk`.** ADR-0002 descoped it on 2026-08-19 and STACK_DECISIONS D5 records
+  "no SDK": the integration surface is the OpenAPI spec, Scalar docs at `/docs`, and
+  fetch/curl snippets, so the demo works with zero customer dependencies. This list used to
+  name it as an M4 deliverable; it never existed. If one ever returns it is generated from
+  the OpenAPI spec, never hand-written, and supersedes ADR-0002 first.
 - `packages/db` — schema + forward-only migrations (tool: STACK_DECISIONS.md D3). No down-migrations.
 - `infra/` — containers/compose, k6 scripts, dashboards-as-code, IaC.
 - `docs/` — PRODUCT, STAKEHOLDER_VALUE, BUILD_SPINE, ADRs, BREAKING_POINT, PARKING_LOT.

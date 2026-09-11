@@ -104,10 +104,18 @@ structured output, and the model-level capability list is a union across endpoin
 do not all agree. Measurements to build this against — six models priced, timed and
 validated against the live API, including a model that advertises structured output and
 still breaks the output contract — are in
-`thoughts/shared/research/2026-08-30_model-tier-measurements.md`. Publish thin client SDK (typed client generated from contracts,
-retries+jitter, idempotency header; language/registry per STACK_DECISIONS.md D5) — see ADR-0002.
+`thoughts/shared/research/2026-08-30_model-tier-measurements.md`.
 **Demo moment:** the full interviewer flow end-to-end, no seeding scripts.
-**Not now:** annotator UI polish, guest experts, taxonomy tooling.
+**Not now:** annotator UI polish, guest experts, taxonomy tooling, **and the client SDK**.
+
+> **Corrected 2026-09-11.** This line used to read "Publish thin client SDK … language/
+> registry per STACK_DECISIONS.md D5 — see ADR-0002", which contradicted both of the things
+> it cited. **ADR-0002 was amended on 2026-08-19 to descope the SDK entirely** and D5 records
+> the result as "DECIDED: no SDK" — OpenAPI spec, Scalar docs at `/docs`, and fetch/curl
+> snippets are the integration surface. The stale sentence survived the amendment and sent
+> readers to D5 for a registry D5 says is not needed. `packages/sdk` was never created.
+> If an SDK ever returns it is generated from the OpenAPI spec, never hand-written, and it
+> needs an ADR superseding 0002 (stakeholder-confirmed 2026-09-11).
 
 ## M5 — Annotation loop (Category 2-part)
 Annotator surface (screen: annotator-session): one trace at a time, agree/correct,
