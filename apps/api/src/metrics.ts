@@ -56,17 +56,42 @@ export const ATTR_DECISION = 'labelloop.decision'
  * Bucket boundaries, in SECONDS, taken from measurements rather than from a default.
  * `docs/BREAKING_POINT.md` §2: refused requests land at 9.5–31.9 ms and served ones at
  * 5.29–5.35 s under load, so a histogram has to resolve both ends or p95 is a bucket edge.
+ *
+ * **Resolution between 1s and 6s is half a second, and that is a CORRECTION** (M3 phase 5).
+ * The first version jumped `1, 2.5, 5, 7.5`, which bracketed the served population in a
+ * single 2.5-second-wide bucket — and `histogram_quantile` assumes observations spread
+ * uniformly across a bucket, so it interpolated across ground the data never occupied.
+ * Measured against k6, which times requests directly rather than through buckets:
+ *
+ *   k6 served_duration p95   5.33s   (450 requests, judge at 4000ms ± 1500)
+ *   this histogram, before   6.76s   +1.43s, 27% high
+ *
+ * The arithmetic was exact rather than approximate: 369.2 observations at or below 5s and
+ * 74.9 in the (5, 7.5] bucket put p95 52.7 of the way into a bucket of 74.9, so
+ * `5 + (52.7/74.9) × 2.5 = 6.76`. Every one of those 74.9 was really between 5.0 and 5.52.
+ *
+ * A dashboard that overstates p95 by a quarter is worse than no dashboard, because it gets
+ * quoted. The lesson generalises: bucket boundaries have to straddle where the system
+ * ACTUALLY sits, and the only way to know that is to measure and compare.
  */
 const HTTP_DURATION_BUCKETS_S = [
-  0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10, 30,
+  0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7.5, 10, 30,
 ]
 
 /**
  * Wider, because a judge call is a network call to someone else's model: the fake's
  * measured shape is 4 s ± 1.5, and the retry policy allows three attempts at a 10 s
  * timeout with backoff between them, so the tail this has to resolve runs to ~35 s.
+ *
+ * These were already finer than the HTTP set in the region that matters — one-second
+ * buckets rather than 2.5 — and the same comparison showed it: 5.70s against k6's 5.33s,
+ * a 7% overstatement instead of 27%. Halving the buckets across 2–6 s brings the
+ * interpolation error down with it. Cost per verdict and latency per judge are the two
+ * numbers this product's argument is made of, so they are worth the extra series.
  */
-const JUDGE_DURATION_BUCKETS_S = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 15, 30, 60]
+const JUDGE_DURATION_BUCKETS_S = [
+  0.05, 0.1, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8, 10, 15, 30, 60,
+]
 
 export const DURATION_BUCKETS = {
   [METRIC_HTTP_SERVER_DURATION]: HTTP_DURATION_BUCKETS_S,

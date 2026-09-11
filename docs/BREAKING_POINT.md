@@ -140,6 +140,85 @@ wrong by a factor of about three.
 
 ---
 
+### Sustained load: the soak (M3)
+
+**Measured 2026-09-10 · [soak](../infra/k6/soak.js) · 78 minutes · 3,517 iterations**
+
+M2's longest run was 4m30s and §6 listed "anything sustained" as a gap. This closes it,
+though not at the length originally intended: the run was **stopped at 78 of a planned 120
+minutes** because the machine was needed. 78 minutes and ~3,500 evaluations is enough to
+separate a plateau from a slope, and the duration is stated rather than rounded up.
+
+Deliberately **below** the rate limit — 45 requests per minute against the limiter's 60 —
+so that every iteration reached a judge. A soak of 429s would have measured nothing, which
+is the trap `ramp.js` documents from the other side. **Zero refusals across the whole run**,
+so the evaluation path was exercised 3,517 times end to end: gateway, provider call, cost
+accounting, trace write, queue job.
+
+| | Start | End | Peak | Final 30 min |
+|---|---|---|---|---|
+| **API** | 139.7 MiB | 196.0 MiB | 197.5 MiB | **+5.8 MiB/h** |
+| Tempo | 216.1 MiB | 301.3 MiB | 340.0 MiB | −96.9 MiB/h |
+| Loki | 92.5 MiB | 161.2 MiB | 178.4 MiB | +44.2 MiB/h |
+| OTel Collector | 113.7 MiB | 117.9 MiB | 119.8 MiB | +2.8 MiB/h |
+| Postgres | 46.1 MiB | 54.5 MiB | 58.7 MiB | +8.1 MiB/h |
+| Prometheus | 55.5 MiB | 66.3 MiB | 79.6 MiB | −18.6 MiB/h |
+| Redis | 11.5 MiB | 11.2 MiB | 12.3 MiB | +0.2 MiB/h |
+
+**No leak.** The API warmed from 140 to 196 MiB over the first half hour and then stopped:
+its final thirty minutes trend at +5.8 MiB/h against a figure sitting 1.5 MiB under its own
+peak. That is a plateau, not a slope.
+
+Tempo and Loki both look alarming in isolation and neither is. Tempo's final half hour runs
+**negative** — the compactor reclaiming, 39 MiB below its peak by the end. Loki's +44 MiB/h
+is a sawtooth between flush cycles, visible as a 178 MiB peak against a 161 MiB finish
+rather than a monotone climb. An earlier reading at 33 minutes had Loki at +136 MiB/h and
+apparently steepening; twenty more minutes showed it flushing at −74 MiB/h. **Neither
+container could be judged from under an hour of data**, which is the argument for soaking.
+
+Nothing else moved. Redis is unchanged to within a MiB, which is what a counter store with
+no durable state should do.
+
+---
+
+### The dashboards were wrong, and the soak is how we found out
+
+**The most useful thing this run produced is a correction to our own instrumentation.**
+
+k6 times requests directly. Prometheus computes percentiles from histogram buckets. Run
+both over the same 450 requests and they disagreed:
+
+| | p95 |
+|---|---|
+| k6, measured directly | **5.33 s** |
+| judge histogram (1.0 s buckets) | 5.70 s — **+7%** |
+| HTTP histogram (2.5 s buckets) | 6.76 s — **+27%** |
+
+The cause was our bucket boundaries, and the arithmetic reproduces exactly. The HTTP
+histogram jumped `… 1, 2.5, 5, 7.5 …`, so the entire served population landed in one
+2.5-second-wide bucket. `histogram_quantile` assumes observations spread uniformly across a
+bucket: with 369.2 observations at or below 5 s and 74.9 in the `(5, 7.5]` bucket, p95 sits
+52.7 of the way into 74.9, giving `5 + (52.7/74.9) × 2.5 = 6.76`. Every one of those 74.9
+requests was really between 5.00 and 5.52 s — the interpolation spread them across ground
+the data never occupied.
+
+Boundaries were re-cut to half-second resolution from 1 s to 6 s and the comparison re-run:
+
+| | before | after |
+|---|---|---|
+| k6 | 5.33 s | 5.34 s |
+| HTTP histogram | 6.76 s | **5.36 s** |
+| judge histogram | 5.70 s | **5.35 s** |
+
+Both now agree with an independent measurement to within 20 ms.
+
+**The generalisable lesson: a histogram's buckets have to straddle where the system actually
+sits, and the only way to know is to measure against something that is not the histogram.**
+A dashboard overstating p95 by a quarter is worse than no dashboard, because it gets quoted.
+This one would have been — into this document.
+
+---
+
 ## 4. Where it broke first
 
 **Under load: nothing broke.** Not the API, not Postgres, not Redis, not the breaker.
@@ -197,9 +276,11 @@ configuration, and the gaps are large.
   script can mint N keys, this document's central number should be replaced.
 - **More than one API instance.** Nothing here tested horizontal scale — which is the entire
   case for Redis. See §7.
-- **Anything sustained.** The longest run was **4m30s**. Leaks, unbounded growth, connection
-  churn and compaction behaviour all live on timescales this does not touch. Soak is M3, with
-  the observability to see a leak while it happens.
+- ~~**Anything sustained.**~~ **Closed by the M3 soak** (§3): 78 minutes, 3,517 iterations,
+  no leak in the API. What remains unmeasured on this axis is anything beyond 78 minutes —
+  the planned run was two hours and was stopped early — and multi-day behaviour, which is
+  the timescale M2's only real failure actually occurred on and which `tempo.yaml`'s
+  retention now bounds rather than measures.
 - **Postgres under real write load.** 532 rows were written across both runs, because the
   limiter refused everything else. The write path is essentially unexercised.
 - **Realistic artifacts.** The load scripts send a short synthetic string. ADR-0023's cost
@@ -245,7 +326,9 @@ In the order that would most change the numbers:
 1. **Mint many keys**, so offered load can actually reach the evaluation path and this
    document can report a saturation point instead of a limiter bound.
 2. **A second API instance**, which is the only way to test the claim Redis was adopted for.
-3. **Soak** (M3), for the leak behaviour four minutes cannot show.
+3. ~~**Soak** (M3)~~ — **done**, see §3. The remaining version of this item is a run
+   measured in days rather than hours, since that is the timescale the one real failure in
+   this document occurred on.
 4. **One real-provider run at low volume**, to calibrate how far the fake's sleep is from a
    real call — not a ramp, just enough to know the size of the error.
 5. **Failure injected under load**: kill Redis mid-ramp, fail the provider mid-ramp, and

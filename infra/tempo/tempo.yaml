@@ -21,9 +21,26 @@ ingester:
 
 compactor:
   compaction:
-    # M0's Postgres volume is throwaway and so is this one. Retention tuning is M3's
-    # problem, when there is a reason to keep a trace for longer than a debugging session.
-    block_retention: 24h
+    # **Three hours, and the number comes from evidence** (M3 phase 5, the soak).
+    #
+    # M0 left this at 24h and deferred the decision to "when there is a reason to keep a
+    # trace for longer than a debugging session". The reason arrived from the other
+    # direction: `docs/BREAKING_POINT.md` §4 records that the ONLY thing to fall over in M2
+    # was accumulated trace state on a stack that had been up for two days — the k6
+    # container OOM'd against Docker's 7.65 GiB while Tempo held the memory. Not the API,
+    # not under peak load; the trace store, after days.
+    #
+    # The soak sized the steady state: 78 minutes at 0.75 req/s (~2.25 spans/s) held Tempo
+    # between 216 and 340 MiB, with the compactor visibly reclaiming — its final half hour
+    # trended at -97 MiB/h. So Tempo is well behaved over a session and the exposure is
+    # purely cumulative, which is exactly what retention controls.
+    #
+    # Three hours is chosen to match what a trace is FOR here: the demo is "make a call,
+    # then find it", and a debugging session is minutes. It keeps a local stack's worst case
+    # an eighth of what it was, and production — where a trace is worth keeping longer and
+    # the store is not sharing a laptop with everything else — would set this differently
+    # and say so.
+    block_retention: 3h
 
 storage:
   trace:
