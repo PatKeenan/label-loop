@@ -15,6 +15,15 @@ import type { AppEnv } from '../../app-env.ts'
  * well as its id, because a switcher listing `org_01J…` is not a switcher — and because
  * `sessionAuth` has already paid for that join, so the alternative is a second round trip
  * for data this response is holding.
+ *
+ * **`active_org_id` is named for what it is, and it is not a duplicate of the membership
+ * that matches it.** It is the org this REQUEST resolved to — the one every other endpoint
+ * filtered its rows by — and the client cannot derive it: when no `X-LabelLoop-Org` header
+ * is sent, the server falls back to the first membership, and reproducing that would mean
+ * the console reimplementing the ordering rule and trusting it matches. `role` beside it is
+ * the role IN that org, which is why it is here rather than read off a membership: a role
+ * is per-org (ADR-0014), so the same account can be `admin` in one and `annotator` in the
+ * next. With one membership the two look redundant; with two they are the whole answer.
  */
 export const createMeRoutes = () =>
   new Hono<AppEnv>().get('/me', (c) => {
@@ -23,7 +32,7 @@ export const createMeRoutes = () =>
       data: {
         user_id: userId,
         email,
-        org_id: orgId,
+        active_org_id: orgId,
         role,
         memberships: memberships.map((membership) => ({
           org_id: membership.orgId,

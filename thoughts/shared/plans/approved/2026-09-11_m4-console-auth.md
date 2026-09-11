@@ -562,6 +562,19 @@ Recorded as they happen; decision provenance, not a changelog.
    against a probe mounted on the real app through the real error handler (the pattern
    `rate-limit.test.ts` established), so the guard does not ship untested for two phases.
 
+6. **The active org is `active_org_id` on the wire, not `org_id`.** The plan wrote
+   "`GET /internal/me` returns active org, role, and the membership list" without naming the
+   field. Shipped as `org_id`, it sat directly above `memberships[].org_id` and read as a
+   duplicate of one of them — a stakeholder hit that confusion on the first look at a real
+   response. It is not a duplicate: it is the org THIS request resolved to, and with no header
+   sent the client cannot derive it without reimplementing the first-membership fallback. The
+   name now says so. The session field stays `session.orgId` — there is only one org on a
+   session, so the ambiguity exists only on the wire, beside the array.
+
+   `apps/web/src/routes/root.tsx` already consumed the old name and its typecheck failed on the
+   rename, which is the internal surface's stated guarantee working as designed: the contract is
+   Hono's RPC types, so a console route changing shape breaks the build rather than the page.
+
 ---
 
 ## Open questions for the human

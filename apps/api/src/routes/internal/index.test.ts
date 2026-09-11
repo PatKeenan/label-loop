@@ -213,11 +213,11 @@ describe('a signed-in member', () => {
     const response = await app().request('http://localhost/internal/me', { headers: { cookie } })
     expect(response.status).toBe(200)
     const body = (await response.json()) as {
-      data: { email: string; org_id: string; role: string }
+      data: { email: string; active_org_id: string; role: string }
       request_id: string
     }
     expect(body.data.email).toBe(MEMBER_EMAIL)
-    expect(body.data.org_id).toBe(ORG)
+    expect(body.data.active_org_id).toBe(ORG)
     expect(body.data.role).toBe('admin')
     // The envelope holds here exactly as it does on `/v1` (ADR-0010).
     expect(body.request_id).toMatch(/^[0-9a-f]{32}$/)

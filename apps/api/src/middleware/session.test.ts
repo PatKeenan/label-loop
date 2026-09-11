@@ -126,7 +126,7 @@ const userId = async (email: string): Promise<string> => {
 
 type Me = {
   data: {
-    org_id: string
+    active_org_id: string
     role: string
     memberships: { org_id: string; org_name: string; role: string }[]
   }
@@ -188,7 +188,7 @@ describe('the active org, when the request names one', () => {
 
     expect(response.status).toBe(200)
     const data = (body as Me).data
-    expect(data.org_id).toBe(FIRST_ORG)
+    expect(data.active_org_id).toBe(FIRST_ORG)
     expect(data.role).toBe('admin')
     // The switcher renders from this, so it carries the name and not only the id.
     expect(data.memberships.map((m) => m.org_id)).toEqual([FIRST_ORG, SECOND_ORG])
@@ -201,7 +201,7 @@ describe('the active org, when the request names one', () => {
 
     expect(response.status).toBe(200)
     const data = (body as Me).data
-    expect(data.org_id).toBe(SECOND_ORG)
+    expect(data.active_org_id).toBe(SECOND_ORG)
     // The whole reason the switcher and `requireRole` ship in one phase.
     expect(data.role).toBe('annotator')
   })
@@ -211,7 +211,7 @@ describe('the active org, when the request names one', () => {
     const { response, body } = await me(cookie, '   ')
 
     expect(response.status).toBe(200)
-    expect((body as Me).data.org_id).toBe(FIRST_ORG)
+    expect((body as Me).data.active_org_id).toBe(FIRST_ORG)
   })
 
   test('the org scopes the ROWS, not just the reply', async () => {
@@ -272,7 +272,7 @@ describe('the answers that did not change', () => {
 
     expect(response.status).toBe(200)
     const data = (body as Me).data
-    expect(data.org_id).toBe(FIRST_ORG)
+    expect(data.active_org_id).toBe(FIRST_ORG)
     expect(data.role).toBe('engineer')
     expect(data.memberships).toHaveLength(1)
   })
