@@ -1,9 +1,11 @@
 ---
 date: 2026-09-08T15:40:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-08T16:05:00Z
 approved_by: pat
+completed_at: 2026-09-11T15:04:39Z
+shipped_prs: [50, 51, 52, 53, 54]
 milestone: M3
 topic: m3-observability
 related_adrs: [0041, 0042, 0043, 0044, 0045, 0007, 0010, 0011, 0016, 0024, 0009, 0013, 0006]
@@ -327,6 +329,34 @@ Branch: `feat/m3-p5-soak`. PR title: `feat(k6): a soak, and retention sized from
 - **Touching the error taxonomy, the breaker, or the limiter.** M3 observes; it does not change
   behaviour. If a dashboard suggests a threshold is wrong, that is a finding for its own change.
 - **Auto-instrumentation**, in any form, forever (ADR-0016, machine-enforced).
+
+## Outstanding at close: the manual verifications
+
+**All five phases shipped and merged (#50–#54). The manual-verification boxes below are
+deliberately left UNTICKED, because a human never performed them** — ticking them would
+misrepresent who checked what, and this file is provenance for a public writeup.
+
+Most were nevertheless verified programmatically during implementation, with the evidence in
+the PRs and in `docs/BREAKING_POINT.md`. The distinction is worth keeping:
+
+| Manual step | Verified by the agent | Genuinely outstanding |
+|---|---|---|
+| P1 · traffic moves the series | Yes — `labelloop_*` series read from the collector's port and queried in Prometheus (#50) | A human watching them move |
+| P1 · stop the collector, API keeps serving | **No** | **Yes — never exercised** |
+| P2 · `labelloop_readonly` SELECT works, INSERT refused | Yes — `psql` as the role: `SELECT` returned, `INSERT` gave `permission denied for table traces` (#51) | A human at a prompt |
+| P3 · drive `misconfigured`, watch the rule fire | Yes — `state: firing`, alerting since 2026-09-10T17:45:40Z (#52) | Seeing it in the Grafana UI |
+| P3 · run a ramp, watch the dashboards | Partly — the soak ran against the dashboards and produced the p95 finding | **Yes — the RECORDED CLIP, which is the checklist artifact** |
+| P4 · click a log line through to its trace | Yes — the full chain: `request_id` → Loki line → `derivedFields` regex → Tempo HTTP 200 with three spans (#53) | The click itself in Explore |
+| P5 · memory flat across the soak, or a leak identified | Yes — flat; API plateaued at 196 MiB, final slope +5.8 MiB/h (`BREAKING_POINT.md` §3) | Nothing |
+
+**Two things are genuinely undone**, and both are written down rather than quietly dropped:
+
+1. **The collector-down test** — stopping the collector and confirming the API keeps serving
+   while warning rather than erroring. `otel.test.ts` covers the export-failure bridge at the
+   unit level, but the whole-stack version was never run. Recorded in
+   `docs/PARKING_LOT.md` under "Verification debt".
+2. **The recorded clip**, which is why Category 7's fourth row in
+   `docs/SENIORITY_CHECKLIST.md` is still open, with the reason stated in the row itself.
 
 ## Deviations
 

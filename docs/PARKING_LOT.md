@@ -101,3 +101,16 @@ Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.m
   **BERT-class encoders** as a rung below small generative fine-tunes, **trajectory-level
   evaluation**, and **white-label/custom domains** — all named in the source session as
   parked, and parked here too.
+
+## Verification debt
+
+- **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps
+  serving and warns rather than erroring" as a manual verification and it was never run
+  against the whole stack. The behaviour has unit coverage — `apps/api/src/otel.test.ts`
+  asserts that an export failure reaches the logger at `warn` through the global error
+  handler, which is the bridge that made "no traces in Grafana" distinguishable from "no
+  traffic" — but the composed version, where the collector is genuinely stopped and the API
+  keeps taking requests, has not been exercised. It is a ten-minute check, and it is the
+  kind that finds the thing a unit test's fake cannot: a slow collector rather than an
+  absent one, and whatever the metrics reader does that the span processor does not.
+  Recorded here rather than dropped, per `thoughts/shared/plans/complete/2026-09-08_m3-observability.md`.
