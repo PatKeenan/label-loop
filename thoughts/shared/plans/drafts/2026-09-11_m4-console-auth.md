@@ -53,7 +53,8 @@ that safety, which is why the negative tests are part of this phase and not a fo
   becomes a `where` clause and nothing has to be migrated") — it becomes true here.
 - `apps/api/src/middleware/session.ts` — resolve the ACTIVE org: read a requested org from an
   `X-LabelLoop-Org` header (see Decisions), validate it against membership, fall back to the
-  first membership when absent. `AuthenticatedSession` gains `memberships` so the console can
+  first membership when absent. **A non-member org answers `NOT_FOUND`, never `FORBIDDEN`** —
+  the response must not confirm that org exists (stakeholder, 2026-09-11). `AuthenticatedSession` gains `memberships` so the console can
   render a switcher without a second round trip.
 - `apps/api/src/middleware/require-role.ts` — **new.** `requireRole('admin', 'engineer')`,
   composed AFTER `sessionAuth()`, reading `c.var.session.role` — which is now the role for the
@@ -68,8 +69,9 @@ that safety, which is why the negative tests are part of this phase and not a fo
 - [ ] `sessionAuth` resolves and validates the active org; unknown or non-member org is refused
 - [ ] `requireRole()` middleware, with `FORBIDDEN` and a non-enumerating message
 - [ ] `GET /internal/me` returns active org, role, and the membership list
-- [ ] Negative tests: a member of org A asking for org B is refused; an annotator hitting an
-      admin-guarded route gets `FORBIDDEN`; a request with no header still works
+- [ ] Negative tests: a member of org A asking for org B gets `NOT_FOUND` (never `FORBIDDEN`,
+      which would confirm it exists); an annotator hitting an admin-guarded route gets
+      `FORBIDDEN`; a request with no header still works
 - [ ] The existing "an API key gets nowhere near the console" assertion still passes untouched
 
 ### Automated verification
@@ -79,8 +81,8 @@ that safety, which is why the negative tests are part of this phase and not a fo
 
 ### Manual verification
 - [ ] Sign in locally; `GET /internal/me` shows the seeded org, `admin`, one membership
-- [ ] Hand-craft a request with another org's id in the header; confirm it is refused and
-      that the refusal does not reveal whether that org exists
+- [ ] Hand-craft a request with another org's id in the header, and one with an id that does
+      not exist at all; confirm the two responses are INDISTINGUISHABLE
 
 ---
 
@@ -136,6 +138,12 @@ saturation point).
   `GET /internal/keys` (list, org-scoped), `POST /internal/keys/:id/revoke`. Behind
   `requireRole('admin', 'engineer')`.
 - `apps/api/src/routes/internal/index.ts` — register the route after the guard.
+- `scripts/mint-keys.ts` — **new** (stakeholder, 2026-09-11). Mints N keys through the SAME
+  service the console calls, so the load harness needs no session, no CORS and no new API
+  surface. This is what `docs/BREAKING_POINT.md` §8 ranks first among what would make v1 worth
+  reading: one key at 60/min cannot exceed ~1 served request per second, so the instance's knee
+  is currently unreachable rather than unmeasured. Built here because the service is being
+  written here; retrofitting the door later is the expensive version.
 
 ### Steps
 - [ ] `recordAuditEvent` with `actor_type='user'`, `actor_id` from session, `request_id` bound
@@ -147,6 +155,7 @@ saturation point).
 - [ ] Tests: plaintext appears exactly once and is not in any later response; a revoked key is
       refused at `/v1`; another org's key is neither listed nor revocable
 - [ ] Test: the audit rows land and the app role still cannot UPDATE or DELETE them
+- [ ] `scripts/mint-keys.ts` mints N keys via the service, each with its own `api_key.issued`
 
 ### Automated verification
 - [ ] `bun test apps/api/src/routes/internal/keys.test.ts apps/api/src/services/` passes
@@ -158,6 +167,9 @@ saturation point).
 - [ ] Revoke it; the same call now fails with `UNAUTHORIZED`
 - [ ] `SELECT * FROM audit_events` shows both events with a `request_id` that matches the
       response envelope
+- [ ] `bun run scripts/mint-keys.ts` produces N usable keys, and a k6 run using several of
+      them drives more than the ~1 req/s a single key allows — the measurement BREAKING_POINT
+      v1 needs. **Producing v1 itself stays out of scope**; this only makes it possible.
 
 ---
 
@@ -477,6 +489,14 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0046 is 
 15. **Sections the shell shows but M4 does not build are drawn visible-but-inert** — the shell
     is honest about where the app is going without committing to the contents of screens whose
     product decisions (harvest blockers 1–5) are still open.
+16. **A non-member or unknown org answers `NOT_FOUND`, not `FORBIDDEN`** (stakeholder,
+    2026-09-11) — the same posture `api-key-auth.ts` already takes, where a key scoped to
+    another panel is `UNAUTHORIZED` rather than `FORBIDDEN` so the response does not confirm
+    the other panel exists. Both auth paths now refuse the same way.
+17. **Phase 3 ships `scripts/mint-keys.ts`, minting through the console's own service**
+    (stakeholder, 2026-09-11) — over having k6 sign in and drive `/internal` (which couples the
+    load harness to session auth and CORS), and over deferring it. BREAKING_POINT §8 ranks it
+    first, and the seam is nearly free while the service is being written.
 
 ## Explicitly NOT doing
 - **No client SDK.** ADR-0002 descoped it 2026-08-19; D5 records "no SDK"; `packages/sdk` has
@@ -489,26 +509,23 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0046 is 
 - **No quota enforcement** — M8, with billing and the ADR-0040 fail-open revisit.
 - **No `annotator` surface**; the role is enforced, its console is M5.
 - **No CD.** M8 leads with it (ADR-0029).
-- **No BREAKING_POINT v1 rerun.** M4 makes the saturation number *measurable*; producing it is
-  separate work. The k6 key-minting path is named as an open question below rather than built.
+- **No BREAKING_POINT v1 rerun.** M4 makes the saturation number *measurable* and ships the
+  minting script that makes it reachable (phase 3); running the load and rewriting the document
+  is separate work.
 - **Phase A stays paused** for `annotator-session` and `console-dashboard`, and the six
   harvest blockers stay open.
 
 ## Open questions for the human
-1. **How does k6 mint N keys?** BREAKING_POINT §8 ranks this first, and management is
-   console-only — so the path is either the internal RPC driven with a session cookie, or an
-   ops script. Naming it here would let phase 3 leave the right seam; leaving it unnamed risks
-   discovering at v1 time that the door was never built. Should phase 3 ship that seam?
-2. **Does the header-based active org need a `403` or a `404` for a non-member org?** `404`
-   leaks less (it does not confirm the org exists); `403` is more honest to a user who really
-   is a member of something else. The API-key path chose the non-confirming answer for exactly
-   this reason, which argues for `404`.
-3. **What does the sidebar do when a section is inert — hide it, or show it disabled?** The
+Two of the original four were answered by the stakeholder on 2026-09-11 and are now decisions
+16 and 17. The remaining two are review-time calls inside the phases they affect, and cost
+nothing to carry:
+
+1. **What does the sidebar do when a section is inert — hide it, or show it disabled?** The
    plan says visible-but-inert, on the argument that it makes the app's direction legible. The
    counter-argument is that a console full of dead links reads as unfinished in a demo, which
-   is the one context this project is optimised for. Worth a look at the 6b screen.
-4. **Does the trace table get the harvest's design decisions applied** (judge and human as
+   is the one context this project is optimised for. Decide at the 6b review.
+2. **Does the trace table get the harvest's design decisions applied** (judge and human as
    separate columns, agreement derived, raw payloads expanding rather than inline), or does it
    stay a plain table until M5? The harvest's `console-trace-explorer` notes are usable but
-   reference the retired `cls_` vocabulary and its Q1 (ten columns will not fit a laptop)
-   is unresolved.
+   reference the retired `cls_` vocabulary, and its Q1 — ten columns will not fit a laptop
+   viewport — is unresolved. Decide in phase 8.
