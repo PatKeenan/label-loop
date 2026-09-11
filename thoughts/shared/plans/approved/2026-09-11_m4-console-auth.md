@@ -1,10 +1,13 @@
 ---
 date: 2026-09-11T18:40:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-11T19:02:34Z
+approver: Pat Keenan
 milestone: M4
 topic: m4-console-auth
 related_adrs: [0003, 0008, 0009, 0014, 0016, 0019, 0020, 0022, 0023, 0025, 0026, 0034, 0035, 0046]
+spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058]
 ---
 
 # M4 — console, auth, and the interviewer flow
