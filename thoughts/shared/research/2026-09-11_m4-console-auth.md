@@ -119,7 +119,65 @@ advisory can fail an M4 PR.
 - **`docs/PARKING_LOT.md` "Verification debt"** — M3's collector-down test against the whole
   stack, ten minutes, still unrun. Not an M4 dependency; a cheap thing to carry.
 
+## Decisions taken — stakeholder, 2026-09-11
+Answers to the seven questions below, recorded here so planning reads decisions rather than
+questions. Each one that is a stack row or an architectural commitment needs an ADR; the next
+free number is **0046**.
+
+1. **Phase A resumes for `panel-create.html` ALONE.** The other two load-bearing screens stay
+   paused until M5/M6, and the six harvest blockers stay open — none of them gate this screen.
+2. **A component library is adopted: shadcn/ui — new STACK_DECISIONS row D17, and an ADR.**
+   The stakeholder's condition resolves the one-aesthetic-decision-point objection rather than
+   overriding it: **`tokens.css` is CONVERTED into shadcn's own theming convention** so there
+   is still one token source, expressed the way the library expects, and reusable. Tailwind
+   enters as a consequence. Two conversion constraints, recorded because they are where the
+   approved palette could silently be lost:
+   - **Our vocabulary is richer than shadcn's.** `--color-line-soft`/`--color-line`/
+     `--color-line-strong` collapse to shadcn's single `--border`, and shadcn has no
+     equivalent of the `data-density` axis at all. Keep `tokens.css`'s full vocabulary as the
+     source and define shadcn's required names as ALIASES onto ours — never flatten ours to fit.
+   - **Selector convention differs.** shadcn keys dark off a `.dark` class; ours is three
+     attribute axes (`data-tone`, `data-surface`, `data-density`). Tailwind v4's
+     `@custom-variant` covers it, but it is deliberate setup, not a default.
+   The mockup itself stays plain HTML + CSS — CLAUDE.md's hard rule governs `mockups/`, and
+   Phase C rebuilds clean, so the library lives only in `apps/web`.
+3. **OIDC provider: GitHub, and only GitHub.** Credential sign-in is **kept locally and
+   DISABLED in production** (`emailAndPassword: { enabled: NODE_ENV !== 'production' }`), so the
+   fresh clone still boots and signs in with no secrets (ADR-0009) while production has exactly
+   one door. `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` follow the `OPENROUTER_API_KEY` pattern:
+   optional locally, `superRefine`-required in production.
+   - **Consequence to design for, not discover at M8:** a first-time GitHub sign-in in
+     production hits `FORBIDDEN` / "not a member of any organisation", because there is no
+     invite flow at M4 and the seed user is a password account. How the first admin gets an
+     `org_members` row in production (seed by GitHub email, an ops script, or
+     first-user-becomes-admin) is an M8 deploy concern, named here so it is a decision.
+4. **`api_keys` gets NO `scopes` column at M4** — deferred to when the management API ships,
+   which is what PRODUCT 5.1 literally asks and which the parking lot parks until enterprise
+   pull. **Accepted cost, stated rather than implied:** every key issued between now and then
+   needs a backfill when scopes arrive, and M4 is the milestone that starts minting them in
+   volume. The plan proceeds on the assumption that keys are implicitly `evaluate`-only.
+5. **M4 writes the first `audit_events` rows**: `api_key.issued`, `api_key.revoked`,
+   `panel_version.created`, `judge_version.created` — `actor_type='user'`, `actor_id` from the
+   session, `request_id` bound (ADR-0010). M8 still owns the viewer, retention and export. This
+   is the first time the append-only grant is exercised by application code rather than a test.
+6. **The org-switcher seam SHIPS at M4.** The org stops being implicit, which is a real scope
+   addition and changes the shape of the auth phase:
+   - `findMembership` becomes a list, and the request must say which org it means — so every
+     internal route validates the requested org against membership. This is exactly the leak
+     `session.ts` warns about ("authenticates and then forgets to filter"), so the negative
+     tests (another org's id must not leak) belong in the same phase.
+   - **Role resolves per SELECTED org**, not the first — so `requireRole()` and the switcher
+     are one phase, not two.
+   - **Do not reach for better-auth's organization plugin.** It would contradict ADR-0014,
+     which deliberately put `role` on our own `org_members` rather than in the auth library.
+7. **Catalogue: live fetch with an in-memory TTL cache**, in `src/llm/` (ADR-0016). A failed
+   refresh serves the last good snapshot and warns; a cold start with no network leaves the
+   picker unpopulated and the wizard must say so plainly rather than appear empty. No new
+   table, no new job.
+
 ## Open questions for the human
+> **Answered 2026-09-11 — see "Decisions taken" above.** Retained as the reasoning behind
+> each call rather than deleted; the provenance is the point (CLAUDE.md).
 
 1. **Does Phase A resume at M4, and if so for exactly one screen?** `mockups/BRIEF.md` says
    the first milestone needing a designed screen is M5, but its own scope list names
@@ -170,19 +228,25 @@ advisory can fail an M4 PR.
 Sequence the milestone so each phase is a branch with something verifiable at its end, in
 roughly this order:
 
-1. **Roles enforced server-side.** A `requireRole()` middleware composed after `sessionAuth()`
-   in `routes/internal/index.ts`, plus the tests that matter — an annotator refused an admin
-   route, a role change taking effect, and the existing "API key gets nowhere near the console"
-   assertion still passing. Smallest phase, and it is the Category 6 checklist row.
-2. **OIDC**, once question 2 is answered, keeping the zero-secret boot intact.
+1. **Roles enforced server-side, WITH the org-switcher seam** (decision 6 merged them). The
+   org becomes explicit, `findMembership` becomes a list, every internal route validates the
+   requested org against membership, and `requireRole()` resolves the role for the selected
+   org. Tests that matter: an annotator refused an admin route, another org's id refused
+   rather than leaked, a role change taking effect, and the existing "API key gets nowhere
+   near the console" assertion still passing. No longer the smallest phase.
+2. **GitHub OIDC**, credential sign-in disabled in production only, keeping the zero-secret
+   local boot intact.
 3. **Key issuance and revocation** over `/internal`: create (plaintext rendered exactly once,
-   SHA-256 stored, `last4` kept), list, revoke as a status flip. This is the phase that
-   unblocks BREAKING_POINT, and the natural first `audit_events` writer if question 4 says yes.
-4. **The catalogue client and the model picker**, inside `src/llm/`, built against the measured
+   SHA-256 stored, `last4` kept), list, revoke as a status flip. No `scopes` column (decision
+   4). This is the phase that unblocks BREAKING_POINT, and the first `audit_events` writer
+   (decision 5).
+4. **The catalogue client and the model picker** — live fetch, in-memory TTL, last-good
+   snapshot on refresh failure (decision 7) — inside `src/llm/`, built against the measured
    table rather than against `supported_parameters`: show cost, measured latency *and its
    spread*, endpoint count after the pin, and the effort dial's per-model cost/latency
    consequence. Gate on `validatePin`, surface `reason` verbatim in the form.
-5. **The panel + judge wizard**, writing `pnl_`/`pnv_`/`jud_`/`jdv_` in one transaction with
+5. **The panel + judge wizard**, designed first as `mockups/panel-create.html` (decision 1)
+   and then rebuilt clean on shadcn/ui over the converted tokens (decision 2), writing `pnl_`/`pnv_`/`jud_`/`jdv_` in one transaction with
    the pin validated before the insert, and activation via the `panels.current_version_id`
    pointer. The draft is client-side state until submit, because the grants leave no other
    option without an ADR.
