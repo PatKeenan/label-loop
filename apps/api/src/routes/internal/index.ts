@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { AppEnv } from '../../app-env.ts'
 import { AUTH_BASE_PATH } from '../../auth.ts'
-import { sessionAuth } from '../../middleware/session.ts'
+import { ACTIVE_ORG_HEADER, sessionAuth } from '../../middleware/session.ts'
 import { createMeRoutes } from './me.ts'
 import { createTraceRoutes } from './traces.ts'
 
@@ -36,13 +36,19 @@ import { createTraceRoutes } from './traces.ts'
  * the origin is an exact match against configuration rather than a reflection of whatever
  * `Origin` header arrived — a wildcard with credentials is the shape that turns any page a
  * user visits into a client of this API.
+ *
+ * `ACTIVE_ORG_HEADER` is on `allowHeaders` because it HAS to be: a custom request header is
+ * not on the CORS safelist, so a browser preflights it and drops the request when the
+ * response does not name it. This is the one line in M4's tenancy work that no test can
+ * catch — `app.request()` sends no preflight — so it fails only in a real browser, and only
+ * once the switcher starts sending the header.
  */
 const consoleCors = () =>
   cors({
     origin: (origin, c) => (origin === c.var.deps.config.WEB_ORIGIN ? origin : undefined),
     credentials: true,
     allowMethods: ['GET', 'POST', 'OPTIONS'],
-    allowHeaders: ['content-type'],
+    allowHeaders: ['content-type', ACTIVE_ORG_HEADER],
   })
 
 /** The mount point, and the prefix `AUTH_BASE_PATH` must agree with. */

@@ -3,7 +3,7 @@ import { schema } from '@labelloop/db'
 import { eq } from 'drizzle-orm'
 
 /**
- * Reading a person's organisation membership — the row that turns "who is this" into
+ * Reading a person's organisation memberships — the rows that turn "who is this" into
  * "whose data may they see" (ADR-0014).
  */
 
@@ -14,31 +14,39 @@ export type Membership = {
   orgId: string
   userId: string
   role: OrgRole
+  /**
+   * Carried so a switcher can render a name rather than a ULID. The read is a join
+   * either way — `org_members` holds no name — and doing it here is what lets
+   * `GET /internal/me` answer the switcher in one round trip (ADR-0047).
+   */
+  orgName: string
+  orgSlug: string
 }
 
 /**
- * The one org this person belongs to, or `undefined`.
+ * EVERY org this person belongs to, oldest membership first.
  *
- * Singular, and the schema is not: `org_members` is keyed on (org, user) precisely so a
- * person can belong to several, which the post-V1 roadmap needs for SMEs working across
- * customers. M0 has no org switcher and no way to say which org a request is about, so
- * this takes the first and the console shows one — narrowing the read rather than the
- * schema, so that the day an org picker exists this becomes a `where` clause and nothing
- * has to be migrated.
+ * This used to be `findMembership`, singular, taking the first row — a deliberate
+ * narrowing of the read rather than of the schema, on the note that "the day an org picker
+ * exists this becomes a `where` clause and nothing has to be migrated". M4 is that day, and
+ * it went the other way: the picker needs the whole list to render, and `sessionAuth` needs
+ * the whole list to validate a requested org against. One query answers both.
+ *
+ * **The ordering is load-bearing, not incidental.** `sessionAuth` falls back to the first
+ * row when no org is requested, so a non-deterministic order would mean a request without
+ * the header could resolve to a different org on consecutive calls.
  */
-export const findMembership = async (
-  db: Database,
-  userId: string,
-): Promise<Membership | undefined> => {
-  const rows = await db
+export const listMemberships = async (db: Database, userId: string): Promise<Membership[]> => {
+  return db
     .select({
       orgId: schema.orgMembers.orgId,
       userId: schema.orgMembers.userId,
       role: schema.orgMembers.role,
+      orgName: schema.orgs.name,
+      orgSlug: schema.orgs.slug,
     })
     .from(schema.orgMembers)
+    .innerJoin(schema.orgs, eq(schema.orgs.id, schema.orgMembers.orgId))
     .where(eq(schema.orgMembers.userId, userId))
     .orderBy(schema.orgMembers.createdAt)
-    .limit(1)
-  return rows[0]
 }

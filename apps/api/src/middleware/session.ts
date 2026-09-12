@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app-env.ts'
 import { AppError } from '../errors.ts'
-import { findMembership, type OrgRole } from '../repositories/org-members.ts'
+import { listMemberships, type Membership, type OrgRole } from '../repositories/org-members.ts'
 
 /**
  * Session authentication for the console surface (ADR-0008, CONVENTIONS.md "Keys & auth").
@@ -18,16 +18,43 @@ import { findMembership, type OrgRole } from '../repositories/org-members.ts'
  * across tenants is a handler that authenticates and then forgets to filter. Resolving the
  * org here means a route cannot read a row without saying whose org it belongs to, because
  * the org is the only thing it has to filter by.
+ *
+ * **M4 removed the safety net that made the paragraph above automatically true.** Until the
+ * switcher existed there was exactly one org a request could possibly mean, so "forgot to
+ * filter" could not select the wrong tenant — only the right one. Now the caller names the
+ * org (ADR-0047), which means this file is the single place that decides whether they are
+ * allowed to. Everything downstream still reads `session.orgId` and stays org-implicit; the
+ * org becomes explicit once, here, at the boundary.
  */
+
+/**
+ * The header the console names its active org with (ADR-0047).
+ *
+ * Exported because three places must agree on the spelling and only one of them can be
+ * wrong silently: this middleware reads it, `routes/internal/index.ts` must allow it through
+ * CORS preflight, and the tests assert on it. A custom request header is not on the CORS
+ * safelist, so a header allowed here and forgotten there fails only in a real browser —
+ * never in a test, which sends no preflight.
+ */
+export const ACTIVE_ORG_HEADER = 'X-LabelLoop-Org'
 
 /** What an internal route may assume once this middleware has run. */
 export type AuthenticatedSession = {
   userId: string
   email: string
-  /** The org whose data this request may see. There is exactly one at M0. */
+  /** The ACTIVE org: the one this request named, or the first membership if it named none. */
   orgId: string
-  /** Present from M0, ENFORCED from M4 (ADR-0014). Carried so the console can render it. */
+  /**
+   * The role IN the active org, not a property of the person (ADR-0014). It is re-resolved
+   * per request for that reason — the same account can be an admin in one org and an
+   * annotator in another, so a role cached against the user would be wrong half the time.
+   */
   role: OrgRole
+  /**
+   * Every org this account belongs to, so the console renders its switcher from the reply
+   * it already has rather than a second round trip.
+   */
+  memberships: readonly Membership[]
 }
 
 /**
@@ -43,6 +70,20 @@ const UNAUTHENTICATED = 'Sign in to use the console.'
  */
 const NOT_A_MEMBER = 'This account is not a member of any organisation. Ask an owner to invite you.'
 
+/**
+ * The refusal for a requested org that is not one of yours — and for one that does not
+ * exist. **The same sentence and the same code for both, deliberately** (ADR-0057).
+ *
+ * `FORBIDDEN` would be the instinctive choice and it is the wrong one: it confirms the org
+ * exists and says only that this account cannot reach it, which turns the header into an
+ * org-id oracle. `api-key-auth.ts` already takes this posture for a key scoped to another
+ * panel, and both auth paths now refuse the same way.
+ *
+ * The cost is real and was accepted rather than overlooked: a member of another org who
+ * follows a stale link gets a message that cannot tell them so.
+ */
+const NO_SUCH_ORG = 'No organisation with that id is available to this account.'
+
 export const sessionAuth = (): MiddlewareHandler<AppEnv> => {
   return async (c, next) => {
     const { auth, db } = c.var.deps
@@ -57,22 +98,41 @@ export const sessionAuth = (): MiddlewareHandler<AppEnv> => {
       })
     }
 
-    const membership = await findMembership(db, session.user.id)
-    if (membership === undefined) {
+    const memberships = await listMemberships(db, session.user.id)
+    const first = memberships[0]
+    if (first === undefined) {
       throw new AppError('FORBIDDEN', NOT_A_MEMBER, {
         context: { reason: 'authenticated, but a member of no org' },
+      })
+    }
+
+    // Trimmed, and empty treated as absent: a client that sets the header from an unset
+    // variable sends `""`, and answering NOT_FOUND to that would be a confusing way to say
+    // "you sent nothing".
+    const requested = c.req.header(ACTIVE_ORG_HEADER)?.trim()
+    const active =
+      requested === undefined || requested === ''
+        ? first
+        : memberships.find((membership) => membership.orgId === requested)
+
+    if (active === undefined) {
+      // The id is kept for the log line and the error tracker, never for the caller —
+      // `AppError.context` is not serialized into the envelope.
+      throw new AppError('NOT_FOUND', NO_SUCH_ORG, {
+        context: { reason: 'requested org is not one of this account’s memberships' },
       })
     }
 
     c.set('session', {
       userId: session.user.id,
       email: session.user.email,
-      orgId: membership.orgId,
-      role: membership.role,
+      orgId: active.orgId,
+      role: active.role,
+      memberships,
     })
     // The ids, never the email: a log stream is not an access-controlled store, and an
     // address is the one field here that identifies a person outside this system.
-    c.var.logger.assign({ user_id: session.user.id, org_id: membership.orgId })
+    c.var.logger.assign({ user_id: session.user.id, org_id: active.orgId })
     await next()
   }
 }

@@ -44,7 +44,7 @@ export const RootLayout = () => {
         </nav>
         {me.data === null || me.data === undefined ? null : (
           <p>
-            Signed in as {me.data.email} · {me.data.role} of {me.data.org_id}{' '}
+            Signed in as {me.data.email} · {me.data.role} of {me.data.active_org_id}{' '}
             <button type="button" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
               Sign out
             </button>
