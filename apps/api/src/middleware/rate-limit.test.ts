@@ -11,6 +11,7 @@ import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import type { RateLimitStore } from '../ports/rate-limit-store.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
 import { fakeAuth } from '../testing/fake-auth.ts'
+import { fakeCatalogue } from '../testing/fake-catalogue.ts'
 import { fakeDatabase } from '../testing/fake-database.ts'
 import { fakeQueue } from '../testing/fake-queue.ts'
 import { apiKeyAuth } from './api-key-auth.ts'
@@ -95,6 +96,8 @@ const hostWith = (
     meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore,
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
   const probe = new Hono<AppEnv>()

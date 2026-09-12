@@ -10,6 +10,7 @@ import { createFakeProvider, createModelGateway, FAKE_MODEL, FAKE_SENTINELS } fr
 import { byApiKey, rateLimit } from './middleware/rate-limit.ts'
 import { createMemoryRateLimitStore } from './rate-limit/memory-store.ts'
 import { fakeAuth } from './testing/fake-auth.ts'
+import { fakeCatalogue } from './testing/fake-catalogue.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
 import { fakeQueue } from './testing/fake-queue.ts'
 import { type Recorded, recordingMetrics } from './testing/recording-metrics.ts'
@@ -122,6 +123,8 @@ const driveEverything = async (): Promise<Recorded[]> => {
     meter: recorded.meter,
     auth: fakeAuth(),
     rateLimitStore: createMemoryRateLimitStore(),
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
   const probe = new Hono<AppEnv>()

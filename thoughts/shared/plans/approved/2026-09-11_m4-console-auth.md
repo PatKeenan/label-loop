@@ -224,23 +224,32 @@ saturation point).
   generation behind.
 
 ### Steps
-- [ ] Catalogue client with TTL cache, last-good-snapshot fallback, injected `fetch`
-- [ ] `GET /internal/models` returns price, endpoint count, supported efforts, mandatory flag
-- [ ] `POST /internal/judges/validate-pin` surfaces `reason` verbatim, never as an error envelope
-- [ ] Tests: a failing refresh serves the previous snapshot and logs at `warn`; a cold start
+- [x] Catalogue client with TTL cache, last-good-snapshot fallback, injected `fetch`
+- [x] `GET /internal/models` returns price, supported efforts, mandatory flag — **endpoint
+      count moved to its own route, see Deviation 18**
+- [x] `POST /internal/judges/validate-pin` surfaces `reason` verbatim, never as an error envelope
+- [x] Tests: a failing refresh serves the previous snapshot and logs at `warn`; a cold start
       with no network returns an explicit empty-with-reason rather than a silent empty list
-- [ ] `architecture.test.ts` still passes with the new outbound call inside `src/llm/`
+- [x] `architecture.test.ts` still passes with the new outbound call inside `src/llm/`
 
 ### Automated verification
-- [ ] `bun test apps/api/src/llm/catalogue.test.ts` passes
-- [ ] `bun test apps/api/src/architecture.test.ts` passes
-- [ ] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test apps/api/src/llm/catalogue.test.ts` passes — 14 tests, offline
+- [x] `bun test apps/api/src/architecture.test.ts` passes
+- [x] `bun run typecheck`, `bun run lint` clean (full suite: 723 tests, 60 files)
 
 ### Manual verification
+> Rebuild first — `set -a && . ./.env && set +a && docker compose -f
+> infra/docker-compose.yml up -d --build api`.
+
 - [ ] With a real `OPENROUTER_API_KEY`, `GET /internal/models` returns a populated list whose
-      numbers match the measurement table for the six models already measured
+      numbers match the measurement table for the six models already measured.
+      *Note:* the catalogue itself is PUBLIC and needs no key — verified during
+      implementation, 445 models over one unauthenticated request. The key is what
+      `validate-pin` needs, not the list.
 - [ ] Validate a pin for `anthropic/claude-haiku-4.5` and confirm the failure reason says the
-      rationale exceeded its length — actionable, not "invalid output"
+      rationale exceeded its length — actionable, not "invalid output".
+      **This one costs a real provider call**, which is the point of it: nothing static can
+      answer the question (ADR-0053).
 
 ---
 
@@ -720,6 +729,43 @@ Recorded as they happen; decision provenance, not a changelog.
     deliberately and nothing enforced it. It is a hygiene issue rather than a hole (the secret
     is 32 random bytes, so its SHA-256 is not reversible), but a documented intention with no
     guard is exactly what rots, so the assertion now exists and the mutation now fails.
+
+### Phase 4
+
+18. **`GET /internal/models` carries no endpoint count; `GET /internal/models/{id}/endpoints`
+    does.** The plan asked for the count in the list. The live catalogue was checked before
+    designing against it: `/models` returns **445 models and has no endpoint-count field at
+    all**, so populating the list eagerly would mean one HTTP request per model per refresh.
+
+    It is also the wrong number to lead with, which is the better half of the argument. The
+    count that matters is how many endpoints survive THIS judge's pin — `claude-sonnet-5` had
+    5 of 9, `gpt-5.6-sol` had 1 of 5 — and only ADR-0026's validating call knows it. The
+    catalogue's raw total is the denominator, useful for "what would constraining quantization
+    cost", and it is fetched per model on demand and cached separately.
+
+19. **Fixtures are REAL trimmed responses, captured 2026-09-12**, in
+    `apps/api/src/llm/__fixtures__/`. A hand-written fixture tests a parser against its own
+    author's assumptions, which is how a field gets read from the wrong place and nobody
+    notices until production. The catalogue endpoints are public and unauthenticated, so
+    capturing them cost nothing and used no credential.
+
+20. **`modelProvider` was hoisted into `AppDeps`.** `validatePin` takes a `ModelProvider`
+    rather than the gateway — as `scripts/seed.ts` has called it since M1 — and the gateway
+    exposes no provider. This is NOT a hole in "every provider call goes through the gateway":
+    that rule is about `src/llm/` being the only place a provider is reached, which
+    `architecture.test.ts` enforces and `validate-pin.ts` satisfies. What validation
+    deliberately does not want is retry and a breaker — an unsatisfiable pin is an ANSWER, and
+    a form check that tripped the circuit for real judge traffic would be worse than useless.
+
+21. **`testing/fake-catalogue.ts` is new, and twelve `createApp` sites gained two deps.** The
+    cost of a required dependency, paid the same way `meter` and `rateLimitStore` were.
+
+22. **A second test was added because a mutation defeated the suite** — the same lesson as
+    phase 3, in a subtler form. Parsing every price through a float passed all thirteen tests,
+    because the fixture's own prices round-trip by luck: `String(Number('0.00001'))` is still
+    `'0.00001'`. The assertion was testing a value that could not fail. It now uses
+    `'0.0000001'`, which becomes `'1e-7'`, and a long decimal that loses digits outright.
+    **Fixtures drawn from real data can hide a bug precisely because the real data is benign.**
 
 ---
 

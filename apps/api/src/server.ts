@@ -6,6 +6,7 @@ import { createAuth } from './auth.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createPgBossQueue, registerJobHandlers } from './jobs/index.ts'
 import { installSignalHandlers } from './lifecycle.ts'
+import { createCatalogue } from './llm/catalogue.ts'
 import { createFakeProvider, createModelGateway } from './llm/index.ts'
 import { createOpenRouterProvider } from './llm/openrouter-provider.ts'
 import { createProviderRegistry } from './llm/provider-registry.ts'
@@ -63,26 +64,34 @@ const db = createDatabase({ url: config.DATABASE_URL, max: config.DATABASE_POOL_
 // survives intact (ADR-0009): without one the registry holds `fake:` alone, and an
 // `openrouter:` judge answers `unavailable` rather than taking the process down. That is
 // the right failure — the panel's other judges are fine and should still answer.
-const modelGateway = createModelGateway({
-  provider: createProviderRegistry({
-    providers: {
-      // Latency is off unless the environment asks for it, so this is `createFakeProvider()`
-      // in every configuration except a deliberate load run (M2).
-      fake: createFakeProvider(
-        config.FAKE_PROVIDER_LATENCY_MS === 0
-          ? {}
-          : {
-              latency: {
-                meanMs: config.FAKE_PROVIDER_LATENCY_MS,
-                spreadMs: config.FAKE_PROVIDER_LATENCY_SPREAD_MS,
-              },
-            },
-      ),
-      ...(config.OPENROUTER_API_KEY === undefined
+//
+// The registry is HOISTED rather than inlined into the gateway because two callers need it,
+// and the second one is not a judge call: `validatePin` (ADR-0026) proves a pin is
+// satisfiable by using it, and it takes a `ModelProvider` rather than the gateway — the same
+// way `scripts/seed.ts` has called it since M1. Both callers live inside `src/llm/`, which is
+// what CONVENTIONS' "one provider gateway" rule is actually about.
+const modelProvider = createProviderRegistry({
+  providers: {
+    // Latency is off unless the environment asks for it, so this is `createFakeProvider()`
+    // in every configuration except a deliberate load run (M2).
+    fake: createFakeProvider(
+      config.FAKE_PROVIDER_LATENCY_MS === 0
         ? {}
-        : { openrouter: createOpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY }) }),
-    },
-  }),
+        : {
+            latency: {
+              meanMs: config.FAKE_PROVIDER_LATENCY_MS,
+              spreadMs: config.FAKE_PROVIDER_LATENCY_SPREAD_MS,
+            },
+          },
+    ),
+    ...(config.OPENROUTER_API_KEY === undefined
+      ? {}
+      : { openrouter: createOpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY }) }),
+  },
+})
+
+const modelGateway = createModelGateway({
+  provider: modelProvider,
   clock: systemClock,
   tracer: telemetry.tracer,
   meter: telemetry.meter,
@@ -125,6 +134,12 @@ await registerJobHandlers(jobs, { db, clock: systemClock, errorReporter, logger 
 // limiter fails open per request and says so in the log (ADR-0040).
 const rateLimitStore = createRedisRateLimitStore({ url: config.REDIS_URL })
 
+// The catalogue is unauthenticated and public, so it needs no key and is built
+// unconditionally — unlike the OpenRouter ADAPTER above, which is registered only when a
+// credential exists. A clone with no key can therefore still populate its model picker; what
+// it cannot do is validate a pin, which needs a real call (ADR-0026).
+const catalogue = createCatalogue({ clock: systemClock, logger })
+
 // Configured at P3, mounted here at P7 (plan D-E). It takes the APP role's handle like
 // everything else: better-auth reads and writes its four tables and, with
 // `disableMigrations`, cannot reach for DDL it does not have the privilege to issue.
@@ -136,6 +151,8 @@ const app = createApp({
   errorReporter,
   db,
   modelGateway,
+  modelProvider,
+  catalogue,
   jobs,
   tracer: telemetry.tracer,
   meter: telemetry.meter,

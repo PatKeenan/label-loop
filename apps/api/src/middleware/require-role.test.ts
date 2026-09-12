@@ -11,6 +11,7 @@ import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
 import type { OrgRole } from '../repositories/org-members.ts'
 import { fakeAuth } from '../testing/fake-auth.ts'
+import { fakeCatalogue } from '../testing/fake-catalogue.ts'
 import { fakeDatabase } from '../testing/fake-database.ts'
 import { fakeQueue } from '../testing/fake-queue.ts'
 import { requireRole } from './require-role.ts'
@@ -56,6 +57,8 @@ const hostWith = (role: OrgRole, allowed: readonly OrgRole[]) => {
     meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore: createMemoryRateLimitStore(),
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
   const probe = new Hono<AppEnv>()

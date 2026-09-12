@@ -4,7 +4,8 @@ import type { PinoLogger } from 'hono-pino'
 import type { Auth } from './auth.ts'
 import type { Config } from './config.ts'
 import type { JobQueue } from './jobs/index.ts'
-import type { ModelGateway } from './llm/index.ts'
+import type { Catalogue } from './llm/catalogue.ts'
+import type { ModelGateway, ModelProvider } from './llm/index.ts'
 import type { AuthenticatedKey } from './middleware/api-key-auth.ts'
 import type { AuthenticatedSession } from './middleware/session.ts'
 import type { Clock } from './ports/clock.ts'
@@ -69,6 +70,30 @@ export type AppDeps = {
    * grants access there (CONVENTIONS.md "Keys & auth").
    */
   auth: Auth
+  /**
+   * The provider registry itself, beneath the gateway.
+   *
+   * It is here for exactly one caller: `validatePin` (ADR-0026), which proves a judge's pin is
+   * satisfiable by USING it, and which takes a `ModelProvider` rather than the gateway.
+   * `scripts/seed.ts` has called it the same way since M1.
+   *
+   * **This is not a hole in "every provider call goes through the gateway".** That rule is
+   * about `src/llm/` being the only place a provider is reached, which the architecture test
+   * enforces — and `validate-pin.ts` lives there. What validation deliberately does not want
+   * is the gateway's retry and breaker: an unsatisfiable pin is an ANSWER, not an outage, and
+   * a form check that tripped a circuit for real judge traffic would be worse than useless.
+   */
+  modelProvider: ModelProvider
+  /**
+   * The provider's model catalogue (ADR-0054), which populates M4's model picker.
+   *
+   * Injected for the same reason the gateway is, and it is the same reason twice: it is
+   * STATEFUL. It holds an in-memory TTL cache and the last good snapshot, so one rebuilt per
+   * request would fetch the whole catalogue on every keystroke of a search box and would
+   * never have a previous snapshot to fall back to — which is to say the fallback would not
+   * exist.
+   */
+  catalogue: Catalogue
   /**
    * Where the rate limiter's counters live (ADR-0038). Injected rather than constructed in
    * the middleware for the same reason the gateway is: it is STATEFUL — it is nothing but

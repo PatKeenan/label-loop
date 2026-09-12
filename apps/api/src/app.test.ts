@@ -12,6 +12,7 @@ import { REQUEST_ID_HEADER } from './middleware/request-context.ts'
 import { createMemoryRateLimitStore } from './rate-limit/memory-store.ts'
 import { validationHook } from './routes/public/v1/index.ts'
 import { fakeAuth } from './testing/fake-auth.ts'
+import { fakeCatalogue } from './testing/fake-catalogue.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
 import { fakeQueue } from './testing/fake-queue.ts'
 
@@ -66,6 +67,8 @@ beforeEach(() => {
     meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore: createMemoryRateLimitStore(),
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 })
 
@@ -212,6 +215,8 @@ describe('contract-validation auto-mapping', () => {
       meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
+      modelProvider: createFakeProvider(),
+      catalogue: fakeCatalogue(),
     })
     host.route('/probe-host', probe)
     return host
@@ -278,6 +283,8 @@ describe('/readyz', () => {
       meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
+      modelProvider: createFakeProvider(),
+      catalogue: fakeCatalogue(),
     })
 
   const withDatabase = (options: Parameters<typeof fakeDatabase>[0]) => withDependencies(options)
