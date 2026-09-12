@@ -129,7 +129,9 @@ that safety, which is why the negative tests are part of this phase and not a fo
       sign-in and lands on "not a member of any organisation" for a new account — the
       expected M4 behaviour, and the M8 gap named in the research.
       **Needs a registered OAuth app**; the callback is asserted in `auth.test.ts` as
-      `http://localhost:3000/internal/auth/callback/github`
+      `http://localhost:3000/internal/auth/callback/github`.
+      **The button is a throwaway added by this phase** (Deviation 11) — the plan did not
+      schedule one until phase 8, which is later than the check that needs it
 
 ---
 
@@ -422,6 +424,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - `apps/web/src/routes/traces.tsx` — extended, not replaced.
 
 ### Steps
+- [ ] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
+      build the real one: feature-detected rather than always rendered, and using the
+      redirect-after-401 below rather than a hard-coded `callbackURL`
 - [ ] All three screens mount inside the phase 7 shell; none invents its own layout
 - [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [ ] Wizard: panel details → judges (question, polarity, weight, required) → model picker →
@@ -617,6 +622,27 @@ Recorded as they happen; decision provenance, not a changelog.
     `basePath` + `/callback/github`), not configured, so nothing else would catch it changing,
     and a mismatch is reported by GitHub rather than by us. `.env.example` tells the operator to
     paste the same string, and this assertion is what stops the two drifting.
+
+11. **A throwaway GitHub button was added to `apps/web/src/routes/login.tsx`, in phase 2.**
+    Not in this phase's scope, and added deliberately anyway (stakeholder, 2026-09-11).
+
+    **The plan had an ordering bug.** Phase 2's manual verification says to complete a
+    sign-in "with the GitHub button", and the login screen has only email and password —
+    the button is not scheduled until phase 8, six phases after the check that needs it.
+    The step as written could not be satisfied when it was asked for.
+
+    The alternative was to verify by pasting `sign-in/social` curl output into a browser,
+    which does exercise the whole round trip. It was rejected as the *verification* because
+    the thing phase 2 ships is a door for people, and driving it the way a person will is
+    worth more than driving it the way a script would.
+
+    It is marked as disposable in three places — a block comment on the component, an inline
+    comment beside the markup, and the phase 8 step above — because an undeleted placeholder
+    is how a screen invents its own layout, which is the exact failure decisions 13 and 14
+    reorganised the phases to prevent. Three properties are deliberately absent, so it cannot
+    be mistaken for a partial implementation: no design, no feature detection (it renders
+    even when the API has no GitHub credentials and the request comes back
+    `PROVIDER_NOT_FOUND`), and no redirect-after-401.
 
 ---
 
