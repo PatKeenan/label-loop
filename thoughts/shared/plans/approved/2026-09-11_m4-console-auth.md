@@ -437,6 +437,17 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [ ] Redirect-after-401 via `beforeLoad`
 - [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
       server guard; it never replaces it — CONVENTIONS "Keys & auth")
+- [ ] **`FORBIDDEN` needs to stop meaning two things in the console.** Found in phase 2's
+      manual verification: a GitHub account with no membership lands on *"Ask an owner of
+      this organisation to grant you access"*, and there is no "this organisation" — the
+      account is a member of none. `error-map.ts` keys off the CODE, and the server sends
+      `FORBIDDEN` for two unrelated states: "a member of no org at all" (`sessionAuth`) and
+      "your role in this org does not allow that" (`requireRole`, phase 1). The server's own
+      messages distinguish them; the map cannot see that. Either surface the server's
+      `message` for this code, or branch before the map is reached — **the "member of
+      nothing" state is arguably a screen rather than an error**, since it is where a real
+      product would offer to create an org, which is M8's gap. Decide here; do not paper over
+      the copy.
 
 ### Automated verification
 - [ ] `bun test apps/web` passes
