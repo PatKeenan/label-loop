@@ -162,23 +162,27 @@ saturation point).
   written here; retrofitting the door later is the expensive version.
 
 ### Steps
-- [ ] `recordAuditEvent` with `actor_type='user'`, `actor_id` from session, `request_id` bound
-- [ ] Key minting: prefix + 32 random bytes, SHA-256 stored, `last4` kept, plaintext returned once
-- [ ] List and revoke, both org-scoped from the session and never from a request parameter
-- [ ] Revocation is a status flip; the row survives, and a revoked key still resolves in the
+- [x] `recordAuditEvent` with `actor_type='user'`, `actor_id` from session, `request_id` bound
+- [x] Key minting: prefix + 32 random bytes, SHA-256 stored, `last4` kept, plaintext returned once
+- [x] List and revoke, both org-scoped from the session and never from a request parameter
+- [x] Revocation is a status flip; the row survives, and a revoked key still resolves in the
       hot-path read (which is deliberate — see `api-keys.ts`)
-- [ ] `api_key.issued` and `api_key.revoked` written
-- [ ] Tests: plaintext appears exactly once and is not in any later response; a revoked key is
+- [x] `api_key.issued` and `api_key.revoked` written
+- [x] Tests: plaintext appears exactly once and is not in any later response; a revoked key is
       refused at `/v1`; another org's key is neither listed nor revocable
-- [ ] Test: the audit rows land and the app role still cannot UPDATE or DELETE them
-- [ ] `scripts/mint-keys.ts` mints N keys via the service, each with its own `api_key.issued`
+- [x] Test: the audit rows land and the app role still cannot UPDATE or DELETE them — proven
+      the hard way, see Deviation 13
+- [x] `scripts/mint-keys.ts` mints N keys via the service, each with its own `api_key.issued`
 
 ### Automated verification
-- [ ] `bun test apps/api/src/routes/internal/keys.test.ts apps/api/src/services/` passes
-- [ ] `bun test packages/db/src/audit-events.test.ts` still passes (grant unchanged)
-- [ ] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test apps/api/src/routes/internal/keys.test.ts apps/api/src/services/` passes — 19 tests
+- [x] `bun test packages/db/src/audit-events.test.ts` still passes (grant unchanged)
+- [x] `bun run typecheck`, `bun run lint` clean (full suite green: 698 tests, 58 files)
 
 ### Manual verification
+> Rebuild before verifying — `set -a && . ./.env && set +a && docker compose -f
+> infra/docker-compose.yml up -d --build api` — for the reason phase 2 records.
+
 - [ ] Issue a key in the API, copy the plaintext, call `POST /v1/panels/{id}/evaluate` with it
 - [ ] Revoke it; the same call now fails with `UNAUTHORIZED`
 - [ ] `SELECT * FROM audit_events` shows both events with a `request_id` that matches the
@@ -186,6 +190,10 @@ saturation point).
 - [ ] `bun run scripts/mint-keys.ts` produces N usable keys, and a k6 run using several of
       them drives more than the ~1 req/s a single key allows — the measurement BREAKING_POINT
       v1 needs. **Producing v1 itself stays out of scope**; this only makes it possible.
+      *Minting verified during implementation:* 5 keys minted against the seeded panel, each
+      with its own `api_key.issued` at `actor_type='system'`, and the first one returned 200
+      from a real `/v1` evaluation. A wrong `MINT_ORG_ID` was refused with nothing written.
+      **The k6 run itself is still yours** — that is the half this phase only makes possible.
 
 ---
 
@@ -672,6 +680,46 @@ Recorded as they happen; decision provenance, not a changelog.
     repo-root `.env` is NOT read. Variables are forwarded from the invoking shell, which
     means `set -a && . ./.env && set +a` before `docker compose up`. The comment in the
     compose file now says so.
+
+### Phase 3
+
+13. **The test cannot delete its own audit rows, and that is the guarantee working.** The first
+    draft cleaned up after itself and Postgres refused with SQLSTATE 42501 — *permission denied
+    for table `audit_events`* — on the test's own connection. There is no privileged path for
+    "it was only a test": the app role holds INSERT and SELECT, full stop. The rows are left
+    behind and every assertion is scoped to an id minted fresh per run.
+
+    A related fact worth recording, because it was uncertain until it was tried: dropping the
+    ORG still works. `audit_events.org_id` is `ON DELETE SET NULL`, and a referential action
+    runs as the table owner rather than as the caller, so the tenant row goes while the record
+    that they existed stays.
+
+14. **`panelBelongsToOrg` returns a boolean and lives in `repositories/panels.ts`.** The plan
+    put the key-creation path entirely in `api-keys.ts`; the ownership check is a panel concern
+    and belongs with panels (CONVENTIONS "one exported concern per file"). It deliberately does
+    not return the row: a handler holding the panel would be one refactor away from rendering a
+    panel it only asked permission about. A false answer is `NOT_FOUND` at the route, never
+    `FORBIDDEN` — ADR-0057's posture, applied to panels.
+
+15. **`repositories/executor.ts` is new.** The plan did not say whether the key row and its
+    audit event share a transaction. They do, and that requires both repositories to accept
+    either the pool handle or a transaction, so the type is derived from Drizzle's own callback
+    parameter rather than written out. A key without its `api_key.issued` is a live credential
+    with no provenance; an event without its key is a record of something that did not happen;
+    and the audit log has no UPDATE, so neither is repairable after the fact.
+
+16. **The key prefix is derived from `NODE_ENV`, not chosen by the caller.** CONVENTIONS names
+    both `llk_live_` and `llk_test_` without saying who picks. This product has no test/live
+    MODE the way a payments API does — one database, one set of panels — so the prefix is a
+    fact about where the key was minted rather than a claim a request can make.
+    `scripts/seed.ts` already mints `llk_test_` on the same reasoning.
+
+17. **A test was added because a mutation defeated the suite.** Four mutations were run against
+    phase 3; three failed tests as intended, and the fourth — adding `hash` to the list
+    endpoint's response — passed all eighteen. The repository comment said the hash was excluded
+    deliberately and nothing enforced it. It is a hygiene issue rather than a hole (the secret
+    is 32 random bytes, so its SHA-256 is not reversible), but a documented intention with no
+    guard is exactly what rots, so the assertion now exists and the mutation now fails.
 
 ---
 

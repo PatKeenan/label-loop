@@ -1,7 +1,8 @@
 import type { ModelPin } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import type { Executor } from './executor.ts'
 
 /**
  * Reading the configuration an evaluation runs against.
@@ -120,4 +121,29 @@ export const findLivePanel = async (
       }))
       .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
   }
+}
+
+/**
+ * Does this panel belong to this org?
+ *
+ * The check that stops a key being scoped to somebody else's panel — the one tenancy hole a
+ * create endpoint taking a `panel_id` actually has. It returns a BOOLEAN rather than the
+ * panel, because the caller must not be able to use it as a read: a handler that received the
+ * row would be one refactor away from rendering a panel it only asked permission about.
+ *
+ * A false answer is `NOT_FOUND` at the route, never `FORBIDDEN`, for the same reason
+ * ADR-0057 gives for orgs — the two cases must stay indistinguishable, or the endpoint
+ * enumerates other tenants' panel ids.
+ */
+export const panelBelongsToOrg = async (
+  db: Executor,
+  panelId: string,
+  orgId: string,
+): Promise<boolean> => {
+  const rows = await db
+    .select({ id: schema.panels.id })
+    .from(schema.panels)
+    .where(and(eq(schema.panels.id, panelId), eq(schema.panels.orgId, orgId)))
+    .limit(1)
+  return rows.length > 0
 }
