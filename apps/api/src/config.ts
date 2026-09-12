@@ -6,11 +6,13 @@ import { z } from 'zod'
  * a runtime surprise three hours later (CONVENTIONS.md "Config").
  *
  * Every value has a working local default, so a fresh clone boots with zero secrets
- * (ADR-0009). Four are *required in production only*, and the `superRefine` at the bottom
+ * (ADR-0009). Six are *required in production only*, and the `superRefine` at the bottom
  * is where that lives: the two build-provenance fields, because an image that cannot say
  * which version it is defeats ADR-0011's whole chain from release-please to `/healthz`
- * and `service.version`; the session secret, because its default is committed; and the
- * provider key, because an API deployed to judge without one cannot judge.
+ * and `service.version`; the session secret, because its default is committed; the
+ * provider key, because an API deployed to judge without one cannot judge; and the two
+ * GitHub OAuth fields, because credential sign-in is disabled in production (ADR-0049),
+ * which makes them the only door into the console rather than a degradation of it.
  */
 
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
@@ -122,6 +124,22 @@ const configSchema = z
      */
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     /**
+     * The GitHub OAuth app the console signs in with (M4, ADR-0049). Optional locally, so
+     * ADR-0009's zero-secret boot survives: without them the GitHub provider is simply not
+     * registered and the seeded password account is the way in.
+     *
+     * REQUIRED in production, and for a sharper reason than the provider key above —
+     * credential sign-in is DISABLED there, so these two are the only door. An image
+     * deployed without them has no way for anyone to sign in at all, which is a failure
+     * worth having at boot rather than at the login screen.
+     *
+     * Also checked as a PAIR outside production, which the other optional credentials are
+     * not: half a pair leaves the provider unregistered and the button missing, with
+     * nothing in the logs to say a variable was misspelled.
+     */
+    GITHUB_CLIENT_ID: z.string().min(1).optional(),
+    GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
+    /**
      * Where a browser reaches THIS api. better-auth builds cookie scope and callback URLs
      * from it, so it is the origin as the browser sees it, not as the process sees itself —
      * behind a proxy those differ, and the one that matters is the browser's.
@@ -187,7 +205,32 @@ const configSchema = z
     QUEUE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(2),
   })
   .superRefine((config, ctx) => {
-    if (config.NODE_ENV !== 'production') return
+    const githubFields = [
+      ['GITHUB_CLIENT_ID', config.GITHUB_CLIENT_ID],
+      ['GITHUB_CLIENT_SECRET', config.GITHUB_CLIENT_SECRET],
+    ] as const
+    const missingGithub = githubFields.filter(([, value]) => value === undefined)
+
+    if (config.NODE_ENV !== 'production') {
+      // GitHub is optional here, but HALF of it is not a supported state anywhere: the
+      // provider is registered only when both are present, so one variable set and the
+      // other misspelled produces a console with no GitHub button and no error explaining
+      // why. Naming the missing half at boot is the whole point of parsing config here.
+      if (missingGithub.length === 1) {
+        for (const [field] of missingGithub) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [field],
+            message:
+              'must be set alongside the other half of the GitHub OAuth pair — the ' +
+              'provider is registered only when both are present, so one alone silently ' +
+              'disables GitHub sign-in',
+          })
+        }
+      }
+      return
+    }
+
     const placeholders = [
       [
         'APP_VERSION',
@@ -223,6 +266,19 @@ const configSchema = z
         message:
           'must be set in production — without it no `openrouter:` judge can be served ' +
           '(ADR-0021), and every panel holding one returns 503 per call',
+      })
+    }
+    // The strongest of the production rules, because it is not about degradation: with
+    // `emailAndPassword` disabled in production (ADR-0049), GitHub is the ONLY way in. An
+    // image missing these boots a console that nobody — including its operator — can sign
+    // into, and the symptom is a login page that looks fine.
+    for (const [field] of missingGithub) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [field],
+        message:
+          'must be set in production — credential sign-in is disabled there (ADR-0049), ' +
+          'so GitHub is the only way to sign in and an image without it locks everyone out',
       })
     }
   })

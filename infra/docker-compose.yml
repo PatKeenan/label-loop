@@ -184,6 +184,21 @@ services:
       # Seeding real models and NOT giving the API the key is the one broken combination,
       # which is why both services read the same variable.
       OPENROUTER_API_KEY:
+      # The GitHub OAuth app (M4, ADR-0049), forwarded from your shell in the same bare form
+      # and absent when unset — so `docker compose up` stays a zero-secret command and the
+      # console falls back to the seeded password account.
+      #
+      # Compose does NOT read the repo-root `.env`: its project directory is `infra/`, so
+      # these come from the environment you invoke it with. Either export them, or source
+      # the file first:
+      #
+      #   set -a && . ./.env && set +a
+      #   docker compose -f infra/docker-compose.yml up -d --build api
+      #
+      # Set BOTH or neither. `config.ts` refuses half a pair at boot rather than starting an
+      # API whose GitHub button answers `PROVIDER_NOT_FOUND` with no explanation.
+      GITHUB_CLIENT_ID:
+      GITHUB_CLIENT_SECRET:
       # Both of these are origins as the BROWSER sees them, which is the host's view — the
       # published ports — not the compose network's.
       API_BASE_URL: http://localhost:${API_PORT:-3000}

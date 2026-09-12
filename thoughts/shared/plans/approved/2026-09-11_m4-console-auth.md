@@ -103,22 +103,35 @@ that safety, which is why the negative tests are part of this phase and not a fo
   production disables the credential provider; development enables it.
 
 ### Steps
-- [ ] Config vars + production `superRefine` rule with a message naming the field
-- [ ] GitHub provider registered conditionally; absent creds leave a working local build
-- [ ] `emailAndPassword` disabled in production only
-- [ ] `.env.example` updated
-- [ ] Tests for all three environment shapes
+- [x] Config vars + production `superRefine` rule with a message naming the field
+- [x] GitHub provider registered conditionally; absent creds leave a working local build
+- [x] `emailAndPassword` disabled in production only
+- [x] `.env.example` updated
+- [x] Tests for all three environment shapes — plus the half-a-pair shape, see Deviation 7
 
 ### Automated verification
-- [ ] `bun test apps/api/src/config.test.ts apps/api/src/auth.test.ts` passes
-- [ ] `bun run typecheck` clean
+- [x] `bun test apps/api/src/config.test.ts apps/api/src/auth.test.ts` passes — 34 + 9 tests
+- [x] `bun run typecheck` clean (full suite also green: 679 tests, 57 files; `lint` clean)
 
 ### Manual verification
+> **Against which build?** Phase 1's manual check was first run against a stale
+> `labelloop-api:dev` container on port 3000 and appeared to fail. Rebuild before verifying —
+> `docker compose -f infra/docker-compose.yml up -d --build api` — or run from source with
+> `bun run --cwd apps/api dev`. The tell for a stale build here is a GitHub button that 404s
+> with the credentials set.
+
 - [ ] A fresh clone with **no** `.env` still boots and signs in with the seeded password
-      account (ADR-0009 — this is the property most at risk in this phase)
+      account (ADR-0009 — this is the property most at risk in this phase).
+      *Verified headlessly during implementation:* booted via `env -i` with `DATABASE_URL`
+      alone — `/healthz` 200, password sign-in 200, `/internal/me` 200, and
+      `sign-in/social` a clean `PROVIDER_NOT_FOUND` rather than an error. Re-confirm by hand.
 - [ ] With a real GitHub OAuth app (localhost callback), the GitHub button completes a
       sign-in and lands on "not a member of any organisation" for a new account — the
-      expected M4 behaviour, and the M8 gap named in the research
+      expected M4 behaviour, and the M8 gap named in the research.
+      **Needs a registered OAuth app**; the callback is asserted in `auth.test.ts` as
+      `http://localhost:3000/internal/auth/callback/github`.
+      **The button is a throwaway added by this phase** (Deviation 11) — the plan did not
+      schedule one until phase 8, which is later than the check that needs it
 
 ---
 
@@ -411,6 +424,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - `apps/web/src/routes/traces.tsx` — extended, not replaced.
 
 ### Steps
+- [ ] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
+      build the real one: feature-detected rather than always rendered, and using the
+      redirect-after-401 below rather than a hard-coded `callbackURL`
 - [ ] All three screens mount inside the phase 7 shell; none invents its own layout
 - [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [ ] Wizard: panel details → judges (question, polarity, weight, required) → model picker →
@@ -421,6 +437,17 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [ ] Redirect-after-401 via `beforeLoad`
 - [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
       server guard; it never replaces it — CONVENTIONS "Keys & auth")
+- [ ] **`FORBIDDEN` needs to stop meaning two things in the console.** Found in phase 2's
+      manual verification: a GitHub account with no membership lands on *"Ask an owner of
+      this organisation to grant you access"*, and there is no "this organisation" — the
+      account is a member of none. `error-map.ts` keys off the CODE, and the server sends
+      `FORBIDDEN` for two unrelated states: "a member of no org at all" (`sessionAuth`) and
+      "your role in this org does not allow that" (`requireRole`, phase 1). The server's own
+      messages distinguish them; the map cannot see that. Either surface the server's
+      `message` for this code, or branch before the map is reached — **the "member of
+      nothing" state is arguably a screen rather than an error**, since it is where a real
+      product would offer to create an org, which is M8's gap. Decide here; do not paper over
+      the copy.
 
 ### Automated verification
 - [ ] `bun test apps/web` passes
@@ -574,6 +601,77 @@ Recorded as they happen; decision provenance, not a changelog.
    `apps/web/src/routes/root.tsx` already consumed the old name and its typecheck failed on the
    rename, which is the internal surface's stated guarantee working as designed: the contract is
    Hono's RPC types, so a console route changing shape breaks the build rather than the page.
+
+### Phase 2
+
+7. **The GitHub pair is validated as a PAIR in every environment, not only required in
+   production.** The plan said "optional locally, required in production", which leaves half a
+   pair legal outside production. Half a pair is not a supported state anywhere: the provider
+   registers only when both are present, so one variable set and the other misspelled produces
+   a console with no GitHub button and nothing in the logs to explain it. That is the exact
+   runtime surprise `config.ts` exists to prevent (CONVENTIONS "Config"), so the missing half
+   is named at boot. `auth.test.ts` asserts the other side of the same rule — that `auth.ts`
+   really does refuse to register on one credential — because if it ever did, the boot check
+   would be rejecting a configuration that worked.
+
+8. **`scripts/seed.ts` pins `NODE_ENV: 'development'` in its own `createAuth` call.** The seed
+   creates the demo account by calling `signUpEmail`, which M4 now disables in production. The
+   seed already passed literal values for the other three fields on the reasoning that they
+   "only have to be well-formed"; reading the ambient `NODE_ENV` instead would make
+   `NODE_ENV=production bun run db:seed` fail inside better-auth with an error about a disabled
+   provider — describing the library's state rather than the mistake. Seeding a production
+   database is not a supported act, and if it becomes one it needs its own door.
+
+9. **`auth.test.ts` is an integration test against real Postgres**, not a unit test. better-auth
+   writes an OAuth state row before it will return an authorization URL, so the happy path does
+   not exist without a database — a fake one fails at `db.insert`. The test captures each state
+   it causes and deletes exactly those rows, which was verified rather than assumed (0 rows
+   before, 0 after).
+
+10. **The test pins the GitHub redirect URI.** Not in the plan, and worth its own line because
+    it is the value that breaks this setup most often: it is DERIVED (`API_BASE_URL` +
+    `basePath` + `/callback/github`), not configured, so nothing else would catch it changing,
+    and a mismatch is reported by GitHub rather than by us. `.env.example` tells the operator to
+    paste the same string, and this assertion is what stops the two drifting.
+
+11. **A throwaway GitHub button was added to `apps/web/src/routes/login.tsx`, in phase 2.**
+    Not in this phase's scope, and added deliberately anyway (stakeholder, 2026-09-11).
+
+    **The plan had an ordering bug.** Phase 2's manual verification says to complete a
+    sign-in "with the GitHub button", and the login screen has only email and password —
+    the button is not scheduled until phase 8, six phases after the check that needs it.
+    The step as written could not be satisfied when it was asked for.
+
+    The alternative was to verify by pasting `sign-in/social` curl output into a browser,
+    which does exercise the whole round trip. It was rejected as the *verification* because
+    the thing phase 2 ships is a door for people, and driving it the way a person will is
+    worth more than driving it the way a script would.
+
+    It is marked as disposable in three places — a block comment on the component, an inline
+    comment beside the markup, and the phase 8 step above — because an undeleted placeholder
+    is how a screen invents its own layout, which is the exact failure decisions 13 and 14
+    reorganised the phases to prevent. Three properties are deliberately absent, so it cannot
+    be mistaken for a partial implementation: no design, no feature detection (it renders
+    even when the API has no GitHub credentials and the request comes back
+    `PROVIDER_NOT_FOUND`), and no redirect-after-401.
+
+12. **`infra/docker-compose.yml` now forwards `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+    to the `api` service.** Missing from the plan's change list, and a real hole rather than
+    a local inconvenience: `config.ts` read the variables and `.env.example` documented them,
+    but the compose stack had no way to pass them in — so `docker compose up` could never
+    demo GitHub sign-in, and the symptom was a button answering `PROVIDER_NOT_FOUND` against
+    a correctly configured `.env`.
+
+    Found by the stakeholder clicking the button, not by a test, and no test in this repo
+    would have found it: every automated check constructs `createAuth` directly from a config
+    object, so the gap lives strictly between `.env` and the container. The bare
+    forwarding form is used, matching `OPENROUTER_API_KEY` — absent when unset, so
+    `docker compose up` remains a zero-secret command.
+
+    **Worth knowing for every later phase:** compose's project directory is `infra/`, so the
+    repo-root `.env` is NOT read. Variables are forwarded from the invoking shell, which
+    means `set -a && . ./.env && set +a` before `docker compose up`. The comment in the
+    compose file now says so.
 
 ---
 
