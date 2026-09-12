@@ -644,6 +644,24 @@ Recorded as they happen; decision provenance, not a changelog.
     even when the API has no GitHub credentials and the request comes back
     `PROVIDER_NOT_FOUND`), and no redirect-after-401.
 
+12. **`infra/docker-compose.yml` now forwards `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+    to the `api` service.** Missing from the plan's change list, and a real hole rather than
+    a local inconvenience: `config.ts` read the variables and `.env.example` documented them,
+    but the compose stack had no way to pass them in — so `docker compose up` could never
+    demo GitHub sign-in, and the symptom was a button answering `PROVIDER_NOT_FOUND` against
+    a correctly configured `.env`.
+
+    Found by the stakeholder clicking the button, not by a test, and no test in this repo
+    would have found it: every automated check constructs `createAuth` directly from a config
+    object, so the gap lives strictly between `.env` and the container. The bare
+    forwarding form is used, matching `OPENROUTER_API_KEY` — absent when unset, so
+    `docker compose up` remains a zero-secret command.
+
+    **Worth knowing for every later phase:** compose's project directory is `infra/`, so the
+    repo-root `.env` is NOT read. Variables are forwarded from the invoking shell, which
+    means `set -a && . ./.env && set +a` before `docker compose up`. The comment in the
+    compose file now says so.
+
 ---
 
 ## Open questions for the human
