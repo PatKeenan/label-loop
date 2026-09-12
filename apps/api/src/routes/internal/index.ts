@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import type { AppEnv } from '../../app-env.ts'
 import { AUTH_BASE_PATH } from '../../auth.ts'
 import { ACTIVE_ORG_HEADER, sessionAuth } from '../../middleware/session.ts'
+import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
 import { createTraceRoutes } from './traces.ts'
 
@@ -67,5 +68,8 @@ export const createInternalRoutes = () => {
   internal.use('*', sessionAuth())
 
   // Chained, because the chain IS the type `apps/web` consumes over RPC.
-  return internal.route('/', createMeRoutes()).route('/', createTraceRoutes())
+  return internal
+    .route('/', createMeRoutes())
+    .route('/', createTraceRoutes())
+    .route('/', createKeyRoutes())
 }
