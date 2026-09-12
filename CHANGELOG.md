@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/PatKeenan/label-loop/compare/v0.3.0...v0.4.0) (2026-09-12)
+
+
+### Features
+
+* **api:** add GitHub sign-in, and shut the password door in production ([#59](https://github.com/PatKeenan/label-loop/issues/59)) ([de7208a](https://github.com/PatKeenan/label-loop/commit/de7208a5db36b6dea0f33712ab9659db8b6b7556))
+* **api:** app-emitted metrics, through the collector ([#50](https://github.com/PatKeenan/label-loop/issues/50)) ([a875c6b](https://github.com/PatKeenan/label-loop/commit/a875c6be17d75d4eb989e79418998f62ddcf53e2))
+* **api:** issue and revoke keys, and give the audit log its first writer ([#60](https://github.com/PatKeenan/label-loop/issues/60)) ([d6ef323](https://github.com/PatKeenan/label-loop/commit/d6ef323366a392e495ea89ee554ac871d76572c8))
+* **api:** make the org explicit, and enforce the role in it ([#58](https://github.com/PatKeenan/label-loop/issues/58)) ([b57056b](https://github.com/PatKeenan/label-loop/commit/b57056be71b479a89bdc70d6d018c68fa56f294a))
+* **db:** a read-only role for the dashboards ([#51](https://github.com/PatKeenan/label-loop/issues/51)) ([027a19d](https://github.com/PatKeenan/label-loop/commit/027a19d1775ebe8cccc7e4efe97b0fd22d4ef333))
+* **grafana:** dashboards as code, and one alert rule ([#52](https://github.com/PatKeenan/label-loop/issues/52)) ([2702d50](https://github.com/PatKeenan/label-loop/commit/2702d500ea347222a79a00cb9db380626aa002e5))
+* **infra:** logs to Loki, by out-of-process collection ([#53](https://github.com/PatKeenan/label-loop/issues/53)) ([c8d786c](https://github.com/PatKeenan/label-loop/commit/c8d786c7562828cf255b67fcc6106802b8622ac9))
+* **k6:** a soak, and retention sized from what it shows ([#54](https://github.com/PatKeenan/label-loop/issues/54)) ([51119ad](https://github.com/PatKeenan/label-loop/commit/51119ad3734c3ad3a9b8a2d0a4f8eb5cdc7f320e))
+
+
+### Documentation
+
+* approve the M4 console and auth plan, and decide D17 (shadcn/ui) ([#57](https://github.com/PatKeenan/label-loop/issues/57)) ([9663b8d](https://github.com/PatKeenan/label-loop/commit/9663b8d5530f1cf733f65c6bd7ff991c21e5cc08))
+* **plan:** approve the M3 observability plan (+ ADR 0041-0045) ([#49](https://github.com/PatKeenan/label-loop/issues/49)) ([b26be36](https://github.com/PatKeenan/label-loop/commit/b26be36f82886b6d444329bd673fa7dc24ecd484))
+* **plan:** complete the M2 resilience and load baseline ([#47](https://github.com/PatKeenan/label-loop/issues/47)) ([3126b55](https://github.com/PatKeenan/label-loop/commit/3126b55cfaf552f217447c21d109ce4d75f1ae0d))
+* **plan:** complete the M3 observability plan ([#55](https://github.com/PatKeenan/label-loop/issues/55)) ([6b19444](https://github.com/PatKeenan/label-loop/commit/6b19444942cf486bc04f002bad08d9fa0d885668))
+* remove the SDK from M4, which ADR-0002 descoped in August ([#56](https://github.com/PatKeenan/label-loop/issues/56)) ([289077a](https://github.com/PatKeenan/label-loop/commit/289077a0e4a0a7a63336bf7af63ab8de42c09c8f))
+
 ## [0.3.0](https://github.com/PatKeenan/label-loop/compare/v0.2.0...v0.3.0) (2026-09-08)
 
 
