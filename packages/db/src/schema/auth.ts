@@ -63,9 +63,15 @@ export const account = pgTable('account', {
   refreshTokenExpiresAt: timestampAt('refresh_token_expires_at'),
   scope: text('scope'),
   /**
-   * The credential provider's password hash (ADR-0008: email + password only at M0; no
-   * social providers, because their client secrets would break zero-secret boot).
-   * better-auth hashes it — nothing in this repo ever sees a plaintext password.
+   * The credential provider's password hash (ADR-0008). better-auth hashes it — nothing in
+   * this repo ever sees a plaintext password.
+   *
+   * This comment used to add "email + password only at M0; no social providers, because
+   * their client secrets would break zero-secret boot". M4 settled that (ADR-0049) and the
+   * reasoning turned out to be about DEFAULTS rather than about providers: GitHub registers
+   * only when both its credentials are present, so a fresh clone still boots with none and
+   * still signs in here. The row this column belongs to is now one of two shapes — a
+   * password hash for a credential account, or `null` beside the OAuth token columns above.
    */
   password: text('password'),
   createdAt: createdAt(),
