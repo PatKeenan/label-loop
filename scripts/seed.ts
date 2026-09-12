@@ -236,6 +236,13 @@ const seedConsoleUser = async (client: Database['client']) => {
         BETTER_AUTH_SECRET: 'seed-script-not-a-secret',
         API_BASE_URL: 'http://localhost:3000',
         WEB_ORIGIN: 'http://localhost:5173',
+        // Pinned rather than read from the environment, because this call IS a password
+        // sign-up and M4 disables that provider in production (ADR-0049). Reading the
+        // ambient value would make `NODE_ENV=production bun run db:seed` fail inside
+        // better-auth with an error about a disabled provider, which describes the library's
+        // state rather than the mistake. Seeding a production database is not a supported
+        // act; if it ever becomes one, it needs its own door rather than this one.
+        NODE_ENV: 'development',
       }).api.signUpEmail({
         body: { email: SEED_USER_EMAIL, password: SEED_USER_PASSWORD, name: SEED_USER_NAME },
       })

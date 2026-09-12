@@ -14,17 +14,64 @@ import type { Config } from './config.ts'
  *
  * Two constraints shape this configuration, and both come from decisions above it:
  *
- * **Credential provider only, no social/OIDC.** Social providers need client secrets, and
- * a fresh clone must boot with none (ADR-0009). Whether email+password survives to
- * production is an explicit M4 decision, not an accident of what was easy at M0.
+ * **Which doors are open depends on the environment, and M4 answered the question M0 left
+ * open.** The header here used to say "credential provider only, no social/OIDC", with a
+ * note that whether email+password survives to production was "an explicit M4 decision,
+ * not an accident of what was easy at M0". This is that decision (ADR-0049):
+ *
+ * - **GitHub is registered when, and only when, both of its credentials are present.** A
+ *   fresh clone has neither and must still boot (ADR-0009), so absence is a supported
+ *   state rather than a degraded one — the seeded password account is the way in.
+ * - **`emailAndPassword` is enabled everywhere EXCEPT production.** Disabled rather than
+ *   removed, and the distinction is the whole point: the M0 demo, CI, and every
+ *   database-backed test in this repo sign in with a password, so deleting the provider
+ *   would trade a production hole for a broken local story. Production is the one place a
+ *   seeded account with a committed password is a way in for anybody who read the repo.
+ *
+ * The two rules meet in `config.ts`, which is what stops the combination that has neither:
+ * in production the GitHub pair is REQUIRED, because with credentials disabled it is the
+ * only door and an image without it locks out its own operator.
  *
  * **`disableMigrations`.** better-auth can create its own tables on demand. It must not:
  * that would issue DDL at application runtime, under the app role, outside the migration
  * history — three separate violations of the two-role split. Our migrations own the
  * schema; better-auth only reads and writes rows.
+ *
+ * **No organization plugin** (ADR-0048). better-auth ships one, and it is not registered:
+ * it would own the tenancy tables ADR-0014 deliberately kept as ours, and it stores the
+ * active org as a column on the `session` row — the design ADR-0047 rejected. better-auth
+ * answers one question here, and it is "who is this".
  */
 
-export type AuthConfig = Pick<Config, 'BETTER_AUTH_SECRET' | 'API_BASE_URL' | 'WEB_ORIGIN'>
+export type AuthConfig = Pick<
+  Config,
+  | 'BETTER_AUTH_SECRET'
+  | 'API_BASE_URL'
+  | 'WEB_ORIGIN'
+  | 'NODE_ENV'
+  | 'GITHUB_CLIENT_ID'
+  | 'GITHUB_CLIENT_SECRET'
+>
+
+/**
+ * The GitHub provider, or nothing at all.
+ *
+ * The return type is written out rather than inferred so it is ONE type with an optional
+ * key, not a union of two shapes — `Auth` is better-auth's inferred endpoint surface, and a
+ * union here would make that type depend on a runtime value.
+ *
+ * Both credentials or neither, never one: `config.ts` rejects half a pair at boot, so by the
+ * time this runs the undefined case means "nobody configured GitHub", not "somebody made a
+ * typo". The callback GitHub must be told about is `baseURL` + `basePath` + `/callback/github`
+ * — `http://localhost:3000/internal/auth/callback/github` with the local defaults.
+ */
+const githubProvider = (
+  config: AuthConfig,
+): { github?: { clientId: string; clientSecret: string } } => {
+  const { GITHUB_CLIENT_ID: clientId, GITHUB_CLIENT_SECRET: clientSecret } = config
+  if (clientId === undefined || clientSecret === undefined) return {}
+  return { github: { clientId, clientSecret } }
+}
 
 /**
  * Where better-auth's own endpoints are mounted, and the one string the API and the
@@ -53,7 +100,11 @@ export const createAuth = (db: Database, config: AuthConfig) =>
         verification: schema.verification,
       },
     }),
-    emailAndPassword: { enabled: true },
+    // Disabled in production ONLY (ADR-0049). Every database-backed test in this repo and
+    // the M0 demo sign in with a password, so removing the provider outright would trade a
+    // production hole for a broken local story.
+    emailAndPassword: { enabled: config.NODE_ENV !== 'production' },
+    socialProviders: githubProvider(config),
     basePath: AUTH_BASE_PATH,
     // The origin a BROWSER uses to reach this API, which is what cookie scope is computed
     // from. Stated rather than inferred from request headers: inference is a `Host` header

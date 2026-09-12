@@ -158,6 +158,10 @@ describe('config', () => {
           // M1/P5 joins it for a third reason: not a committed default but no default at
           // all, and an API deployed to judge with no key cannot judge (ADR-0021).
           'OPENROUTER_API_KEY',
+          // M4 joins it for a fourth, and the sharpest: with credential sign-in disabled in
+          // production (ADR-0049), these two are the ONLY door into the console.
+          'GITHUB_CLIENT_ID',
+          'GITHUB_CLIENT_SECRET',
         ])
       }
     })
@@ -170,6 +174,8 @@ describe('config', () => {
         GIT_SHA: 'abc1234',
         BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
         OPENROUTER_API_KEY: 'sk-or-not-a-real-key',
+        GITHUB_CLIENT_ID: 'Iv1.notarealclientid',
+        GITHUB_CLIENT_SECRET: 'not-a-real-client-secret',
       })
       expect(config.APP_VERSION).toBe('0.2.0')
       expect(config.GIT_SHA).toBe('abc1234')
@@ -203,6 +209,8 @@ describe('config', () => {
           APP_VERSION: '0.2.0',
           GIT_SHA: 'abc1234',
           BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
+          GITHUB_CLIENT_ID: 'Iv1.notarealclientid',
+          GITHUB_CLIENT_SECRET: 'not-a-real-client-secret',
         })
         throw new Error('expected loadConfig to throw')
       } catch (error) {
@@ -220,6 +228,89 @@ describe('config', () => {
         throw new Error('expected loadConfig to throw')
       } catch (error) {
         expect((error as ConfigError).fields).toEqual(['OPENROUTER_API_KEY'])
+      }
+    })
+  })
+
+  /**
+   * GitHub sign-in (M4, ADR-0049). Three environment shapes, and the production one is not
+   * the same rule as `OPENROUTER_API_KEY`'s despite looking identical: a missing provider
+   * key degrades the product, a missing OAuth app locks every human out of it.
+   */
+  describe('the GitHub OAuth pair', () => {
+    const PRODUCTION = {
+      DATABASE_URL,
+      NODE_ENV: 'production',
+      APP_VERSION: '0.2.0',
+      GIT_SHA: 'abc1234',
+      BETTER_AUTH_SECRET: 'a-real-secret-from-the-environment',
+      OPENROUTER_API_KEY: 'sk-or-not-a-real-key',
+    } as const
+
+    test('both absent is fine outside production — zero-secret boot survives M4', () => {
+      // The property ADR-0009 has protected since M0, and the one this phase is most
+      // likely to break: a fresh clone with no `.env` must still boot and still log in.
+      const config = loadConfig({ DATABASE_URL })
+      expect(config.GITHUB_CLIENT_ID).toBeUndefined()
+      expect(config.GITHUB_CLIENT_SECRET).toBeUndefined()
+      expect(() => loadConfig({ DATABASE_URL, NODE_ENV: 'test' })).not.toThrow()
+    })
+
+    test('both present is accepted outside production', () => {
+      const config = loadConfig({
+        DATABASE_URL,
+        GITHUB_CLIENT_ID: 'Iv1.notarealclientid',
+        GITHUB_CLIENT_SECRET: 'not-a-real-client-secret',
+      })
+      expect(config.GITHUB_CLIENT_ID).toBe('Iv1.notarealclientid')
+    })
+
+    test.each([['GITHUB_CLIENT_ID'], ['GITHUB_CLIENT_SECRET']] as const)(
+      'HALF the pair is refused even in development — %s alone',
+      (present) => {
+        // The failure this prevents is silent: the provider registers only when both are
+        // set, so a misspelled variable produces a console with no GitHub button and
+        // nothing in the logs. The missing half is named instead.
+        try {
+          loadConfig({ DATABASE_URL, [present]: 'a-value' })
+          throw new Error('expected loadConfig to throw')
+        } catch (error) {
+          const missing =
+            present === 'GITHUB_CLIENT_ID' ? 'GITHUB_CLIENT_SECRET' : 'GITHUB_CLIENT_ID'
+          expect((error as ConfigError).fields).toEqual([missing])
+        }
+      },
+    )
+
+    test('a production boot without either fails, naming both', () => {
+      try {
+        loadConfig(PRODUCTION)
+        throw new Error('expected loadConfig to throw')
+      } catch (error) {
+        expect((error as ConfigError).fields).toEqual(['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'])
+        // The message has to say WHY, because the operator's instinct will be that social
+        // login is optional — it is everywhere else in this file.
+        expect((error as ConfigError).message).toContain('only way to sign in')
+      }
+    })
+
+    test('a production boot with both is accepted', () => {
+      const config = loadConfig({
+        ...PRODUCTION,
+        GITHUB_CLIENT_ID: 'Iv1.notarealclientid',
+        GITHUB_CLIENT_SECRET: 'not-a-real-client-secret',
+      })
+      expect(config.NODE_ENV).toBe('production')
+    })
+
+    test('an empty string is not a credential — it is the shape a blank env var takes', () => {
+      // Same trap as `OPENROUTER_API_KEY`: `optional()` skips `undefined`, never `''`, and
+      // a CI step forwarding an unset variable produces the empty string.
+      try {
+        loadConfig({ DATABASE_URL, GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: 'a-secret' })
+        throw new Error('expected loadConfig to throw')
+      } catch (error) {
+        expect((error as ConfigError).fields).toEqual(['GITHUB_CLIENT_ID'])
       }
     })
   })

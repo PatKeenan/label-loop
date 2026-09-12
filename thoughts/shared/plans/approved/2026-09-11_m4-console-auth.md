@@ -103,22 +103,33 @@ that safety, which is why the negative tests are part of this phase and not a fo
   production disables the credential provider; development enables it.
 
 ### Steps
-- [ ] Config vars + production `superRefine` rule with a message naming the field
-- [ ] GitHub provider registered conditionally; absent creds leave a working local build
-- [ ] `emailAndPassword` disabled in production only
-- [ ] `.env.example` updated
-- [ ] Tests for all three environment shapes
+- [x] Config vars + production `superRefine` rule with a message naming the field
+- [x] GitHub provider registered conditionally; absent creds leave a working local build
+- [x] `emailAndPassword` disabled in production only
+- [x] `.env.example` updated
+- [x] Tests for all three environment shapes — plus the half-a-pair shape, see Deviation 7
 
 ### Automated verification
-- [ ] `bun test apps/api/src/config.test.ts apps/api/src/auth.test.ts` passes
-- [ ] `bun run typecheck` clean
+- [x] `bun test apps/api/src/config.test.ts apps/api/src/auth.test.ts` passes — 34 + 9 tests
+- [x] `bun run typecheck` clean (full suite also green: 679 tests, 57 files; `lint` clean)
 
 ### Manual verification
+> **Against which build?** Phase 1's manual check was first run against a stale
+> `labelloop-api:dev` container on port 3000 and appeared to fail. Rebuild before verifying —
+> `docker compose -f infra/docker-compose.yml up -d --build api` — or run from source with
+> `bun run --cwd apps/api dev`. The tell for a stale build here is a GitHub button that 404s
+> with the credentials set.
+
 - [ ] A fresh clone with **no** `.env` still boots and signs in with the seeded password
-      account (ADR-0009 — this is the property most at risk in this phase)
+      account (ADR-0009 — this is the property most at risk in this phase).
+      *Verified headlessly during implementation:* booted via `env -i` with `DATABASE_URL`
+      alone — `/healthz` 200, password sign-in 200, `/internal/me` 200, and
+      `sign-in/social` a clean `PROVIDER_NOT_FOUND` rather than an error. Re-confirm by hand.
 - [ ] With a real GitHub OAuth app (localhost callback), the GitHub button completes a
       sign-in and lands on "not a member of any organisation" for a new account — the
-      expected M4 behaviour, and the M8 gap named in the research
+      expected M4 behaviour, and the M8 gap named in the research.
+      **Needs a registered OAuth app**; the callback is asserted in `auth.test.ts` as
+      `http://localhost:3000/internal/auth/callback/github`
 
 ---
 
@@ -574,6 +585,38 @@ Recorded as they happen; decision provenance, not a changelog.
    `apps/web/src/routes/root.tsx` already consumed the old name and its typecheck failed on the
    rename, which is the internal surface's stated guarantee working as designed: the contract is
    Hono's RPC types, so a console route changing shape breaks the build rather than the page.
+
+### Phase 2
+
+7. **The GitHub pair is validated as a PAIR in every environment, not only required in
+   production.** The plan said "optional locally, required in production", which leaves half a
+   pair legal outside production. Half a pair is not a supported state anywhere: the provider
+   registers only when both are present, so one variable set and the other misspelled produces
+   a console with no GitHub button and nothing in the logs to explain it. That is the exact
+   runtime surprise `config.ts` exists to prevent (CONVENTIONS "Config"), so the missing half
+   is named at boot. `auth.test.ts` asserts the other side of the same rule — that `auth.ts`
+   really does refuse to register on one credential — because if it ever did, the boot check
+   would be rejecting a configuration that worked.
+
+8. **`scripts/seed.ts` pins `NODE_ENV: 'development'` in its own `createAuth` call.** The seed
+   creates the demo account by calling `signUpEmail`, which M4 now disables in production. The
+   seed already passed literal values for the other three fields on the reasoning that they
+   "only have to be well-formed"; reading the ambient `NODE_ENV` instead would make
+   `NODE_ENV=production bun run db:seed` fail inside better-auth with an error about a disabled
+   provider — describing the library's state rather than the mistake. Seeding a production
+   database is not a supported act, and if it becomes one it needs its own door.
+
+9. **`auth.test.ts` is an integration test against real Postgres**, not a unit test. better-auth
+   writes an OAuth state row before it will return an authorization URL, so the happy path does
+   not exist without a database — a fake one fails at `db.insert`. The test captures each state
+   it causes and deletes exactly those rows, which was verified rather than assumed (0 rows
+   before, 0 after).
+
+10. **The test pins the GitHub redirect URI.** Not in the plan, and worth its own line because
+    it is the value that breaks this setup most often: it is DERIVED (`API_BASE_URL` +
+    `basePath` + `/callback/github`), not configured, so nothing else would catch it changing,
+    and a mismatch is reported by GitHub rather than by us. `.env.example` tells the operator to
+    paste the same string, and this assertion is what stops the two drifting.
 
 ---
 
