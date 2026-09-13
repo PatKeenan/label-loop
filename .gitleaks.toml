@@ -1,0 +1,73 @@
+# Secret scanning (CI's `secret scan` job, `gitleaks/gitleaks-action`).
+#
+# Until now there was no config at all and gitleaks ran on its defaults, which is the right
+# starting point and stays the baseline: `useDefault = true` below KEEPS every default rule.
+# Nothing here disables a rule or narrows what is scanned. The single allowlist is for one
+# recurring FALSE positive, and it is written to be as small as the problem.
+#
+# **Why this file exists.** A model identifier is shaped exactly like a generic API key —
+# lowercase, hyphenated, 10-40 characters, high enough entropy — and this repository writes a
+# great deal of prose about models. gitleaks' `generic-api-key` rule fires on any backticked
+# token within roughly forty characters of the word that abbreviates "application programming
+# interface", so an ordinary sentence in an ADR trips it. On 2026-09-13 it reported
+# `claude-haiku-4.5` as a leaked credential and failed CI on a documentation-only commit.
+#
+# **The alternative was rewording, and it was tried first.** That follows the precedent set
+# after P2's gitleaks failure, when `DEV_KEY_PLAINTEXT` was made zero-entropy rather than
+# allowlisted — content changed, scanner untouched. It works, and it does not scale here: the
+# trigger is a normal English sentence about a model, the failure surfaces only in CI, and the
+# fix is a force-push because gitleaks reads COMMITS rather than the working tree. Asking
+# every future writer to remember an undocumented phrasing rule is not a control.
+#
+# **What this deliberately is not:**
+#   - not a path allowlist for `docs/` or `thoughts/` — those are exactly where someone would
+#     paste a real credential by accident, and excusing a directory excuses that too;
+#   - not a stopword list, which would suppress a finding anywhere the string appears;
+#   - not a relaxation of entropy or of any rule's own pattern.
+#
+# It matches on the SECRET gitleaks extracted, and only when that secret has the STRUCTURE of a
+# model identifier: an optional `vendor/` prefix, a known model family name, then segments that
+# are each a short word or a version number. That last condition is the one doing the work —
+# see the note on the pattern.
+#
+# **Proven in both directions against the real scanner** (gitleaks, RE2 engine) on 2026-09-13,
+# using the exact sentence that produced the original false positive — "Run against the live
+# API on <date>, `<token>` passed." — with the token swapped:
+#
+#                                                defaults   with this file
+#   six real model ids                           1 flagged     0 flagged
+#   three credentials wearing a model prefix     3 flagged     3 flagged
+#   a Stripe key and a GitHub PAT                2 flagged     2 flagged
+#
+# Defaults flagged only one of the six real ids; the rest fell under the entropy threshold.
+# That intermittency is the reason this was worth a file: a false positive that fired every
+# time would have been learned and avoided, and one that fires on some model names and not
+# others is a trap. The full history (143 commits) also scans clean with this file present.
+#
+# Adding a family to the list below is a deliberate act. Widening the pattern — dropping the
+# family anchor, allowing arbitrary hyphenated words — is not a bigger version of the same
+# change, it is a different one, and it would make this file the hole it was written to avoid.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Model identifiers, which are shaped like generic API keys and are not secrets."
+# The extracted secret, not the surrounding line: matching the line would excuse anything that
+# happened to share a sentence with a model name.
+regexTarget = "secret"
+regexes = [
+  # `claude-haiku-4.5`, `anthropic/claude-fable-5.1`, `google/gemini-3.5-flash-lite`,
+  # `openai/gpt-5.6-sol`, `anthropic/claude-4.5-haiku-20251001`.
+  #
+  # **Structure, not just a prefix.** After the family name, every hyphen-separated segment
+  # must be either a short WORD (letters only, at most 12) or a VERSION NUMBER (digits and
+  # dots). A random token's signature is a mixed alphanumeric run, which is neither — so a
+  # credential wearing a model name as a prefix breaks the match and is still reported.
+  #
+  # The first version of this pattern checked only the prefix and a length, and was proven
+  # wrong before it shipped: it would have allowlisted `claude-9f8e7d6c5b4a3f2e1d0c9b8a7f`,
+  # `claude-haiku-4.5-xk9mq2pl7vr4nt8w` and two more. Anchoring at both ends is necessary and
+  # was not sufficient.
+  '''^(?:[a-z0-9][a-z0-9-]{0,30}/)?(?:claude|gemini|gpt|glm|llama|mistral|qwen|deepseek|grok|phi|command)(?:-(?:[a-z]{1,12}|[0-9]+(?:\.[0-9]+)*))+$''',
+]
