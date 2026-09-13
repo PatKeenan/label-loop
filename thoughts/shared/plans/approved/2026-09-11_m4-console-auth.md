@@ -284,25 +284,37 @@ saturation point).
   pin is a form error, never an exception.
 
 ### Steps
-- [ ] Repository writes for all five tables plus activation
-- [ ] `createPanel` service: one transaction, validate every `llm` pin before insert
-- [ ] `model_pin_validation` written from the validating call (`available_endpoints`, `served_by`)
-- [ ] Routes, org-scoped from the session, role-guarded
-- [ ] `panel_version.created` / `judge_version.created` audit rows
-- [ ] Tests: a rejected pin creates NO rows (transaction rolls back); weight 0 and missing
-      polarity are refused by the database, not only by the schema; the created panel answers
+- [x] Repository writes for all five tables plus activation
+- [x] `createPanel` service: one transaction, validate every `llm` pin before insert — validation
+      runs BEFORE the transaction opens, not inside it; see Deviation 24
+- [x] `model_pin_validation` written from the validating call (`available_endpoints`, `served_by`)
+- [x] Routes, org-scoped from the session, role-guarded
+- [x] `panel_version.created` / `judge_version.created` audit rows
+- [x] Tests: a rejected pin creates NO rows; a failure HALFWAY through the transaction creates no
+      rows; weight 0 and missing polarity are refused by the database, not only by the schema
+      (asserted as SQLSTATE 23514 and 23502); the created panel answers
       `POST /v1/panels/{id}/evaluate` with a key from phase 3
 
 ### Automated verification
-- [ ] `bun test apps/api/src/services/create-panel.test.ts` passes
-- [ ] `bun test apps/api/src/routes/internal/panels.test.ts` passes
-- [ ] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test apps/api/src/services/create-panel.test.ts` passes — 10 tests
+- [x] `bun test apps/api/src/routes/internal/panels.test.ts` passes — 11 tests, including the
+      end-to-end demo moment
+- [x] `bun run typecheck`, `bun run lint` clean (full suite: 744 tests, 62 files)
 
 ### Manual verification
+> Rebuild first — `set -a && . ./.env && set +a && docker compose -f
+> infra/docker-compose.yml up -d --build api`.
+
 - [ ] Create a panel with one `fake:` judge and one real `openrouter:` judge; confirm both
       froze with a populated `model_pin_validation`
-- [ ] Attempt a judge on `claude-haiku-4.5`; confirm nothing is written and the reason is legible
-- [ ] Evaluate against the new panel with a key issued in phase 3 — **end to end with no seed**
+- [ ] Attempt a judge whose pin cannot be satisfied; confirm nothing is written and the reason is
+      legible. **This step originally named haiku, and that expectation is stale** — haiku now
+      passes (Deviation 23). Use a quantization constraint instead: every one of haiku's 8
+      endpoints reports `unknown` quantization (observed 2026-09-13), so pinning
+      `"quantizations": ["fp4"]` should leave no endpoint to serve it. Costs one real call.
+- [ ] Evaluate against the new panel with a key issued in phase 3 — **end to end with no seed**.
+      *Already asserted by `panels.test.ts`*, against the fake provider; the manual run is the
+      same chain against a real one.
 
 ---
 
@@ -810,6 +822,62 @@ Recorded as they happen; decision provenance, not a changelog.
     `llm/catalogue.ts`, `routes/internal/models.ts`, `routes/internal/judges.ts`, both test
     files, and this plan. **The manual-verification step was the dangerous one** — it would
     have sent the next person hunting a bug that does not exist.
+
+### Phase 5
+
+24. **Pins are validated BEFORE the transaction opens, not inside it.** The plan said "one
+    transaction … validate every `llm` pin before insert", which admits both readings. Inside
+    would hold a database transaction — a pooled connection and its locks — open across N real
+    provider round trips, measured at 3.3 seconds for a single haiku probe. So every pin is
+    validated first, in parallel; if any fails, no transaction is ever opened and there is
+    nothing to roll back. `scripts/seed.ts` has done the same since M1. The all-or-nothing
+    guarantee for the WRITES is still one transaction, and a test proves it by forcing a
+    failure after three rows are already written.
+
+25. **`code` judges are refused, with a reason.** The plan did not mention them. `evaluate.ts`
+    has no executor for them until M5, so every one reports `failed` on every evaluation; the
+    schema has no column for what a code judge would check; and a `required` one would veto its
+    panel on every call — permanently, since versions are immutable and the only way out is a
+    new panel version. Refused at `judges.N.type` with a message naming M5, rather than silently
+    narrowed to `llm`. The service's input type has no `type` field at all.
+
+26. **No separate "create a judge" route; creation is one submit.** The plan listed
+    `routes/internal/panels.ts, judges.ts` for "create panel + judges". A `pnv_` pins its judge
+    set and both version tables are immutable, so adding a judge to an existing panel is not an
+    insert — it is writing panel version n+1. Panel and judges are therefore one request, and
+    `judges.ts` keeps only phase 4's `validate-pin`.
+
+27. **A rejected pin on CREATE is a 422, where `validate-pin` returns 200.** Both are form
+    errors, and the difference is principled rather than inconsistent: `validate-pin` answers a
+    QUESTION, so "no" is a successful answer; `POST /internal/panels` is a COMMAND that could not
+    be carried out. 422 with `issues` at `judges.N.model` and the reason verbatim, so the wizard
+    renders each beside its own field. Every failing judge is reported, not the first.
+
+28. **A ceiling of 16 judges per submit, as a cost control.** Not in the plan. Each `llm` judge
+    costs one real, parallel validating call, so an unbounded array is an unbounded number of
+    paid provider calls from a single form post.
+
+29. **The unique violation is matched by CONSTRAINT NAME, not SQLSTATE alone.**
+    `judges_panel_slug_key` raises the same 23505 as `panels_org_slug_key`, and a first draft
+    would have reported a duplicate judge slug as "that panel slug is taken". A mutation
+    confirmed the name check is load-bearing.
+
+30. **A test fixture silently tested the wrong failure, for every case.** The first draft of
+    `create-panel.test.ts` used `stub:good` as its model id. `modelRefOf` accepts only
+    registered routes (`fake`, `openrouter`), so every judge was rejected as malformed BEFORE the
+    stub provider was ever called — eight tests failed, but they would have failed for the wrong
+    reason had they been written to expect failure. Corrected to `openrouter:stub/…` with the
+    stub injected as the provider, which is the only way to reach the real validation path
+    offline: `fake:` is short-circuited by `validatePin` and can only ever say yes.
+
+31. **A mutation disproved a comment, and the comment was corrected rather than a test invented.**
+    Six mutations were run; five failed tests. The survivor moved activation BEFORE the judge
+    inserts, which the comment claimed "would briefly serve an empty panel". It would not: inside
+    a transaction, READ COMMITTED readers see the pointer and the judges together or not at all.
+    The guarantee is the transaction — and removing the transaction IS caught. Writing a test to
+    make that mutation fail would have been testing Postgres's isolation rather than this code,
+    so the claim was fixed instead. Third phase running where a mutation found a comment that
+    sounded right and was not.
 
 ---
 
