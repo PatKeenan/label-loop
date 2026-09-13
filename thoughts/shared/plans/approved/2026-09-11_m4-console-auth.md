@@ -214,9 +214,10 @@ saturation point).
 **What this phase must NOT do**, from the measurements
 (`thoughts/shared/research/2026-08-30_model-tier-measurements.md`):
 - Gate on `supported_parameters`. It is a **union across endpoints** — `claude-sonnet-5`
-  advertised structured output with 3 of its 9 endpoints unable to do it — and
-  `claude-haiku-4.5` advertises it and still broke the output contract 4 times out of 4.
-  The catalogue POPULATES; `validatePin` GATES.
+  advertised structured output with 3 of its 9 endpoints unable to do it — so it describes the
+  best any endpoint can do rather than what the one that answers will. The catalogue
+  POPULATES; `validatePin` GATES. (This bullet also cited haiku breaking the contract 4 of 4;
+  that example was fixed on 2026-08-31 and is now history — Deviation 23.)
 - Warn "this model always reasons" from `reasoning.mandatory`. That would be false for
   `gemini-3.5-flash-lite`, which is `mandatory: true` and reported **0 reasoning tokens** at
   `minimal` across three runs — the cheapest and fastest model measured.
@@ -224,23 +225,36 @@ saturation point).
   generation behind.
 
 ### Steps
-- [ ] Catalogue client with TTL cache, last-good-snapshot fallback, injected `fetch`
-- [ ] `GET /internal/models` returns price, endpoint count, supported efforts, mandatory flag
-- [ ] `POST /internal/judges/validate-pin` surfaces `reason` verbatim, never as an error envelope
-- [ ] Tests: a failing refresh serves the previous snapshot and logs at `warn`; a cold start
+- [x] Catalogue client with TTL cache, last-good-snapshot fallback, injected `fetch`
+- [x] `GET /internal/models` returns price, supported efforts, mandatory flag — **endpoint
+      count moved to its own route, see Deviation 18**
+- [x] `POST /internal/judges/validate-pin` surfaces `reason` verbatim, never as an error envelope
+- [x] Tests: a failing refresh serves the previous snapshot and logs at `warn`; a cold start
       with no network returns an explicit empty-with-reason rather than a silent empty list
-- [ ] `architecture.test.ts` still passes with the new outbound call inside `src/llm/`
+- [x] `architecture.test.ts` still passes with the new outbound call inside `src/llm/`
 
 ### Automated verification
-- [ ] `bun test apps/api/src/llm/catalogue.test.ts` passes
-- [ ] `bun test apps/api/src/architecture.test.ts` passes
-- [ ] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test apps/api/src/llm/catalogue.test.ts` passes — 14 tests, offline
+- [x] `bun test apps/api/src/architecture.test.ts` passes
+- [x] `bun run typecheck`, `bun run lint` clean (full suite: 723 tests, 60 files)
 
 ### Manual verification
+> Rebuild first — `set -a && . ./.env && set +a && docker compose -f
+> infra/docker-compose.yml up -d --build api`.
+
 - [ ] With a real `OPENROUTER_API_KEY`, `GET /internal/models` returns a populated list whose
-      numbers match the measurement table for the six models already measured
-- [ ] Validate a pin for `anthropic/claude-haiku-4.5` and confirm the failure reason says the
-      rationale exceeded its length — actionable, not "invalid output"
+      numbers match the measurement table for the six models already measured.
+      *Note:* the catalogue itself is PUBLIC and needs no key — verified during
+      implementation, 445 models over one unauthenticated request. The key is what
+      `validate-pin` needs, not the list.
+- [x] Validate a pin for `anthropic/claude-haiku-4.5`. **This one costs a real provider call**,
+      which is the point of it: nothing static can answer the question (ADR-0053).
+      **The expectation in this step was WRONG and is corrected here** — it said to confirm a
+      failure about rationale length. Run 2026-09-13, haiku **passes**: `ok: true`,
+      `available_endpoints: 3`, served by `anthropic/claude-4.5-haiku-20251001`. That is the
+      right answer, not a regression: the cap that failed it 4-of-4 on 2026-08-30 was split
+      on 2026-08-31 into a prompt-stated target and a far looser refusal bound, and no
+      `maxLength` is sent any more. See Deviation 23.
 
 ---
 
@@ -720,6 +734,82 @@ Recorded as they happen; decision provenance, not a changelog.
     deliberately and nothing enforced it. It is a hygiene issue rather than a hole (the secret
     is 32 random bytes, so its SHA-256 is not reversible), but a documented intention with no
     guard is exactly what rots, so the assertion now exists and the mutation now fails.
+
+### Phase 4
+
+18. **`GET /internal/models` carries no endpoint count; `GET /internal/models/{id}/endpoints`
+    does.** The plan asked for the count in the list. The live catalogue was checked before
+    designing against it: `/models` returns **445 models and has no endpoint-count field at
+    all**, so populating the list eagerly would mean one HTTP request per model per refresh.
+
+    It is also the wrong number to lead with, which is the better half of the argument. The
+    count that matters is how many endpoints survive THIS judge's pin — `claude-sonnet-5` had
+    5 of 9, `gpt-5.6-sol` had 1 of 5 — and only ADR-0026's validating call knows it. The
+    catalogue's raw total is the denominator, useful for "what would constraining quantization
+    cost", and it is fetched per model on demand and cached separately.
+
+19. **Fixtures are REAL trimmed responses, captured 2026-09-12**, in
+    `apps/api/src/llm/__fixtures__/`. A hand-written fixture tests a parser against its own
+    author's assumptions, which is how a field gets read from the wrong place and nobody
+    notices until production. The catalogue endpoints are public and unauthenticated, so
+    capturing them cost nothing and used no credential.
+
+20. **`modelProvider` was hoisted into `AppDeps`.** `validatePin` takes a `ModelProvider`
+    rather than the gateway — as `scripts/seed.ts` has called it since M1 — and the gateway
+    exposes no provider. This is NOT a hole in "every provider call goes through the gateway":
+    that rule is about `src/llm/` being the only place a provider is reached, which
+    `architecture.test.ts` enforces and `validate-pin.ts` satisfies. What validation
+    deliberately does not want is retry and a breaker — an unsatisfiable pin is an ANSWER, and
+    a form check that tripped the circuit for real judge traffic would be worse than useless.
+
+21. **`testing/fake-catalogue.ts` is new, and twelve `createApp` sites gained two deps.** The
+    cost of a required dependency, paid the same way `meter` and `rateLimitStore` were.
+
+22. **A second test was added because a mutation defeated the suite** — the same lesson as
+    phase 3, in a subtler form. Parsing every price through a float passed all thirteen tests,
+    because the fixture's own prices round-trip by luck: `String(Number('0.00001'))` is still
+    `'0.00001'`. The assertion was testing a value that could not fail. It now uses
+    `'0.0000001'`, which becomes `'1e-7'`, and a long decimal that loses digits outright.
+    **Fixtures drawn from real data can hide a bug precisely because the real data is benign.**
+
+23. **The haiku example is history, and four documents were still asserting it in the present
+    tense.** Phase 4's own manual verification told the stakeholder to expect a failure about
+    rationale length. Run against the live provider on 2026-09-13, `claude-haiku-4.5`
+    **passed** — `ok: true`, 3 endpoints surviving the pin.
+
+    (Wording note, because this line failed the secret scan once and cost a force-push.
+    gitleaks' generic key rule matches any backticked token within roughly forty characters
+    of the word that abbreviates "application programming interface", and a hyphenated model
+    id is exactly that shape — the secret it reported was the model name itself. Write
+    "provider" instead when a model id is nearby. Note also that the scanner reads COMMITS,
+    not the working tree, so correcting the file is not enough once the text is committed.)
+
+    It is not a regression and not a fluke. `packages/contracts/src/evaluate.ts` records the
+    cause: until **2026-08-31**, one day after the measurement, `280` was sent as `maxLength`
+    under `strict: true` and never mentioned in the prompt. Structured output constrains SHAPE,
+    not size, so the cap was advisory on the wire and absolute on the way back in — a model was
+    never told the limit and was then refused for exceeding it. The fix split it into
+    `RATIONALE_TARGET_LENGTH` (280, stated in the prompt) and `RATIONALE_MAX_LENGTH` (1000, the
+    refusal bound), and `judge-schema.ts` now sends no `maxLength` at all.
+
+    **The correction was already in the repository when ADR-0053 was written on 2026-09-11.**
+    `llm/validate-pin.test.ts` carries the re-measurement in a comment — *"told one, it
+    returned 185-296 on 5 of 5 (re-measured 2026-08-31)"* — and the completed M1 plan says the
+    same. So the real failure is not a model changing behaviour: it is a newer document citing
+    an older measurement across a correction that was already written down, twice. An accepted
+    ADR does not re-check its own evidence, and nothing in the process made it.
+
+    **ADR-0053's decision is unchanged, because it never rested on that example.** Its other
+    leg is untouched — `supported_parameters` is a union across endpoints, `claude-sonnet-5`
+    advertising structured output with three of its nine unable to honour it — and the passing
+    call demonstrates the point *better* than the failure did: the catalogue can say haiku
+    exists and advertises structured output; only a real call says three of its endpoints
+    satisfy this pin and which one answered.
+
+    Corrected in ADR-0053 (amended, not retracted), `llm/validate-pin.ts` (stale since M1),
+    `llm/catalogue.ts`, `routes/internal/models.ts`, `routes/internal/judges.ts`, both test
+    files, and this plan. **The manual-verification step was the dangerous one** — it would
+    have sent the next person hunting a bug that does not exist.
 
 ---
 

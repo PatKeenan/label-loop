@@ -3,8 +3,10 @@ import { cors } from 'hono/cors'
 import type { AppEnv } from '../../app-env.ts'
 import { AUTH_BASE_PATH } from '../../auth.ts'
 import { ACTIVE_ORG_HEADER, sessionAuth } from '../../middleware/session.ts'
+import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
+import { createModelRoutes } from './models.ts'
 import { createTraceRoutes } from './traces.ts'
 
 /**
@@ -72,4 +74,6 @@ export const createInternalRoutes = () => {
     .route('/', createMeRoutes())
     .route('/', createTraceRoutes())
     .route('/', createKeyRoutes())
+    .route('/', createModelRoutes())
+    .route('/', createJudgeRoutes())
 }

@@ -19,8 +19,15 @@ import { isProviderError, type ModelProvider, type ProviderFailureKind } from '.
  *   fragile in a way one with four is not, and ADR-0022 requires that count on the row.
  * - **That the model honours the schema in the required key order.** Verified live on
  *   2026-08-30 to be a real failure mode rather than a theoretical one: `claude-haiku-4.5`
- *   advertises `structured_outputs`, is sent `maxLength: 280` under `strict: true`, and
+ *   advertised `structured_outputs`, was sent `maxLength: 280` under `strict: true`, and
  *   returned a ~570-character rationale on four attempts out of four.
+ *
+ *   **That example no longer reproduces, by design** (re-verified 2026-09-13, ADR-0053).
+ *   The cap was split on 2026-08-31 — `RATIONALE_TARGET_LENGTH` is stated in the prompt,
+ *   `RATIONALE_MAX_LENGTH` is the refusal bound, and no `maxLength` is sent — because
+ *   structured output constrains SHAPE, not size, so the old cap was advisory on the wire
+ *   and absolute on the way back in. The reason to make this call is unchanged: what it
+ *   establishes is the pool size and the served endpoint, which no catalogue field predicts.
  *
  * **It is an ORDINARY `evaluate()` call, not a new port method** (ADR-0026). The port is
  * deliberately one method; a second verb would be owed by every adapter that ever follows,

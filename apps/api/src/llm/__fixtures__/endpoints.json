@@ -1,0 +1,76 @@
+{
+  "data": {
+    "id": "anthropic/claude-fable-5.1",
+    "name": "Anthropic: Claude Fable 5.1",
+    "endpoints": [
+      {
+        "name": "Azure | anthropic/claude-fable-5.1-20260831",
+        "provider_name": "Azure",
+        "quantization": "unknown",
+        "status": 0,
+        "supported_parameters": [
+          "reasoning",
+          "include_reasoning",
+          "structured_outputs",
+          "max_tokens",
+          "max_completion_tokens",
+          "tools",
+          "response_format",
+          "verbosity",
+          "stop",
+          "reasoning_effort"
+        ]
+      },
+      {
+        "name": "Anthropic | anthropic/claude-fable-5.1-20260831",
+        "provider_name": "Anthropic",
+        "quantization": "unknown",
+        "status": 0,
+        "supported_parameters": [
+          "max_tokens",
+          "stop",
+          "reasoning",
+          "include_reasoning",
+          "tools",
+          "structured_outputs",
+          "response_format",
+          "verbosity",
+          "reasoning_effort"
+        ]
+      },
+      {
+        "name": "Amazon Bedrock | anthropic/claude-fable-5.1-20260831",
+        "provider_name": "Amazon Bedrock",
+        "quantization": "unknown",
+        "status": 0,
+        "supported_parameters": [
+          "reasoning",
+          "include_reasoning",
+          "max_tokens",
+          "stop",
+          "tools",
+          "response_format",
+          "verbosity",
+          "structured_outputs",
+          "reasoning_effort"
+        ]
+      },
+      {
+        "name": "Google | anthropic/claude-fable-5.1-20260831",
+        "provider_name": "Google",
+        "quantization": "unknown",
+        "status": 0,
+        "supported_parameters": [
+          "max_tokens",
+          "stop",
+          "reasoning",
+          "include_reasoning",
+          "tools",
+          "response_format",
+          "verbosity",
+          "reasoning_effort"
+        ]
+      }
+    ]
+  }
+}

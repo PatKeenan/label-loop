@@ -27,6 +27,7 @@ import { byApiKey, rateLimit } from './middleware/rate-limit.ts'
 import type { RateLimitStore } from './ports/rate-limit-store.ts'
 import { createMemoryRateLimitStore } from './rate-limit/memory-store.ts'
 import { fakeAuth } from './testing/fake-auth.ts'
+import { fakeCatalogue } from './testing/fake-catalogue.ts'
 import { fakeDatabase } from './testing/fake-database.ts'
 import { fakeQueue } from './testing/fake-queue.ts'
 import { recordingMetrics } from './testing/recording-metrics.ts'
@@ -87,6 +88,8 @@ const hostWith = (rateLimitStore: RateLimitStore = createMemoryRateLimitStore())
     meter: recorded.meter,
     auth: fakeAuth(),
     rateLimitStore,
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
   const probe = new Hono<AppEnv>()

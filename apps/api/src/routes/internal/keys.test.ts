@@ -10,6 +10,7 @@ import { createAuth } from '../../auth.ts'
 import { loadConfig } from '../../config.ts'
 import { createFakeProvider, createModelGateway } from '../../llm/index.ts'
 import { createMemoryRateLimitStore } from '../../rate-limit/memory-store.ts'
+import { fakeCatalogue } from '../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
 
 /**
@@ -72,6 +73,8 @@ const app = () =>
     meter: noopMeter,
     auth,
     rateLimitStore: createMemoryRateLimitStore(),
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
 const signUp = async (email: string) => {

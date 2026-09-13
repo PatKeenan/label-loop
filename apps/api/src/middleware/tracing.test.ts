@@ -10,6 +10,7 @@ import { AppError, toAppError } from '../errors.ts'
 import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
 import { fakeAuth } from '../testing/fake-auth.ts'
+import { fakeCatalogue } from '../testing/fake-catalogue.ts'
 import { fakeDatabase } from '../testing/fake-database.ts'
 import { fakeQueue } from '../testing/fake-queue.ts'
 import { recordingSpans } from '../testing/recording-spans.ts'
@@ -159,6 +160,8 @@ describe('request_id, the log line, the envelope and the span', () => {
       meter: noopMeter,
       auth: fakeAuth(),
       rateLimitStore: createMemoryRateLimitStore(),
+      modelProvider: createFakeProvider(),
+      catalogue: fakeCatalogue(),
     })
 
     const response = await app.request('/healthz')

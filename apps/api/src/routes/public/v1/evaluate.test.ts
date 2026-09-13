@@ -22,6 +22,7 @@ import { sha256Hex } from '../../../middleware/api-key-auth.ts'
 import type { RateLimitStore } from '../../../ports/rate-limit-store.ts'
 import { createMemoryRateLimitStore } from '../../../rate-limit/memory-store.ts'
 import { fakeAuth } from '../../../testing/fake-auth.ts'
+import { fakeCatalogue } from '../../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../../testing/fake-queue.ts'
 
 /**
@@ -272,6 +273,8 @@ const appWith = (
     meter: noopMeter,
     auth: fakeAuth(),
     rateLimitStore,
+    modelProvider: createFakeProvider(),
+    catalogue: fakeCatalogue(),
   })
 
 /**
