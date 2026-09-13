@@ -50,7 +50,8 @@ const HAIKU: CatalogueModel = {
   reasoningMandatory: false,
   supportedEfforts: ['none', 'low', 'high'],
   defaultEffort: 'low',
-  // Advertised — and it broke the output contract 4 of 4 times when measured.
+  // Advertised. Which is a union across a model's endpoints, and therefore not a promise
+  // about the one that answers (ADR-0053).
   advertisesStructuredOutput: true,
 }
 
@@ -119,9 +120,10 @@ describe('what the list says', () => {
       data: { models: Record<string, unknown>[] }
     }
 
-    // The name is the documentation here. `claude-haiku-4.5` advertises structured output
-    // and broke the contract 4 times out of 4, so a field called `supports_` would be a
-    // claim this project has measured to be false (ADR-0053).
+    // The name is the documentation here. The flag is a UNION across a model's endpoints —
+    // `claude-sonnet-5` advertised structured output while three of its nine could not
+    // honour it — so a field called `supports_` would be a claim about the endpoint that
+    // answers, which this value cannot make (ADR-0053).
     expect(body.data.models[0]).toHaveProperty('advertises_structured_output')
     expect(body.data.models[0]).not.toHaveProperty('supports_structured_output')
   })

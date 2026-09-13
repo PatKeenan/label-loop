@@ -14,10 +14,12 @@ import type { Clock } from '../ports/clock.ts'
  *
  * - **`supported_parameters` is not a guarantee.** It is a UNION across a model's endpoints —
  *   `claude-sonnet-5` advertised structured output while three of its nine endpoints could not
- *   do it — and advertising a capability is not the same as enforcing a constraint:
- *   `claude-haiku-4.5` advertises `structured_outputs`, was sent `maxLength: 280` under
- *   `strict: true`, and broke the output contract on four attempts out of four. So this file
- *   surfaces the flag as INFORMATION and never as a gate.
+ *   do it. So this file surfaces the flag as INFORMATION and never as a gate.
+ *
+ *   (The companion example — `claude-haiku-4.5` breaking the output contract 4 of 4 times on
+ *   2026-08-30 — is HISTORICAL: the cap that caused it was split on 2026-08-31 and haiku now
+ *   passes, re-verified 2026-09-13. See ADR-0053. The union argument above is the one that
+ *   still stands on its own, and it is the reason this file gates nothing.)
  * - **`reasoning.mandatory` does not mean "this model always reasons."** That would be false
  *   for `gemini-3.5-flash-lite`, which is `mandatory: true` and reported **0 reasoning tokens
  *   at `minimal` across three runs** — and is the cheapest, fastest model measured. The flag

@@ -104,9 +104,10 @@ describe('parsing what the provider actually sends', () => {
     if (!result.ok) throw new Error('expected a snapshot')
 
     const haiku = result.snapshot.models.find((m) => m.id === 'anthropic/claude-haiku-4.5')
-    // The model that advertises it and broke the output contract 4 times out of 4. The flag
-    // is true here, and that is correct — it IS advertised. What must not happen is this
-    // value being used to decide offerability. `validate-pin` is the gate (ADR-0053).
+    // The flag is true here and that is CORRECT — it is advertised. What must not happen is
+    // this value being used to decide offerability, because it is a union across a model's
+    // endpoints: `claude-sonnet-5` advertised structured output with three of its nine
+    // unable to honour it. `validate-pin` is the gate (ADR-0053).
     expect(haiku?.advertisesStructuredOutput).toBe(true)
   })
 

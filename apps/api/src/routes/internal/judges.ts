@@ -11,10 +11,12 @@ import { requireRole } from '../../middleware/require-role.ts'
  *
  * `GET /internal/models` next door populates the picker; this decides whether a judge can
  * actually be created against a choice, and it decides it by making a real call. Nothing
- * static can answer the question: `supported_parameters` is a union across endpoints and a
- * capability flag is not constraint enforcement — `claude-haiku-4.5` advertises
- * `structured_outputs`, was sent `maxLength: 280` under `strict: true`, and returned a ~570
- * character rationale on four attempts out of four.
+ * static can answer the question. `supported_parameters` is a union across a model's
+ * endpoints, so it describes the best any of them can do rather than what the one that
+ * answers will: `claude-sonnet-5` advertised structured output with three of its nine unable
+ * to honour it. Nor can any catalogue field say how many endpoints survive a given pin —
+ * `claude-sonnet-5` had 5 of 9 and `gpt-5.6-sol` had 1 of 5 — which is the number ADR-0022
+ * requires on the row.
  *
  * **An unsatisfiable pin is a 200, not an error.** The wizard renders `reason` beside the
  * field; it does not catch an exception to discover that a form is invalid. `validatePin`

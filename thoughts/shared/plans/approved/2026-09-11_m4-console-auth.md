@@ -214,9 +214,10 @@ saturation point).
 **What this phase must NOT do**, from the measurements
 (`thoughts/shared/research/2026-08-30_model-tier-measurements.md`):
 - Gate on `supported_parameters`. It is a **union across endpoints** — `claude-sonnet-5`
-  advertised structured output with 3 of its 9 endpoints unable to do it — and
-  `claude-haiku-4.5` advertises it and still broke the output contract 4 times out of 4.
-  The catalogue POPULATES; `validatePin` GATES.
+  advertised structured output with 3 of its 9 endpoints unable to do it — so it describes the
+  best any endpoint can do rather than what the one that answers will. The catalogue
+  POPULATES; `validatePin` GATES. (This bullet also cited haiku breaking the contract 4 of 4;
+  that example was fixed on 2026-08-31 and is now history — Deviation 23.)
 - Warn "this model always reasons" from `reasoning.mandatory`. That would be false for
   `gemini-3.5-flash-lite`, which is `mandatory: true` and reported **0 reasoning tokens** at
   `minimal` across three runs — the cheapest and fastest model measured.
@@ -246,10 +247,14 @@ saturation point).
       *Note:* the catalogue itself is PUBLIC and needs no key — verified during
       implementation, 445 models over one unauthenticated request. The key is what
       `validate-pin` needs, not the list.
-- [ ] Validate a pin for `anthropic/claude-haiku-4.5` and confirm the failure reason says the
-      rationale exceeded its length — actionable, not "invalid output".
-      **This one costs a real provider call**, which is the point of it: nothing static can
-      answer the question (ADR-0053).
+- [x] Validate a pin for `anthropic/claude-haiku-4.5`. **This one costs a real provider call**,
+      which is the point of it: nothing static can answer the question (ADR-0053).
+      **The expectation in this step was WRONG and is corrected here** — it said to confirm a
+      failure about rationale length. Run 2026-09-13, haiku **passes**: `ok: true`,
+      `available_endpoints: 3`, served by `anthropic/claude-4.5-haiku-20251001`. That is the
+      right answer, not a regression: the cap that failed it 4-of-4 on 2026-08-30 was split
+      on 2026-08-31 into a prompt-stated target and a far looser refusal bound, and no
+      `maxLength` is sent any more. See Deviation 23.
 
 ---
 
@@ -766,6 +771,45 @@ Recorded as they happen; decision provenance, not a changelog.
     `'0.00001'`. The assertion was testing a value that could not fail. It now uses
     `'0.0000001'`, which becomes `'1e-7'`, and a long decimal that loses digits outright.
     **Fixtures drawn from real data can hide a bug precisely because the real data is benign.**
+
+23. **The haiku example is history, and four documents were still asserting it in the present
+    tense.** Phase 4's own manual verification told the stakeholder to expect a failure about
+    rationale length. Run against the live provider on 2026-09-13, `claude-haiku-4.5`
+    **passed** — `ok: true`, 3 endpoints surviving the pin.
+
+    (Wording note, because this line failed the secret scan once and cost a force-push.
+    gitleaks' generic key rule matches any backticked token within roughly forty characters
+    of the word that abbreviates "application programming interface", and a hyphenated model
+    id is exactly that shape — the secret it reported was the model name itself. Write
+    "provider" instead when a model id is nearby. Note also that the scanner reads COMMITS,
+    not the working tree, so correcting the file is not enough once the text is committed.)
+
+    It is not a regression and not a fluke. `packages/contracts/src/evaluate.ts` records the
+    cause: until **2026-08-31**, one day after the measurement, `280` was sent as `maxLength`
+    under `strict: true` and never mentioned in the prompt. Structured output constrains SHAPE,
+    not size, so the cap was advisory on the wire and absolute on the way back in — a model was
+    never told the limit and was then refused for exceeding it. The fix split it into
+    `RATIONALE_TARGET_LENGTH` (280, stated in the prompt) and `RATIONALE_MAX_LENGTH` (1000, the
+    refusal bound), and `judge-schema.ts` now sends no `maxLength` at all.
+
+    **The correction was already in the repository when ADR-0053 was written on 2026-09-11.**
+    `llm/validate-pin.test.ts` carries the re-measurement in a comment — *"told one, it
+    returned 185-296 on 5 of 5 (re-measured 2026-08-31)"* — and the completed M1 plan says the
+    same. So the real failure is not a model changing behaviour: it is a newer document citing
+    an older measurement across a correction that was already written down, twice. An accepted
+    ADR does not re-check its own evidence, and nothing in the process made it.
+
+    **ADR-0053's decision is unchanged, because it never rested on that example.** Its other
+    leg is untouched — `supported_parameters` is a union across endpoints, `claude-sonnet-5`
+    advertising structured output with three of its nine unable to honour it — and the passing
+    call demonstrates the point *better* than the failure did: the catalogue can say haiku
+    exists and advertises structured output; only a real call says three of its endpoints
+    satisfy this pin and which one answered.
+
+    Corrected in ADR-0053 (amended, not retracted), `llm/validate-pin.ts` (stale since M1),
+    `llm/catalogue.ts`, `routes/internal/models.ts`, `routes/internal/judges.ts`, both test
+    files, and this plan. **The manual-verification step was the dangerous one** — it would
+    have sent the next person hunting a bug that does not exist.
 
 ---
 

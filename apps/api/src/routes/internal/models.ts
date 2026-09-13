@@ -11,9 +11,11 @@ import { requireRole } from '../../middleware/require-role.ts'
  * the catalogue cannot answer that question and measurement says so
  * (`thoughts/shared/research/2026-08-30_model-tier-measurements.md`):
  *
- * - `advertises_structured_output` is passed through and named for what it is. It is a UNION
- *   across a model's endpoints, and `claude-haiku-4.5` advertises it and still broke the
- *   output contract 4 times out of 4. **The console must not filter on it.**
+ * - `advertises_structured_output` is passed through and named for what it is: a UNION across
+ *   a model's endpoints, three of `claude-sonnet-5`'s nine being unable to honour what the
+ *   model as a whole advertised. **The console must not filter on it.** (Its companion
+ *   example, haiku breaking the contract 4 of 4 times, was fixed on 2026-08-31 and is now
+ *   history — ADR-0053. The union is what makes the flag unsafe to gate on.)
  * - `reasoning_mandatory` is passed through and must NOT be rendered as "this model always
  *   reasons" — that would be false for `gemini-3.5-flash-lite`, which is mandatory and
  *   reported 0 reasoning tokens at `minimal` across three runs.
