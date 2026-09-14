@@ -10,6 +10,25 @@ related_adrs: [0003, 0008, 0009, 0014, 0016, 0019, 0020, 0022, 0023, 0025, 0026,
 spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058]
 ---
 
+> **STATUS — 2026-09-14. Phases 1–5 are MERGED; next is phase 6.**
+>
+> | phase | PR | |
+> |---|---|---|
+> | 1 — tenancy and roles | #58 | merged |
+> | 2 — GitHub OIDC | #59 | merged |
+> | 3 — keys and the audit log | #60 | merged |
+> | 4 — the catalogue | #61 (+ #62, CI) | merged |
+> | 5 — panel and judge creation | #63 | merged |
+> | **6 — the frame, as mockups** | — | **next · human review gate** |
+>
+> **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
+> verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
+> not block the next phase**; each says why. There are no `[ ]` boxes left in phases 1–5, so a
+> session resuming from this file should start at phase 6 and not re-open earlier phases.
+>
+> Phase 6 is mockup work under a PARTIAL Phase A resume (ADR-0055), not application code — see
+> CLAUDE.md "Current phase". Open question 3 below applies directly to 6c.
+
 # M4 — console, auth, and the interviewer flow
 
 ## Goal
@@ -83,9 +102,15 @@ that safety, which is why the negative tests are part of this phase and not a fo
 - [x] `bun run typecheck` and `bun run lint` clean (full suite also green: 663 tests, 56 files)
 
 ### Manual verification
-- [ ] Sign in locally; `GET /internal/me` shows the seeded org, `admin`, one membership
-- [ ] Hand-craft a request with another org's id in the header, and one with an id that does
-      not exist at all; confirm the two responses are INDISTINGUISHABLE
+- [x] Sign in locally; `GET /internal/me` shows the seeded org, `admin`, one membership.
+      *By the stakeholder, 2026-09-11*, against a rebuilt container — the response showed the
+      seeded org, `admin`, and one entry in `memberships`.
+- [x] Hand-craft a request with another org's id in the header, and one with an id that does
+      not exist at all; confirm the two responses are INDISTINGUISHABLE.
+      *By Claude, 2026-09-11, against a source build* — a real second org was inserted for the
+      purpose and removed afterwards; both answered 404 `NOT_FOUND` and were byte-identical with
+      `request_id` stripped. The stakeholder's first attempt ran against a STALE container and
+      appeared to fail, which is why every later manual step names the rebuild.
 
 ---
 
@@ -120,18 +145,22 @@ that safety, which is why the negative tests are part of this phase and not a fo
 > `bun run --cwd apps/api dev`. The tell for a stale build here is a GitHub button that 404s
 > with the credentials set.
 
-- [ ] A fresh clone with **no** `.env` still boots and signs in with the seeded password
+- [x] A fresh clone with **no** `.env` still boots and signs in with the seeded password
       account (ADR-0009 — this is the property most at risk in this phase).
       *Verified headlessly during implementation:* booted via `env -i` with `DATABASE_URL`
       alone — `/healthz` 200, password sign-in 200, `/internal/me` 200, and
-      `sign-in/social` a clean `PROVIDER_NOT_FOUND` rather than an error. Re-confirm by hand.
-- [ ] With a real GitHub OAuth app (localhost callback), the GitHub button completes a
+      `sign-in/social` a clean `PROVIDER_NOT_FOUND` rather than an error. *By Claude*; not
+      re-run by the stakeholder.
+- [x] With a real GitHub OAuth app (localhost callback), the GitHub button completes a
       sign-in and lands on "not a member of any organisation" for a new account — the
       expected M4 behaviour, and the M8 gap named in the research.
       **Needs a registered OAuth app**; the callback is asserted in `auth.test.ts` as
       `http://localhost:3000/internal/auth/callback/github`.
       **The button is a throwaway added by this phase** (Deviation 11) — the plan did not
-      schedule one until phase 8, which is later than the check that needs it
+      schedule one until phase 8, which is later than the check that needs it.
+      *By the stakeholder, 2026-09-11* — account created with `provider_id: github`, session
+      issued, console refused with FORBIDDEN. Two findings came out of it: compose never passed
+      the credentials (Deviation 12), and `FORBIDDEN` means two things in the console (phase 8).
 
 ---
 
@@ -183,17 +212,26 @@ saturation point).
 > Rebuild before verifying — `set -a && . ./.env && set +a && docker compose -f
 > infra/docker-compose.yml up -d --build api` — for the reason phase 2 records.
 
-- [ ] Issue a key in the API, copy the plaintext, call `POST /v1/panels/{id}/evaluate` with it
-- [ ] Revoke it; the same call now fails with `UNAUTHORIZED`
-- [ ] `SELECT * FROM audit_events` shows both events with a `request_id` that matches the
-      response envelope
-- [ ] `bun run scripts/mint-keys.ts` produces N usable keys, and a k6 run using several of
+- [x] Issue a key in the API, copy the plaintext, call `POST /v1/panels/{id}/evaluate` with it.
+      *By the stakeholder, 2026-09-13*, as part of phase 5's end-to-end check: a key issued
+      through `/internal/keys` evaluated live, trace `tr_01M2E3VPH2V3AE7AHE3Z5AKZCH`.
+- [x] Revoke it; the same call now fails with `UNAUTHORIZED`.
+      *By Claude, 2026-09-14*, against the running container: the same evaluation answered 200
+      before the revoke and 401 after.
+- [x] `SELECT * FROM audit_events` shows both events with a `request_id` that matches the
+      response envelope.
+      *By Claude, 2026-09-14* — `api_key.issued` and `api_key.revoked` each carried a
+      `request_id` EQUAL to its own response envelope's. Worth noting because that is stronger
+      than `keys.test.ts`, which asserts only the id's format and never equality.
+- [~] `bun run scripts/mint-keys.ts` produces N usable keys, and a k6 run using several of
       them drives more than the ~1 req/s a single key allows — the measurement BREAKING_POINT
       v1 needs. **Producing v1 itself stays out of scope**; this only makes it possible.
       *Minting verified during implementation:* 5 keys minted against the seeded panel, each
       with its own `api_key.issued` at `actor_type='system'`, and the first one returned 200
       from a real `/v1` evaluation. A wrong `MINT_ORG_ID` was refused with nothing written.
       **The k6 run itself is still yours** — that is the half this phase only makes possible.
+      **DEFERRED, not blocking.** Minting is verified; the k6 run is not done, and producing
+      BREAKING_POINT v1 was declared out of M4's scope. It belongs with that work.
 
 ---
 
@@ -242,11 +280,17 @@ saturation point).
 > Rebuild first — `set -a && . ./.env && set +a && docker compose -f
 > infra/docker-compose.yml up -d --build api`.
 
-- [ ] With a real `OPENROUTER_API_KEY`, `GET /internal/models` returns a populated list whose
+- [x] With a real `OPENROUTER_API_KEY`, `GET /internal/models` returns a populated list whose
       numbers match the measurement table for the six models already measured.
       *Note:* the catalogue itself is PUBLIC and needs no key — verified during
       implementation, 445 models over one unauthenticated request. The key is what
       `validate-pin` needs, not the list.
+      *By Claude, 2026-09-14, through `/internal/models`.* The table holds EIGHT distinct models,
+      not six, and all eight were compared on $/M in→out: **seven match, one does not.**
+      `z-ai/glm-5.3-flash` was recorded at 0.07/0.25 on 2026-08-30 and lists at 0.15/0.50 today.
+      The raw public API agrees with our endpoint, so it is not a parse error. It is also NOT
+      established that the price changed: the `:batch` variant lists at 0.075/0.25, which is what
+      the 2026-08-30 row may have recorded. Either way, see the 6c note on mockup data.
 - [x] Validate a pin for `anthropic/claude-haiku-4.5`. **This one costs a real provider call**,
       which is the point of it: nothing static can answer the question (ADR-0053).
       **The expectation in this step was WRONG and is corrected here** — it said to confirm a
@@ -310,7 +354,7 @@ saturation point).
       panel `mixed-judges` — `is-missing-repro` on `fake:deterministic` froze with 0 endpoints,
       `is-p0` on haiku froze with **3**. The difference is the point: only the real call
       measured it.
-- [ ] Attempt a judge whose pin cannot be satisfied; confirm nothing is written and the reason is
+- [~] Attempt a judge whose pin cannot be satisfied; confirm nothing is written and the reason is
       legible. **This step originally named haiku, and that expectation is stale** — haiku now
       passes (Deviation 23). Use a quantization constraint instead: every one of haiku's 8
       endpoints reports `unknown` quantization (observed 2026-09-13), so pinning
@@ -318,6 +362,10 @@ saturation point).
       **Still unconfirmed at PR time, and it is a PREDICTION, not an observation.** If the
       provider treats `unknown` as satisfying any precision constraint, this returns 201 and the
       step needs correcting again — the haiku lesson from Deviation 23, one step later.
+      **DEFERRED, not blocking.** The rejection PATH is proven — `create-panel.test.ts` and
+      `panels.test.ts` assert that a refused pin writes nothing and lands at `judges.N.model`
+      through the real validation code — but no live provider has yet refused a pin here, and
+      the one-call cost was not spent without the stakeholder's say.
 - [x] Evaluate against the new panel with a key issued in phase 3 — **end to end with no seed**.
       *Already asserted by `panels.test.ts`*, against the fake provider. *Done 2026-09-13 by the
       stakeholder against the real one:* `mixed-judges` evaluated live with haiku serving
@@ -382,7 +430,13 @@ The wizard, drawn INSIDE the approved shell.
       endpoints down to 6, most of the loss being endpoints that never declared a precision
 - [ ] The unsatisfiable-pin form error, carrying a real reason string
 - [ ] The one-time key reveal, and that it cannot be shown again
-- [ ] Realistic data drawn from the measurement table — no lorem ipsum (BRIEF rule)
+- [ ] Realistic data drawn from the measurement table — no lorem ipsum (BRIEF rule).
+      **Re-pull prices from `GET /internal/models` rather than copying the table.** One of its
+      eight rows no longer matches the live catalogue (`z-ai/glm-5.3-flash`, see phase 4), and a
+      reviewed screen showing a stale price would carry it into phase 8 as an approved design.
+      Latency and endpoint counts are measurements with dates and may be quoted as such.
+- [ ] **Resolve open question 3 at the 6c review, before the wizard is drawn as final** — it is a
+      product decision, and the mockup must not make it by default.
 
 ### Also
 - [ ] `mockups/BRIEF.md` records the partial resume, the sidebar decision, and the three artifacts
@@ -902,3 +956,43 @@ nothing to carry:
    stay a plain table until M5? The harvest's `console-trace-explorer` notes are usable but
    reference the retired `cls_` vocabulary, and its Q1 — ten columns will not fit a laptop
    viewport — is unresolved. Decide in phase 8.
+3. **Should the wizard help authors write judges that GATE rather than WORK — and if so, how?**
+   *(Added 2026-09-14 from a conversation during phase 5 verification. Decide at the 6c review.)*
+
+   ADR-0036 makes a judge valid only if it clears two bars: it is expressible (polarity), and it
+   **evaluates something the caller's system produced rather than producing a fact that system
+   needs**. Postgres enforces the first. **Nothing in the schema can enforce the second** — the
+   ADR says so — which leaves the phase 6c wizard as the only author-facing surface there is.
+   As planned it collects question, polarity, weight and `required`, and nothing about bar 2.
+
+   **The hazard is demonstrated, not hypothetical.** While verifying phase 5, the implementer
+   built a judge `is-p0` — *"Does this issue describe a production outage?"* — and evaluated it
+   against a raw incident with no `context`. That is the classification shape ADR-0036 forbids:
+   with no agent output anywhere in the request, the judge can only do the labelling itself,
+   and an expert reviewing it has nothing of an agent's to agree or disagree with. If the
+   implementer wrote one while testing the product, a customer will.
+
+   What the conversation established, in the terms a wizard would need:
+   - **The sorting question is "where in this request is the agent's work?"** If the answer is
+     nowhere, the judge is doing work.
+   - **A GENERATING agent's work goes in `artifact`** — an image, a drafted reply — with the
+     spec it worked to in `context`. **A DECIDING agent's work goes in `context`** — a severity
+     label, a routing choice — with the input it decided about as the `artifact`, and the judge
+     asks whether that decision is wrong (ADR-0037's `mis-routed`). Real agents often do both.
+   - `context` is a flat string-to-string map today, so an agent's nested output is flattened
+     by the caller.
+
+   Options, NOT decided:
+   - **(a) Nothing in the UI.** Bar 2 stays the author's responsibility, as ADR-0036 currently
+     reads. Cheapest, and it relies on people reading an ADR.
+   - **(b) Explanatory copy** beside the question field: gate versus work, and the `context`
+     move, with one generating and one deciding example.
+   - **(c) A structural prompt.** Ask up front whether the agent being judged *makes something*
+     or *decides something*, and frame the question field and the declared context keys from
+     the answer. Strongest nudge; also the most product surface to draw.
+   - **(d) A heuristic warning** — for instance, a question shaped like a classification with
+     no context keys declared. Likely to misfire, and a warning people learn to click past.
+
+   **Why this is flagged rather than drawn:** Phase A was paused because four mockups made six
+   product decisions ahead of PRODUCT.md (ADR-0055). Whatever 6c draws here IS a decision, so it
+   should be made at the review, on purpose, and recorded — not arrive as a layout.
