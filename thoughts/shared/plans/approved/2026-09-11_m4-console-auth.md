@@ -305,16 +305,23 @@ saturation point).
 > Rebuild first — `set -a && . ./.env && set +a && docker compose -f
 > infra/docker-compose.yml up -d --build api`.
 
-- [ ] Create a panel with one `fake:` judge and one real `openrouter:` judge; confirm both
-      froze with a populated `model_pin_validation`
+- [x] Create a panel with one `fake:` judge and one real `openrouter:` judge; confirm both
+      froze with a populated `model_pin_validation`. *Done 2026-09-13 by the stakeholder:*
+      panel `mixed-judges` — `is-missing-repro` on `fake:deterministic` froze with 0 endpoints,
+      `is-p0` on haiku froze with **3**. The difference is the point: only the real call
+      measured it.
 - [ ] Attempt a judge whose pin cannot be satisfied; confirm nothing is written and the reason is
       legible. **This step originally named haiku, and that expectation is stale** — haiku now
       passes (Deviation 23). Use a quantization constraint instead: every one of haiku's 8
       endpoints reports `unknown` quantization (observed 2026-09-13), so pinning
       `"quantizations": ["fp4"]` should leave no endpoint to serve it. Costs one real call.
-- [ ] Evaluate against the new panel with a key issued in phase 3 — **end to end with no seed**.
-      *Already asserted by `panels.test.ts`*, against the fake provider; the manual run is the
-      same chain against a real one.
+      **Still unconfirmed at PR time, and it is a PREDICTION, not an observation.** If the
+      provider treats `unknown` as satisfying any precision constraint, this returns 201 and the
+      step needs correcting again — the haiku lesson from Deviation 23, one step later.
+- [x] Evaluate against the new panel with a key issued in phase 3 — **end to end with no seed**.
+      *Already asserted by `panels.test.ts`*, against the fake provider. *Done 2026-09-13 by the
+      stakeholder against the real one:* `mixed-judges` evaluated live with haiku serving
+      `is-p0`, trace `tr_01M2E3VPH2V3AE7AHE3Z5AKZCH`.
 
 ---
 
