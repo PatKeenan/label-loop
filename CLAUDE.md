@@ -55,11 +55,23 @@ the driver: when in doubt, stop and ask rather than proceed autonomously. The
 thoughts/ directory is decision provenance for the public writeup — write accordingly.
 
 ## Current phase
-Backend-first: M0 of docs/BUILD_SPINE.md (walking skeleton — the pattern layer) is the
-priority, then M1. **Phase A is PAUSED** as of 2026-08-20 — the first milestone needing a
-designed screen is M5. `mockups/tokens.css` (approved) and `tokens-preview.html` are
-retained; the four draft screens were deleted after their rationale was extracted to
-`thoughts/shared/research/2026-08-20_phase-a-design-harvest.md`. That harvest lists six
-product decisions the mockups made ahead of PRODUCT.md — including a direct contradiction
-on consensus-free scoring and the absence of any judge-validation metric in 5.7 — which
-need human calls before Phase A resumes. See `mockups/BRIEF.md` for the record.
+**M4 — console, auth, and the interviewer flow** (docs/BUILD_SPINE.md), from
+`thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`. M0–M3 are complete (their
+plans are in `thoughts/shared/plans/complete/`), and two M5 polarity plans landed early. M4
+phases 1–5 — the backend half — are merged (#58–#63). **Next is phase 6**, the human review
+gate, which is mockup work rather than application code.
+
+**Phase A has RESUMED, partially** (ADR-0055, 2026-09-11) — for exactly three artifacts: a
+console flow map, `mockups/console-shell.html`, and `mockups/panel-create.html` drawn inside
+the approved shell. `annotator-session` and `console-dashboard` stay paused, and the six
+product decisions listed in `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md`
+stay open — none of them gates the three artifacts above. Phase A was paused on 2026-08-20
+after four draft screens made six product decisions ahead of PRODUCT.md; that history is why
+the resume is scoped this narrowly. The Phase A hard rules above still apply in full.
+`mockups/tokens.css` (approved) and `tokens-preview.html` are retained. See
+`mockups/BRIEF.md` for the record.
+
+(This section read "backend-first: M0 is the priority, Phase A is PAUSED" until 2026-09-14,
+three milestones after it stopped being true. It was corrected before a context reset,
+because a fresh session reads this file first and treats it as overriding — and would have
+stalled or refused at phase 6.)
