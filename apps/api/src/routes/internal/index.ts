@@ -7,6 +7,7 @@ import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
 import { createModelRoutes } from './models.ts'
+import { createPanelRoutes } from './panels.ts'
 import { createTraceRoutes } from './traces.ts'
 
 /**
@@ -76,4 +77,5 @@ export const createInternalRoutes = () => {
     .route('/', createKeyRoutes())
     .route('/', createModelRoutes())
     .route('/', createJudgeRoutes())
+    .route('/', createPanelRoutes())
 }
