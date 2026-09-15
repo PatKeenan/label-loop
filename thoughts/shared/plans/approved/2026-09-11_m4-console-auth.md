@@ -19,7 +19,7 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 3 — keys and the audit log | #60 | merged |
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
-> | **6 — the frame, as mockups** | — | **next · human review gate** |
+> | **6 — the frame, as mockups** | — | **in progress · 6a approved 2026-09-14 · 6b approved 2026-09-15 (r2) · 6c next** |
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -400,22 +400,33 @@ flow is an information-architecture property, and a map answers it for a fractio
 drawing eight screens costs — without inventing the contents of screens whose product
 decisions are unmade.
 
-- [ ] Every console screen named, with its milestone and its entry point
-- [ ] Screens that do not exist yet marked as such, so the map is a plan rather than a claim
-- [ ] Referenced from `mockups/BRIEF.md`
+- [x] Every console screen named, with its milestone and its entry point — plus its SCOPE
+      (org or panel), which the shell's two switchers turn out to need; see Deviation 32
+- [x] Screens that do not exist yet marked as such, so the map is a plan rather than a claim
+- [x] Referenced from `mockups/BRIEF.md`
+- [x] **Approved by the stakeholder, 2026-09-14** — taking the recommendation on all eight review
+      questions (CONSOLE_FLOW.md §7). Q5 had none to take and is carried to M5.
 
 ### 6b — `mockups/console-shell.html`
 The frame, reviewed on its own terms. **Navigation is a persistent left SIDEBAR** (stakeholder
 decision, 2026-09-11), which re-confirms the harvest's orphaned decision rather than replacing it.
 
-- [ ] Sidebar: section nav, populated from the flow map
-- [ ] **Org switcher** — reads the membership list phase 1 returns from `/internal/me`
-- [ ] **Panel switcher** — the harvest's "classifier switcher" in current vocabulary (ADR-0019)
-- [ ] Signed-in identity and role indicator, and the way out
-- [ ] Where a modal appears (the one-time key reveal needs one) and where errors surface
-- [ ] Sections M4 does not build are drawn **visible but inert**, so the shell is honest about
-      where the app is going without committing to those screens' contents
-- [ ] `data-surface="console"`, plain HTML + CSS on `tokens.css`, header comment per the BRIEF
+- [x] Sidebar: section nav, populated from the flow map
+- [x] **Org switcher** — reads the membership list phase 1 returns from `/internal/me`
+- [x] **Panel switcher** — the harvest's "classifier switcher" in current vocabulary (ADR-0019)
+- [x] Signed-in identity and role indicator, and the way out
+- [x] Where a modal appears (the one-time key reveal needs one) and where errors surface
+- [x] Sections M4 does not build are drawn **visible but inert**, so the shell is honest about
+      where the app is going without committing to those screens' contents — with the hidden
+      alternative one click away, because open question 1 is decided at this review
+- [x] `data-surface="console"`, plain HTML + CSS on `tokens.css`, header comment per the BRIEF.
+      No JS: switchers are `<details>`, review states are `:target` + `:has()`. Rendered and
+      checked in a browser across all eleven states, 2026-09-14, by Claude
+- [x] **r1 reviewed by the stakeholder, 2026-09-14 — and the navigation model changed.** See
+      Deviation 34. r2 redrawn to it and checked in a browser across all fourteen states
+- [x] **r2 approved by the stakeholder, 2026-09-15** — with inert sections greyed and
+      milestone-labelled (open question 1), the tokens gaps reclassified as phase 7 work
+      (Deviation 36), and the "No organisation" dead end accepted for M4
 
 ### 6c — `mockups/panel-create.html`
 The wizard, drawn INSIDE the approved shell.
@@ -439,10 +450,12 @@ The wizard, drawn INSIDE the approved shell.
       product decision, and the mockup must not make it by default.
 
 ### Also
-- [ ] `mockups/BRIEF.md` records the partial resume, the sidebar decision, and the three artifacts
+- [x] `mockups/BRIEF.md` records the partial resume, the sidebar decision, and the three artifacts
 
 ### Automated verification
-- [ ] `bun run lint` clean (static files; this is a formatting check)
+- [~] `bun run lint` clean (static files; this is a formatting check) — **clean, and it checks
+      nothing here**: `biome.json` excludes `!mockups`, and Biome does not read Markdown. See
+      Deviation 33. Re-run at the end of the phase regardless.
 
 ### Manual verification
 - [ ] **Human review and approval of the flow map, then the shell, then the wizard — in that
@@ -480,7 +493,18 @@ layout — they become things that go *inside* something that already exists.
 - [ ] Tailwind + shadcn configured; build produces a working bundle
 - [ ] Token conversion complete, with a comment naming ADR-0046 and the alias rule
 - [ ] Every value in the approved palette still reachable — nothing dropped in translation
-- [ ] Sidebar shell built to the approved 6b screen, with inert sections rendered as such
+- [ ] Sidebar shell built to the approved 6b screen, with inert sections greyed out and labelled
+      with their milestone (open question 1, answered)
+- [ ] **Three values the 6b mockup could only stand in for arrive with the components, not from
+      `tokens.css`** (6b review, Deviation 36). Check each against the COPY actually installed,
+      not against memory of shadcn:
+      - rail width is the Sidebar component's `--sidebar-width` (the mockup matches its 16rem
+        default);
+      - the Dialog overlay ships as a hard-coded black class — replace it with a value derived
+        from our tokens, since `tokens.css` forbids a literal light or dark value;
+      - toasts are Sonner, a separate package `shadcn add` installs — confirm it sits under D17
+        before adding it, and use a non-expiring duration for action failures (CONSOLE_FLOW §6);
+      - Tailwind v4's `--spacing` base aliases onto our 4px `--space-1`
 - [ ] Org switcher sends the active org header phase 1 validates; switching re-scopes the view
 - [ ] Existing screens re-skinned inside the shell; behaviour unchanged
 - [ ] `apps/web/nginx.conf` still serves the bundle correctly (ADR-0020: SPA fallback, a real
@@ -523,6 +547,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
       build the real one: feature-detected rather than always rendered, and using the
       redirect-after-401 below rather than a hard-coded `callbackURL`
 - [ ] All three screens mount inside the phase 7 shell; none invents its own layout
+- [ ] **Judges screen, read-only** (added at the 6b review, Deviation 35): the panel's current
+      version — threshold, and each judge's question, polarity, weight, `required`, model pin
+      and its `model_pin_validation`. Needs a panel read endpoint, org-scoped and role-guarded
 - [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [ ] Wizard: panel details → judges (question, polarity, weight, required) → model picker →
       review → create
@@ -940,6 +967,66 @@ Recorded as they happen; decision provenance, not a changelog.
     so the claim was fixed instead. Third phase running where a mutation found a comment that
     sounded right and was not.
 
+### Phase 6
+
+32. **The flow map records each screen's SCOPE, and proposes a rule for the panel switcher.**
+    The plan asked for screen, milestone and entry point. Drafting the map showed that is not
+    enough to draw a shell with two switchers: the API is not uniform about panels —
+    `GET /internal/traces` and `GET /internal/keys` are org-wide, `POST /internal/keys`
+    requires a panel — so what the panel switcher changes on each screen is an IA question the
+    shell cannot answer by being drawn. The map proposes a rule (§4) and puts it to review as
+    Q1 rather than letting 6b decide it as a layout.
+
+    A finding came out of the same pass: **`GET /internal/traces` is the one internal route
+    with no `requireRole`**, so an annotator's session can read it. Harmless today — the rows
+    carry no verdicts or confidence — but phase 8 extends the table with judge context, and
+    harvest blocker 2 (confidence withheld from annotators) is open. Recorded as the map's Q3;
+    not changed in code, because phase 6 is not application work.
+
+33. **Phase 6's only automated check verifies nothing it produces.** `bun run lint` passes,
+    but `biome.json` lists `!mockups` in `files.includes`, and Biome does not read Markdown in
+    any case. The plan called it "a formatting check" for static files; it is not one for these.
+    Left as is rather than widened: the mockups are disposable and hand-written HTML, and
+    bringing them under a formatter now would be tooling for artifacts CLAUDE.md says are
+    never ported. The real verification for this phase is the human review, which the plan
+    already names as the gate.
+
+34. **The 6b review reopened three answers the 6a review had just approved, and that was the
+    process working, not failing.** The plan orders the flow map before the shell so the shell
+    is drawn from known contents (decision 13). What it did not anticipate is that a drawn
+    sidebar gets reviewed as a whole where a table of sections does not: the stakeholder saw
+    the org switcher overstated in the top slot, a panel switcher above a Panels item, and
+    org-level entries breaking a nav that otherwise read as one panel's — none of which was
+    visible in `CONSOLE_FLOW.md`'s tables. The model became two levels in one sidebar (Home
+    and a panel, with "← Home" out of a panel), the org moved to the foot, and organisation
+    settings became admin-only and absent until M8.
+
+    Superseded: flow-map Q1 (the All-panels mode) and Q8 (Keys top-level); Q6 (panel detail)
+    now has a home as the panel's Overview; Q2 and Q7 amended. Plan decision 12 and ADR-0056
+    named an org switcher and a panel switcher in the sidebar without an order — the ADR is
+    **amended**, not superseded, because both still live there. New: **ADR-0059**
+    (organisation settings are admin-only). Error surfaces split into three, and the silent
+    org fallback became a not-found state. Record: `CONSOLE_FLOW.md` §8; decisions log,
+    2026-09-15T02:45Z (three entries). Fine-tunes' level was raised and deliberately deferred
+    to M7 planning; the stakeholder currently reads it as one panel's judges.
+
+35. **A Judges section was added to the shell, live at M4, with a read endpoint phase 8 did not
+    have.** Found by the stakeholder after r2 was drawn: r2 folded a panel's judges into its
+    Overview, which is inert until M6, so at M4 — the milestone that creates judges — there was
+    nowhere to see them once the wizard closed. Phase 8 therefore gains a Judges screen and the
+    read it needs; the phase 8 step list carries it. The judge's own page (its traces, its
+    alignment) is recorded as direction and deferred, with two structural calls made now: it
+    lives inside Judges rather than as a third sidebar level, and M4 judge rows do not link.
+    Record: `CONSOLE_FLOW.md` §8 (R8).
+
+36. **The 6b mockup's "tokens gaps" were reclassified as phase 7 conversion work, not
+    `tokens.css` edits.** r1 and r2 flagged that `tokens.css` has no layout-dimension or scrim
+    tokens and proposed that phase 7 name them. The stakeholder's correction: ADR-0046 already
+    decided that `tokens.css` is converted INTO shadcn's theming convention, so these values come
+    with the components. The mockup's rail width now matches shadcn Sidebar's default, and phase
+    7 carries a step for the three values to verify against the installed copies. Recorded as a
+    deviation because the mockup had framed a solved question as an open one.
+
 ---
 
 ## Open questions for the human
@@ -947,7 +1034,9 @@ Two of the original four were answered by the stakeholder on 2026-09-11 and are 
 16 and 17. The remaining two are review-time calls inside the phases they affect, and cost
 nothing to carry:
 
-1. **What does the sidebar do when a section is inert — hide it, or show it disabled?** The
+1. **ANSWERED at the 6b review, 2026-09-14 (stakeholder): greyed out, labelled with the milestone
+   that builds it** — "keeps us honest, and lets us point back to things as we get further in".
+   Original question, kept: **What does the sidebar do when a section is inert — hide it, or show it disabled?** The
    plan says visible-but-inert, on the argument that it makes the app's direction legible. The
    counter-argument is that a console full of dead links reads as unfinished in a demo, which
    is the one context this project is optimised for. Decide at the 6b review.
