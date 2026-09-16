@@ -53,6 +53,7 @@ Both send an artifact and receive per-judge verdicts. Where the artifact itself 
 - Full tenant data isolation.
 
 ### 5.2 Panel & judge management
+- **Judges are authored only from an eval pass, never free-form (ADR-0061).** A judge carries a link to the annotations and traces that produced it, because "which traces, annotated by whom, led to this judge" is the claim alignment scores, the contribution ledger and the audit log all rest on. A panel's judge authoring is locked until it has collected enough traffic to annotate — **50 traces unlocks annotation and 100 is the ideal first pass** — and the panel's own home shows progress toward it. Traces are visible throughout; the lock is on authoring, never on seeing your own data.
 - **A panel may convene no judges — the collecting state (ADR-0060).** It accepts calls, captures every trace, costs no provider tokens, and says so explicitly in the response rather than auto-passing a gate nobody has configured yet. It leaves the state by activating a version that convenes judges.
 - CRUD for panels and for the judges inside them. A judge is one binary question and never a bundled multi-criteria call; the caller applies whatever policy they want across the per-judge results.
 - Judge type: `llm` or `code`. Code judges are deterministic checks (schema assertion, regex) with near-zero cost and latency and nothing to align.

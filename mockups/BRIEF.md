@@ -18,9 +18,12 @@ reviewed and approved before the next is drawn, because each is drawn from the o
    whose sections are always that panel's, and at the foot identity, the organisation, and
    admin-only settings that appear at M8 (ADR-0059). Plus the modal slot and three error
    surfaces. Phase 7 builds it, so phases 7–8 are blocked on its approval.
-3. [ ] **`panel-create.html`** — the wizard, drawn inside the approved shell. Its open
-   product question (whether and how the wizard steers authors toward judges that gate
-   rather than work, ADR-0036) is decided at its review, not by its layout.
+3. [x] **`panel-create.html`** — *r3 approved 2026-09-15.* No longer a wizard:
+   creating a panel is **one step** (name, slug, threshold), and the panel's own **Overview** is
+   the onboarding screen — collecting state, progress toward the 50-trace annotation gate, and a
+   copyable curl / Node / Python snippet carrying the key issued with the panel. Judge authoring
+   is **locked behind an eval pass** (ADR-0061) and moves to M6; the measured model picker
+   survives in the file as an explicitly-marked M6 reference.
 
 **Why the resume is this narrow.** Drawing the wizard alone would have let one screen invent
 the app shell; drawing every screen would repeat what paused Phase A. `annotator-session` and

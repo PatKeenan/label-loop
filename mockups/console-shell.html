@@ -23,7 +23,10 @@
                    "← Home" out of a panel, the panel switcher replaces Panels,
                    the org at the foot, admin-only settings absent until M8,
                    three error surfaces, no silent org swap.
-  STATUS:     APPROVED r2 · 2026-09-15 by the stakeholder · M4 phase 6b.
+              r3 — Overview is live at M4 and a panel opens on it; Judges
+                   carries a padlock (ADR-0060 moved to M4, ADR-0061).
+  STATUS:     r2 APPROVED 2026-09-15; **r3 changes two nav items** and needs a
+              nod rather than a re-review · M4 phase 6b.
               Phase 7 builds this frame; phase 8's screens go inside it.
   ============================================================================
 
@@ -59,8 +62,17 @@
      "Choose a panel"; its menu is every panel, then Create panel.
 
   4. EVERY NAV ITEM BELONGS TO THE PANEL NAMED ABOVE IT. That is the whole
-     reason org-level entries left the nav. Overview is the panel's dashboard
-     (M6); at M4 opening a panel lands on Traces.
+     reason org-level entries left the nav. **Overview is live at M4** (r3): it
+     is the panel's home and its onboarding — collecting state, progress toward
+     the annotation gate, the integration snippet — and it becomes the dashboard
+     at M6. A panel therefore opens on Overview.
+
+  4b. TWO KINDS OF UNAVAILABLE, DRAWN DIFFERENTLY (r3). A milestone mark (M5,
+     M6) means "not built yet". A PADLOCK means "built, and not yours yet":
+     Judges is locked until an eval pass exists, because a judge must cite the
+     traces and annotations that produced it (ADR-0061). Traces is never
+     locked — locking a customer out of their own data would be a different
+     product.
 
   5. THE ORGANISATION IS AT THE FOOT, and it is plain text for one membership —
      the common case, and the default state here. For several it becomes a menu
@@ -103,11 +115,11 @@
      "revoked access" is listed as the fail state's meaning in tokens.css, so
      the colour answers a question about the data.
 
- 12. JUDGES IS A SECTION, LIVE AT M4 (r2, added at review). Judges are what a
-     panel is made of, and with configuration folded into an M6 Overview there
-     was nowhere to see them after the wizard. Traces is every trace the panel
-     evaluated; Judges is the way into ONE judge — its page, later, sits inside
-     this section rather than adding a third sidebar level.
+ 12. JUDGES IS A SECTION, AND ITS AUTHORING IS THE LOCKED PART (r2, revised
+     r3). Traces is every trace the panel evaluated; Judges is the way into ONE
+     judge — its page sits inside this section rather than adding a third
+     sidebar level. At M4 the section is read-only and empty, because judges
+     come from an eval pass (ADR-0061).
 
   DATA NOTES
   - Orgs, panels and people are fictional; domains are .example. Panel names
@@ -322,8 +334,9 @@
   .nav-link .mark { margin-left: auto; }
   .nav-link .glyph { color: var(--color-text-muted); }
   .nav-link.is-inert { color: var(--color-text-faint); cursor: not-allowed; }
+  .lock { width: 11px; height: 11px; flex: none; margin-left: auto; color: var(--color-text-faint); }
   .is-current,
-  body:has(#s-judges:target) .nav-link[data-section="judges"],
+  body:has(#s-judges:target) .nav-link[data-section="overview"],
   body:has(#s-panel:target, #s-loadfail:target) .nav-link[data-section="traces"],
   body:has(#s-keys:target, #s-reveal:target, #s-revoke:target, #s-toast:target) .nav-link[data-section="keys"] {
     background: var(--color-sunken);
@@ -551,7 +564,7 @@
   <span class="review-label">Review · 6b r2</span>
   <a href="#">Home</a>
   <a href="#s-panel">In a panel</a>
-  <a href="#s-judges">Judges</a>
+  <a href="#s-judges">Overview</a>
   <a href="#s-keys">Keys</a>
   <a href="#s-reveal">Key reveal</a>
   <a href="#s-revoke">Revoke confirm</a>
@@ -611,11 +624,11 @@
 
         <div class="v v-panellevel">
           <nav class="sections" aria-label="Triage routing gate">
-            <span class="nav-link is-inert" aria-disabled="true" title="The panel's dashboard — arrives at M6">Overview <span class="mark neutral">M6</span></span>
-            <a class="nav-link" data-section="judges" href="#s-judges">Judges</a>
+            <a class="nav-link" data-section="overview" href="#s-panel">Overview</a>
+            <span class="nav-link is-inert" aria-disabled="true" title="Authoring is locked until an eval pass exists (ADR-0061). The section itself is readable once judges exist.">Judges <svg class="lock" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.2" y="5.2" width="7.6" height="5.4" rx="1"/><path d="M4.1 5.2V3.9a1.9 1.9 0 0 1 3.8 0v1.3"/></svg></span>
             <a class="nav-link" data-section="traces" href="#s-panel">Traces</a>
             <a class="nav-link" data-section="keys" href="#s-keys">Keys</a>
-            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M5">Annotation <span class="mark neutral">M5</span></span>
+            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M5, and opens at 50 collected traces">Annotation <span class="mark neutral">M5</span></span>
             <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Taxonomy <span class="mark neutral">M6</span></span>
             <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Alignment <span class="mark neutral">M6</span></span>
             <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M7">Fine-tunes <span class="mark neutral">M7</span></span>
@@ -699,18 +712,18 @@
       </section>
     </div>
 
-    <!-- IN A PANEL: Judges (decision 12) -->
+    <!-- IN A PANEL: Overview — the panel's home and its onboarding (decision 4) -->
     <div class="v v-judges">
       <header class="page-head">
         <div class="page-head-text">
           <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>triage-routing</span></div>
-          <h1>Judges</h1>
+          <h1>Overview</h1>
         </div>
       </header>
       <section class="slot" aria-label="Screen content slot">
         <span class="eyebrow">Screen content · not drawn in 6b</span>
-        <p><strong>At M4, read-only:</strong> the panel’s current version — its pass threshold, and each judge’s question, polarity, weight, <code>required</code>, model pin, and what validation measured when the version froze (endpoints surviving the pin, and which one answered). No editing: a change is panel version n+1, which M6 plans. No agreement numbers: those need M6’s alignment data.</p>
-        <p><strong>Later:</strong> a judge’s row opens that judge’s page, inside this section — header “← Judges”, scope line <code>… / triage-routing / mis-routed</code> — with the panel’s traces seen through that judge, and its alignment. Contents deferred to the milestone that builds it.</p>
+        <p><strong>At M4:</strong> the panel’s home while it collects — state, progress toward the annotation gate, and the integration snippet carrying the key issued with the panel. Drawn in full in <code>panel-create.html</code>.</p>
+        <p><strong>At M6:</strong> this becomes the panel’s dashboard, and <strong>Judges</strong> unlocks once an eval pass exists — its read-only list at M4, its authoring at M6, each judge citing the taxonomy category it came from.</p>
       </section>
     </div>
 
@@ -726,7 +739,7 @@
     <div class="v v-traces-slot">
       <section class="slot" aria-label="Screen content slot">
         <span class="eyebrow">Screen content · not drawn in 6b</span>
-        <p>The trace table for <strong>triage-routing</strong>. Where a panel opens at M4, because Overview is inert until M6. It exists today, unstyled and org-wide; phase 8 scopes it to the panel and extends it.</p>
+        <p>The trace table for <strong>triage-routing</strong>, and the one section never locked — a customer reads their own traffic from the first call. It exists today, unstyled and org-wide; phase 8 scopes it to the panel and extends it.</p>
       </section>
     </div>
 

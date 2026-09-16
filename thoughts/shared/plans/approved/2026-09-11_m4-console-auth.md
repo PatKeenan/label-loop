@@ -19,7 +19,7 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 3 — keys and the audit log | #60 | merged |
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
-> | **6 — the frame, as mockups** | — | **in progress · 6a approved 2026-09-14 · 6b approved 2026-09-15 (r2) · 6c next** |
+> | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -431,23 +431,30 @@ decision, 2026-09-11), which re-confirms the harvest's orphaned decision rather 
 ### 6c — `mockups/panel-create.html`
 The wizard, drawn INSIDE the approved shell.
 
-- [ ] Panel details → judges (question, polarity, weight, `required`) → model picker → review
-- [ ] Model picker shows cost, measured latency **and its spread**, and the endpoint count
+- [x] Panel details → judges (question, polarity, weight, `required`) → model picker → review
+- [x] Model picker shows cost, measured latency **and its spread**, and the endpoint count
       surviving the pin. A median would have hidden `flash-lite` at 847–972 ms against
       `haiku` at 3078–15092 ms — the spread is the number that matters to a caller
-- [ ] The effort dial's per-model cost and latency consequence (one model's own range spanned
+- [x] The effort dial's per-model cost and latency consequence (one model's own range spanned
       1.8x cost and 1.7x latency, and two of its efforts were indistinguishable)
-- [ ] Where quantization is offerable, what constraining it **costs in failover** — 13
-      endpoints down to 6, most of the loss being endpoints that never declared a precision
-- [ ] The unsatisfiable-pin form error, carrying a real reason string
-- [ ] The one-time key reveal, and that it cannot be shown again
-- [ ] Realistic data drawn from the measurement table — no lorem ipsum (BRIEF rule).
+- [x] Where quantization is offerable, what constraining it **costs in failover** — 13
+      endpoints down to 6, most of the loss being endpoints that never declared a precision,
+      shown beside today's live split (27 endpoints, 9 of them undeclared)
+- [x] The unsatisfiable-pin form error, carrying a real reason string — `REASONS.unavailable`
+      from `llm/validate-pin.ts`, verbatim
+- [x] The one-time key reveal, and that it cannot be shown again — the shell's modal, reached
+      from the created state
+- [x] Realistic data drawn from the measurement table — no lorem ipsum (BRIEF rule).
       **Re-pull prices from `GET /internal/models` rather than copying the table.** One of its
       eight rows no longer matches the live catalogue (`z-ai/glm-5.3-flash`, see phase 4), and a
       reviewed screen showing a stale price would carry it into phase 8 as an approved design.
       Latency and endpoint counts are measurements with dates and may be quoted as such.
-- [ ] **Resolve open question 3 at the 6c review, before the wizard is drawn as final** — it is a
-      product decision, and the mockup must not make it by default.
+      **Done, and the re-pull earned itself twice** — see Deviation 37.
+- [x] **Resolve open question 3 at the 6c review, before the wizard is drawn as final** — it is a
+      product decision, and the mockup must not make it by default. **Answered in conversation
+      2026-09-15 and reframed by ADR-0060 — see Deviation 38.**
+- [x] **Approved by the stakeholder, 2026-09-15** (r3), with the annotation gate set at 50 as a
+      floor and 100 as the ideal first pass
 
 ### Also
 - [x] `mockups/BRIEF.md` records the partial resume, the sidebar decision, and the three artifacts
@@ -458,9 +465,9 @@ The wizard, drawn INSIDE the approved shell.
       Deviation 33. Re-run at the end of the phase regardless.
 
 ### Manual verification
-- [ ] **Human review and approval of the flow map, then the shell, then the wizard — in that
-      order.** This is the gate: Phase C rebuilds from approved screens, so phases 7 and 8 are
-      blocked until the shell in particular is signed off, because phase 7 BUILDS it.
+- [x] **Human review and approval of the flow map, then the shell, then the wizard — in that
+      order.** Done 2026-09-14/15, and the order earned itself: each artifact's review changed
+      the one before it (Deviations 34, 39, 41). Phase 7 is unblocked.
 
 ---
 
@@ -547,14 +554,25 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
       build the real one: feature-detected rather than always rendered, and using the
       redirect-after-401 below rather than a hard-coded `callbackURL`
 - [ ] All three screens mount inside the phase 7 shell; none invents its own layout
-- [ ] **Judges screen, read-only** (added at the 6b review, Deviation 35): the panel's current
-      version — threshold, and each judge's question, polarity, weight, `required`, model pin
-      and its `model_pin_validation`. Needs a panel read endpoint, org-scoped and role-guarded
+- [ ] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). A panel is created
+      COLLECTING and judges are not authored in the console at all:
+      - `/v1` contract: an explicit state, `passed` and `score` nullable at the decision level
+      - `evaluate`: a judgeless panel is a legitimate state — write the trace, run no judges,
+        spend no tokens — replacing two `NOT_FOUND` refusals
+      - `POST /internal/panels`: judges optional (the create-with-judges path stays for seeding
+        and tests until M6 replaces it)
+      - a key is issued WITH the panel, so the console's create flow is one step and the reveal
+        is the panel's Overview rather than a dismissible modal
+- [ ] **Panel Overview, live at M4**: collecting state, progress toward the 50-trace annotation
+      gate, and the integration snippet (curl / Node / Python, key masked on screen and real on
+      the clipboard). A panel opens here
+- [ ] **Judges screen, read-only and locked** (Deviations 35, 41): the current version if one
+      exists, a padlock and what opens it if not. Needs a panel read endpoint, org-scoped and
+      role-guarded. **No authoring UI at M4** — that is M6, beside the taxonomy
 - [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
-- [ ] Wizard: panel details → judges (question, polarity, weight, required) → model picker →
-      review → create
-- [ ] Model picker shows cost, latency AND spread, endpoint count, effort consequences
-- [ ] Unsatisfiable pin is a form error beside the field, carrying the real reason
+- [~] Wizard: panel details → judges → model picker → review — **DROPPED at the 6c review.**
+      Creation is one step (name, slug, threshold); the model picker's UI moves to M6 with
+      judge authoring, its API half having shipped in phase 4
 - [ ] Trace table extended with the panel and judge context now available
 - [ ] Redirect-after-401 via `beforeLoad`
 - [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
@@ -578,10 +596,11 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [ ] `bun test` (full suite) green
 
 ### Manual verification
-- [ ] **The full interviewer flow, on a database with no seeded panel:** sign in with GitHub →
-      create a panel and judges through the wizard → issue a key → curl
-      `POST /v1/panels/{id}/evaluate` → watch the trace appear in the table. This is M4's
-      demo moment and the definition of done for the milestone.
+- [ ] **The full interviewer flow, on a database with no seeded panel** — rewritten by
+      ADR-0060/0061 (Deviation 41): sign in with GitHub → create a panel in one step → copy the
+      snippet → curl `POST /v1/panels/{id}/evaluate` → watch traces arrive against a COLLECTING
+      panel, with the annotation gate counting up. No judges are authored, and that is the
+      point. BUILD_SPINE's M4 demo line is rewritten to match.
 - [ ] An annotator account cannot reach the wizard or the keys screen, in the UI **and**
       by direct API call
 - [ ] The key plaintext is unrecoverable after the reveal is dismissed
@@ -1026,6 +1045,100 @@ Recorded as they happen; decision provenance, not a changelog.
     with the components. The mockup's rail width now matches shadcn Sidebar's default, and phase
     7 carries a step for the three values to verify against the installed copies. Recorded as a
     deviation because the mockup had framed a solved question as an open one.
+
+37. **The live catalogue disagreed with the measurement table again, on the same row, in a new
+    direction.** The plan told 6c to re-pull prices rather than copy the table, because
+    `z-ai/glm-5.3-flash` had moved between 2026-08-30 (0.07/0.25) and phase 4's check
+    (0.15/0.50). Pulled 2026-09-16T00:31Z through this repo's own catalogue client, it now lists
+    **0.10/0.3333**, and its endpoint count has gone from 20 to 27 with a different quantization
+    split (fp8 ×15, undeclared ×9, fp4 ×2, nvfp4 ×1). Every other row still matches. The mockup
+    therefore labels prices as live-with-a-timestamp and measurements as dated, and never mixes
+    them in one number. **The pull was done through `createCatalogue` directly rather than
+    through `GET /internal/models`**, which needs a session and a running stack: same code path,
+    same shaping, no container.
+
+38. **Open question 3 was answered, and the ADR-0060 conversation reframed it first.** The plan
+    asked whether the wizard should steer authors toward judges that GATE rather than WORK, with
+    four options. The answer is option (b) — explanatory copy — but aimed somewhere else than the
+    plan imagined: **at the payload, not at the wording of the question.** The stakeholder's
+    argument is that judges cannot be authored before error analysis at all, so a wizard that
+    polices question wording is policing a guess that is meant to be replaced. What cannot be
+    repaired later is a trace with none of the agent's work in it, because no annotation pass can
+    find failure modes in data that contains no agent behaviour. So step 1 teaches `artifact` and
+    `context` with one generating and one deciding example, and step 2 says plainly that the first
+    judges are provisional.
+
+    Option (c) — asking "does your agent make or decide something?" and shaping the form from the
+    answer — was ruled out on a checked fact rather than taste: it needs judges to declare their
+    context keys, and no such column exists. `context` is an opaque string map on the trace.
+
+    **The conversation also produced ADR-0060** (a panel can collect before it judges), which is
+    the real fix and lands at M5. The mockup points at it rather than pretending M4's order is the
+    product's order.
+
+39. **6c was redrawn at review: the ORDER became a step, and the rail was not the approved one.**
+    Two corrections from the stakeholder on r1. (a) The rail had been hand-copied into the wizard
+    in simplified form — Home unmarked, a disabled "Not yet created" box where the approved
+    "Choose a panel" switcher belongs — so the first screen drawn inside the approved shell was
+    not actually the approved shell. It is now that markup verbatim. **Worth a line because phase
+    7 builds the shell once and phase 8's screens must not each re-invent it**, which is the
+    failure decisions 13 and 14 reorganised the phases to prevent, reappearing as a copy-paste.
+    (b) More substantially: r1 kept judge authoring as the only path and excused the order in a
+    paragraph, which the stakeholder read — correctly — as going back on the ADR-0060 conversation
+    one message after it. r2 makes the choice **step 2**: *collect first* (recommended, marked
+    M5) or *add judges now* (what M4 can do). Both outcomes are drawn, so the screen is the spec
+    for M5's flow as well as M4's, and what M5 changes is which path is recommended rather than
+    the screen. Option (D) — pulling ADR-0060 into M4 — was offered and not taken: the wizard's
+    backend is merged (#63) and M4's demo needs judges to have verdicts to show.
+
+40. **The wizard ends in runnable starter code, and every panel is created with a key** (r2,
+    stakeholder). Neither was in the plan, and the second is a change to what phase 8 BUILDS
+    rather than to how it looks.
+
+    The screen now carries curl / Node / Python tabs with copy-to-clipboard, the key masked with
+    a reveal toggle, and a comment on every field saying what to send — `artifact` is what the
+    agent produced or decided about, `context` is what a judge needs including the agent's own
+    decision — plus the response lines a caller actually uses (`passed` for a gate, `complete`
+    for a partial result, `trace_id` for what an expert later annotates). Written against the
+    contract rather than from memory: `Authorization: Bearer`, the optional `Idempotency-Key`
+    header, and `data.passed` — **not** `data.decision.passed`, which is what the first draft of
+    this deviation's snippet said before `evaluate.ts` was re-read.
+
+    **Auto-issuing the key follows from the snippet**, not from convenience: a starter example is
+    useless without a credential in it, and the plaintext exists exactly once. So the reveal stops
+    being a dismissible modal on this path and becomes the success screen itself — a modal that
+    can be closed would strand a key nobody copied. `POST /internal/panels` issues no key today,
+    so phase 8 creates one immediately after the panel (or the service does both in one
+    transaction); if that second step fails the panel simply has no key, and the Keys section
+    issues one. The shell's modal stays for keys issued later.
+
+    **One property worth keeping through phase 8:** the same snippet serves a collecting panel and
+    a judging one. The call does not change when judges arrive — only what comes back does.
+
+41. **The wizard was dropped, ADR-0060 moved into M4, and judge authoring left the milestone.**
+    The largest change this phase has made, and it came from the stakeholder specifying the
+    creation flow: one step (name, slug, threshold), then the panel's own home as the onboarding
+    screen — collecting state, progress toward an annotation gate, and the snippet. That is how
+    every data-first service onboards, and **it cannot be built with ADR-0060 at M5**:
+    `POST /internal/panels` requires at least one judge and `evaluate` refuses a judgeless panel,
+    so approving the screen would have had phase 8 build the wizard its own review rejected.
+
+    **The gate's justification is provenance** (ADR-0061, new): a judge must cite the traces and
+    annotations that produced it, because alignment scores, the contribution ledger and the audit
+    log all rest on "which traces, annotated by whom, led to this judge". A free-form judge severs
+    that chain at its origin and nothing later repairs it. So judge authoring leaves M4 entirely
+    and lands at M6 beside the taxonomy, the Judges section ships locked with a padlock, and
+    **the capability-gated model picker's UI moves to M6** — its API half (catalogue,
+    `validate-pin`, endpoint accounting) having already shipped in phase 4, which is what makes
+    the move cheap rather than wasteful.
+
+    Consequences recorded elsewhere: ADR-0060 amended to M4; ADR-0061 added; BUILD_SPINE's M4
+    deliverables and demo moment rewritten, M5's lead paragraph reduced to what it still owns;
+    PRODUCT.md 5.2 carries the gate; `CONSOLE_FLOW.md` §3, §5 and R9; `console-shell.html` r3
+    (Overview live, Judges padlocked — two nav items, needing a nod rather than a re-review);
+    `panel-create.html` r3. **Open and not decided:** whether 50 is the right floor, whether it
+    should be per-panel, and how alignment sessions are reached once judges are authored this
+    way (carried to M6 by ADR-0061).
 
 ---
 

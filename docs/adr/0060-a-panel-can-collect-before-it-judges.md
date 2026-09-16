@@ -1,14 +1,14 @@
 # ADR-0060: A panel can collect before it judges
 
-**Status:** Accepted · **Date:** 2026-09-15 · **Milestone:** M5
+**Status:** Accepted · **Date:** 2026-09-15 · **Milestone:** M4 *(moved from M5 the same day — see the amendment)*
 
 ## Decision
 A panel may exist in a **collecting** state: it accepts `/v1` calls, captures a trace for every
 one, convenes **no judges**, and costs no provider tokens. The response says so explicitly — a
 state on the decision, with `passed` and `score` null — rather than auto-passing. A panel leaves
 the state by activating a version that convenes judges, which is an ordinary new panel version
-(ADR-0003). The exact field names and the `evaluate` contract change are settled when M5 is
-planned; what is decided here is that the state exists and is explicit.
+(ADR-0003). The exact field names are settled when M4's phase 8 is built; what is decided here
+is that the state exists and is explicit.
 
 ## Context
 **Judges cannot be authored before error analysis.** The product's own loop (PRODUCT.md §4) runs
@@ -48,8 +48,15 @@ unnoticed is the failure this visibility exists to prevent.
   judges are derived from what actually went wrong, rather than guessed before any traffic.
 - **The seeded panel's placeholder judge can be deleted when this ships**, closing the ADR-0036
   violation BUILD_SPINE M5 currently carries knowingly.
-- M4 is untouched: its wizard still creates judges, and the capability-gated model picker
-  (ADR-0021) is unaffected.
+- **Superseded by the amendment below:** this originally read "M4 is untouched", on the
+  assumption that M4's wizard would keep creating judges. It does not — see ADR-0061.
 
 Raised by the stakeholder, 2026-09-15, while reviewing what the M4 wizard should teach authors.
-Plan: to be planned with M5 · Record: `thoughts/shared/progress/decisions-log.md`
+Plan: M4 phase 8 · Record: `thoughts/shared/progress/decisions-log.md`
+
+## Amendment — 2026-09-15, moved to M4
+Recorded against M5 in the morning and **moved to M4 the same day**, when the stakeholder specified the creation flow: one step (name, slug, threshold), then the panel's own home as the onboarding surface — collecting state, progress toward the annotation threshold, and the integration snippet.
+
+That flow cannot be built without this ADR. `POST /internal/panels` requires at least one judge, and `evaluate` refuses a judgeless panel, so approving the screen and leaving the ADR at M5 would have had phase 8 build the wizard its own review had just rejected. ADR-0061 is the other half of the same decision: judges are authored only from an eval pass, so a panel that has no judges yet is the normal state of a new panel rather than an edge case.
+
+M4 therefore carries the contract change (an explicit state, `passed`/`score` nullable), the schema change making a judgeless version representable, and `evaluate` writing a trace without a fan-out. The panel version n+1 write path stays with the milestone that authors judges (M6).

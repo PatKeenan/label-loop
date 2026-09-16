@@ -92,7 +92,12 @@ Not shell furniture, deliberately: saved views (M5 sampling-queue work), notific
 
 **Ordering principle:** a panel's sections follow the core product loop, PRODUCT.md §4 —
 the judges it is made of → judge and trace → get key → annotate → axial coding → alignment →
-fine-tune — under an Overview that is the panel's dashboard.
+fine-tune — under an Overview that is the panel's home.
+
+**Two kinds of unavailable, and they look different** (R9). A **milestone mark** (M5, M6) means
+the screen is not built yet. A **padlock** means it is built and not yours yet: Judges is locked
+until an eval pass exists, because a judge must cite the traces and annotations that produced it
+(ADR-0061). Traces are never locked.
 
 At M4, Home and three panel sections are live. Every other *scheduled* section is drawn
 **greyed out and labelled with its milestone** (plan decision 15; open question 1, answered by the
@@ -105,20 +110,20 @@ where the app is going, and only BUILD_SPINE can make that claim.
 | Screen | Milestone | Status | Reached from | Roles |
 |---|---|---|---|---|
 | **Home** — the panel list now; cross-panel overview cards above it at M6 | M4, grows at M6 | M4 · phase 8. Its M6 contents are `console-dashboard`'s, and **Phase A stays paused** for those (ADR-0055) | sign-in landing; the Home link; the wordmark | admin, engineer |
-| Panel create wizard | M4 | **M4 · phase 6c mockup, phase 8 build** | Create panel on Home, including its empty state; Create panel in the switcher menu | admin, engineer |
+| Create panel — **one step**: name, slug, threshold (R9) | M4 | **M4 · phase 6c mockup, phase 8 build** | Create panel on Home, including its empty state; Create panel in the switcher menu | admin, engineer |
 
 ### A panel — everything in the sidebar's section nav
 
 | Section | Screen | Milestone | Status | Reached from |
 |---|---|---|---|---|
-| **Overview** | The panel's dashboard | M6 | Scheduled · inert at M4 (R5, amended by R8) | opening a panel, once it exists |
-| **Judges** | The panel's current version, read-only: threshold, and each judge's question, polarity, weight, `required`, model pin and its validation (endpoints surviving, served by) | M4 | **M4 · phase 8** — needs a panel read endpoint the plan did not have (R8) | nav |
+| **Overview** | **The panel's home, and its onboarding**: collecting state, progress toward the annotation gate, and the integration snippet carrying the key issued with the panel. Becomes the dashboard at M6 | **M4** | **M4 · phase 8** (R9) | opening a panel; the landing after creation |
+| **Judges** | The panel's current version, read-only. **Authoring is LOCKED until an eval pass exists** (ADR-0061); the section shows a padlock and what opens it | M4 (locked, read-only); authoring M6 | **M4 · phase 8** — needs a panel read endpoint the plan did not have (R8, R9) | nav |
 | | A judge's page — inside Judges, not a third sidebar level: the panel's traces seen through that judge, its alignment, its versions | first content at M6 | **Direction recorded, contents deferred** (R8) | a judge's row; header "← Judges" |
-| **Traces** | Trace table for this panel | M4 | Exists (unstyled, org-wide); re-skinned phase 7, scoped and extended phase 8 | opening a panel **at M4**; nav |
+| **Traces** | Trace table for this panel — **never locked**: a customer reads their own data from the first call | M4 | Exists (unstyled, org-wide); re-skinned phase 7, scoped and extended phase 8 | nav |
 | | Trace explorer — filters, expanding payloads | none named | **Unscheduled** — BRIEF defers it unstyled; plan open question 2 | evolves in place from the table |
 | | Trace detail — one record, full page | none | **Unscheduled** | a trace row |
 | **Keys** | Key list · issue · revoke, for this panel | M4 | M4 · phase 8 | nav; the wizard's final step |
-| **Annotation** | Sampling queues — random, low-confidence; judge-disagreement at M6 | M5, M6 | Scheduled · inert at M4 | nav |
+| **Annotation** | Sampling queues — random, low-confidence; judge-disagreement at M6. **Opens at 50 collected traces** (ADR-0061) | M5, M6 | Scheduled · inert at M4 | nav |
 | **Taxonomy** | Axial coding · versioned taxonomy · `code`/`llm` triage | M6 | Scheduled · inert at M4 | nav |
 | **Alignment** | Session list · one session and its disagreement view | M6 | Scheduled · inert at M4 | nav; a drift alert (where alerts surface is undecided) |
 | **Fine-tunes** | This panel's fine-tunes, and routing per judge — frontier, finetune, shadow | M7 | Scheduled · inert at M4 · **level is an assumption, R6** | nav |
@@ -204,37 +209,28 @@ flowchart TD
   B -- none --> N["No organisation (Q4)"]
   B -- annotator --> H["Holding state (Q3)"]
   B -- admin / engineer --> P["Home — empty state"]
-  P -- Create panel --> W1[Wizard · panel details]
-  W1 --> W2[Wizard · judges: question, polarity, weight, required]
-  W2 --> W3[Wizard · model picker per llm judge]
-  W3 --> W4[Wizard · review]
-  W4 -- create: validating calls run --> R{every pin satisfiable?}
-  R -- no: 422, reason at judges.N.model --> W3
-  R -- yes: version 1 frozen --> D[Created · issue a key for this panel]
-  D -- issue --> K[[Modal · one-time key reveal]]
-  D -- skip --> T
-  K -- dismiss: unrecoverable --> T[The new panel · Traces]
-  T -. curl POST /v1/panels/:id/evaluate .-> T
+  P -- Create panel --> W["One step: name, slug, threshold"]
+  W -- create --> D["The panel · Overview · COLLECTING<br/>key issued, snippet shown"]
+  D -. curl POST /v1/panels/:id/evaluate .-> D
+  D --> G{"50 traces?"}
+  G -- not yet --> D
+  G -- reached --> AN["Annotation opens (M5)"]
+  AN --> TX["Taxonomy (M6)"] --> J["Judges authored, citing their category (M6)"]
 ```
 
 Notes on the transitions that are not obvious:
 
-1. **The refused pin goes back to the model picker, not to review.** The 422 carries every
-   failing judge (Deviation 27), so the author lands on the first one with the rest marked.
-   The draft survives the round trip because it is client state until submit (ADR-0052).
-2. **Creation ends in key issuance.** BRIEF has always read "→ version 1 + API key reveal
-   (shown once)". It is also the one moment a user holds both the new panel's id and a
-   plaintext key — so it is the only place a *runnable* request example can be complete.
-   Whether 6c draws one is a 6c call.
-3. **After the reveal — or after skipping it — you are inside the new panel, on Traces.** The
-   panel exists, so the sidebar opens it. At M4 Traces is where a panel opens, because
-   Overview is inert until M6; the next thing in the demo is a curl, and Traces is where its
-   result appears.
-4. **Issuing is not required to leave.** A panel with no key is valid, and Keys is one click
-   away in its nav.
+1. **Creation takes one step and always produces a collecting panel** (R9). There is no judge
+   step, no model step and no review, because there is nothing yet to review.
+2. **A key is issued with the panel**, and the reveal is the Overview screen rather than a
+   dismissible modal: the plaintext exists exactly once and the snippet needs it in place.
+   The shell's modal stays for keys issued later from Keys.
+3. **The panel opens on Overview, not Traces.** Overview is where the collecting state, the
+   progress toward the gate and the snippet live — the only screen with anything to do on it
+   until traffic arrives.
+4. **The gate is the loop, not a wall.** At 50 traces annotation opens; judges stay locked
+   until annotation produces categories, because each judge cites the category it came from.
 
-The same modal from the other door: **a panel → Keys → Issue → name → reveal → dismiss → key
-list with `last4`**. No panel choice is asked for, because you are already in one.
 **Revoke → confirm → the row stays, marked revoked** — revocation is a status flip, never a
 delete.
 
@@ -398,3 +394,22 @@ judge's page once that page exists.
 **Cost:** phase 8 needs a read the plan did not list — the panel's current version with its
 judges and their pins (for instance `GET /internal/panels/:id`). The rows already exist; phase 5
 writes them.
+
+**R9. Creation is one step, the panel starts collecting, and judge authoring is locked behind an
+eval pass.** The stakeholder specified the shape data-first services use — PostHog, Sentry:
+create the thing, copy a snippet, and nothing else opens until data arrives. Creating a panel is
+now name, slug and threshold; the panel's **Overview** is the onboarding surface, carrying the
+collecting state, progress toward **50 traces**, and the snippet with the key issued alongside
+the panel.
+
+**The gate's reason is provenance, not pedagogy** (ADR-0061): a judge must be traceable to the
+traces and annotations that produced it, and a free-form judge severs that chain where it starts.
+So Judges carries a padlock rather than a hidden entry, Traces stays open throughout, and
+annotation opens at 50 with "50–100" shown as where patterns usually appear.
+
+**This moved ADR-0060 into M4**, because the flow cannot be built otherwise:
+`POST /internal/panels` requires a judge today and `evaluate` refuses a judgeless panel. It also
+moves the capability-gated model picker's UI to M6 beside judge authoring, which BUILD_SPINE's
+M4 line now says. Supersedes R5's "Overview is the dashboard at M6" — Overview is live at M4 and
+*becomes* the dashboard at M6. **Carried to M6:** how alignment sessions are reached once judges
+are authored this way.
