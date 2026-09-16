@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabelLoop — create panel, and the panel that collects (mockup 6c)</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  ============================================================================
+  SCREEN:     panel-create + the panel home it lands on
+  ROLE:       admin, engineer
+  IMPLEMENTS: PRODUCT.md 5.2 (panels and judges), 5.1 (scoped keys), §4 (the
+              loop); mockups/CONSOLE_FLOW.md §5, console-shell.html r2
+  DECISIONS:  ADR-0060 (a panel collects before it judges — MOVED TO M4),
+              ADR-0061 (judges come only from an eval pass), ADR-0003
+              (immutable versions), ADR-0019, ADR-0034, ADR-0026, ADR-0027
+  SURFACE:    data-surface="console" — dark + compact
+  REVISION:   r1 — four steps: panel, judges, model, review.
+              r2 — a fork step: collect first (M5) or add judges now.
+              r3 — THE FORK IS GONE. Creating a panel is one step and it always
+                   starts collecting; judges are locked behind an eval pass.
+                   The model picker survives only as an M6 reference.
+  STATUS:     DRAFT r3 for the 6c review · 2026-09-15 · M4 phase 6
+  ============================================================================
+
+  WHAT CHANGED IN r3, AND WHY IT IS SMALLER
+  The stakeholder asked for the shape every data-first service uses — PostHog,
+  Sentry: create the thing, get a snippet, and nothing else opens until data
+  arrives. Creating a panel is now name, slug, threshold, Create. The panel it
+  makes is COLLECTING, and its own home does the onboarding.
+
+  **The reason judges are locked is the audit trail, not pedagogy** (stakeholder,
+  2026-09-15). A judge has to be traceable to the traces and annotations that
+  produced it: alignment is "kappa against this expert, on this set, on this
+  date", the contribution ledger pays against a share of the annotations in a
+  shipped training set, and the audit log treats versioning as evidence. A
+  free-form judge severs that chain at its origin and no later process repairs
+  it, because the traces that would have justified it were never annotated.
+
+  This is what moved ADR-0060 from M5 into M4: the flow below cannot be built
+  otherwise, since `POST /internal/panels` requires a judge today and `evaluate`
+  refuses a judgeless panel.
+
+  DECISIONS ENCODED HERE (reject these, not the CSS)
+
+  1. CREATION IS ONE STEP. Name, slug, threshold. No judges, no model, no
+     review — there is nothing yet to review. The threshold stays because it is
+     panel configuration rather than judge configuration, and it costs one
+     field now against a second version later.
+
+  2. THE PANEL HOME IS THE ONBOARDING SCREEN. Collecting state, the snippet,
+     and progress toward the gate, in that order — what to do, how to do it,
+     what it unlocks. Nothing else on the panel is dressed up as available.
+
+  3. THE GATE IS A COUNT, AND IT IS SHOWN AS ONE. **50 unlocks annotation, 100
+     is ideal** (stakeholder). Both numbers are on the screen, because a floor
+     shown alone gets read as the goal. Progress is visible from the first call:
+     a gate with no visible distance is indistinguishable from a dead end.
+
+  4. TRACES ARE NEVER LOCKED. The lock is on AUTHORING judges. A customer can
+     read every trace they have sent from the first one — locking someone out
+     of their own data would be a different product.
+
+  5. LOCKED SECTIONS CARRY A PADLOCK AND A REASON. Judges shows a padlock in
+     the sidebar and, on its own screen, what opens it. Distinct from the
+     milestone marks (M5, M6): those mean "not built yet", a padlock means
+     "built, and not yours yet".
+
+  6. WHAT HAPPENS AT 50 IS ON THE SCREEN FROM DAY ONE. The loop — annotate,
+     cluster into a taxonomy, author judges from it, align them — is drawn as
+     the sequence it is, so the gate reads as a path rather than a wall. This
+     is also where the product is a shared surface: the annotating is an
+     expert's work, the wiring is the developer's.
+
+  7. EVERY PANEL IS CREATED WITH A KEY, AND THE REVEAL IS THIS SCREEN. The
+     plaintext exists exactly once, the snippet needs it, and a modal that can
+     be dismissed would strand it. The shell's modal stays for keys issued
+     later from a panel's Keys section.
+
+  8. STARTER CODE IN THREE LANGUAGES, WITH COMMENTS THAT SAY WHAT TO SEND.
+     curl, Node, Python; key masked on screen and real on the clipboard; every
+     field commented. Written against the contract: `Authorization: Bearer`,
+     the optional `Idempotency-Key`, and `data.passed` rather than a nested
+     decision object. **The same call works unchanged once judges exist** —
+     only what comes back changes.
+
+  DATA NOTES — WHERE EVERY NUMBER CAME FROM
+  - PRICES in the M6 reference are LIVE, pulled 2026-09-16T00:31Z through this
+    repo's own catalogue client, not copied from the measurement table:
+    `z-ai/glm-5.3-flash` was 0.07/0.25 on 2026-08-30, 0.15/0.50 in phase 4, and
+    0.10/0.3333 today.
+  - LATENCY, COST-PER-CALL and REASONING TOKENS are measurements with a date
+    (2026-08-30), quoted as such.
+  - The trace count, the key and the panel id are fictional. The key is
+    deliberately low-entropy per the DEV_KEY_PLAINTEXT precedent.
+
+  OPEN QUESTIONS FOR REVIEW
+  - Q1. ANSWERED (stakeholder, 2026-09-15): **50 is the floor, 100 is ideal.**
+        Annotation opens at 50; the screen should read 100 as the target rather
+        than as an upper bound, since taxonomy size is driven by saturation
+        (PRODUCT.md 5.6) rather than by a cap. Still unmeasured, and still not
+        per-panel.
+  - Q2. Does the gate count TRACES or DISTINCT-ish traffic? Fifty calls from one
+        smoke test are not fifty samples. Counting traces is drawn because it is
+        the only thing M4 can count honestly; sampling quality belongs to M5.
+  - Q3. Alignment sessions after judges exist — per judge, on the judge's page,
+        or a panel-level section? Carried to M6 by ADR-0061 and not drawn.
+  - Q4. The M6 reference block: keep it in this file so the measured picker
+        work survives the milestone gap, or move it to a scratch document?
+
+  NOT DRAWN (deliberate): judge authoring itself (M6, from a taxonomy); the
+  annotation surface (M5, Phase A paused); the taxonomy builder; editing a
+  panel; mobile.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    display: grid; grid-template-rows: auto 1fr;
+    background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-ui); font-size: var(--type-ui); line-height: var(--leading-ui);
+  }
+  :focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+  a { color: inherit; }
+
+  /* ==== review states =====================================================
+     default = create the panel · #s-collecting = the panel's home while it
+     collects · #s-unlocked = the same home once annotation opens ·
+     #s-picker = the M6 authoring reference, NOT part of M4.
+     ======================================================================== */
+  .anchor { position: fixed; top: 0; left: 0; }
+  .v { display: none; }
+  .v-create, .v-home-level { display: contents; }
+  body:has(#s-collecting:target, #s-unlocked:target, #s-picker:target) .v-create,
+  body:has(#s-collecting:target, #s-unlocked:target) .v-home-level { display: none; }
+  body:has(#s-collecting:target, #s-unlocked:target) .v-panel-level,
+  body:has(#s-collecting:target, #s-unlocked:target) .v-panel-head,
+  body:has(#s-collecting:target, #s-unlocked:target) .v-starter,
+  body:has(#s-collecting:target) .v-collecting,
+  body:has(#s-unlocked:target) .v-unlocked,
+  body:has(#s-picker:target) .v-picker { display: contents; }
+
+  /* ==== review chrome (NOT product) ======================================== */
+  .review {
+    position: relative; z-index: calc(var(--layer-toast) + 1);
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg); color: var(--color-text);
+    border-bottom: var(--border-hair) solid var(--color-line-strong);
+  }
+  .review-label {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); margin-right: var(--space-2);
+  }
+  .review a {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-surface); text-decoration: none;
+  }
+  .review a:hover { border-color: var(--color-line-strong); }
+  body:not(:has(.anchor:target)) .review a[href="#"],
+  body:has(#s-collecting:target) .review a[href="#s-collecting"],
+  body:has(#s-unlocked:target) .review a[href="#s-unlocked"],
+  body:has(#s-picker:target) .review a[href="#s-picker"] {
+    background: var(--color-action); color: var(--color-action-text); border-color: var(--color-action);
+  }
+
+  /* ==== primitives (shared with the shell) ================================= */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-muted);
+  }
+  .data { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .num { font-family: var(--font-mono); font-size: var(--type-data); font-variant-numeric: tabular-nums; }
+  .mark {
+    display: inline-block; padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid; border-radius: var(--radius-mark);
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase;
+    line-height: var(--leading-flat); white-space: nowrap;
+  }
+  .mark.neutral { color: var(--state-neutral-fg); background: var(--state-neutral-tint); border-color: var(--state-neutral-line); }
+  .mark.success { color: var(--state-success-fg); background: var(--state-success-tint); border-color: var(--state-success-line); }
+  .mark.warning { color: var(--state-warning-fg); background: var(--state-warning-tint); border-color: var(--state-warning-line); }
+  .mark.fail    { color: var(--state-fail-fg);    background: var(--state-fail-tint);    border-color: var(--state-fail-line); }
+  .mark.info    { color: var(--state-info-fg);    background: var(--state-info-tint);    border-color: var(--state-info-line); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--gap-tight);
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    line-height: var(--leading-ui); padding: var(--pad-control-y) var(--pad-control-x);
+    border-radius: var(--radius-control);
+    border: var(--border-hair) solid var(--color-action);
+    background: var(--color-action); color: var(--color-action-text);
+    text-decoration: none; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: var(--color-action-hover); }
+  .btn.quiet { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn.quiet:hover { background: var(--color-raised); }
+
+  /* ==== the shell (approved r2 — not re-reviewed here) ===================== */
+  /* 16rem — shadcn Sidebar's default --sidebar-width, which phase 7 inherits (ADR-0046). */
+  .app { display: grid; grid-template-columns: calc(var(--space-16) * 4) 1fr; min-height: 0; }
+  .rail {
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    min-height: 0; overflow-y: auto;
+    padding: var(--pad-panel-y) var(--space-3);
+    background: var(--color-surface);
+    border-right: var(--border-hair) solid var(--color-line);
+  }
+  .wordmark { padding: 0 var(--pad-field-x); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-snug); text-decoration: none; }
+  .nav-link {
+    display: flex; align-items: center; gap: var(--gap-inline); min-height: var(--row-min);
+    padding: 0 var(--pad-field-x); border-radius: var(--radius-control);
+    color: var(--color-text); text-decoration: none;
+  }
+  a.nav-link:hover { background: var(--color-raised); }
+  .nav-link.is-current {
+    background: var(--color-sunken); font-weight: var(--weight-semibold);
+    box-shadow: inset var(--border-thick) 0 0 var(--color-text);
+  }
+  .context { display: flex; flex-direction: column; gap: var(--gap-tight); }
+  .context > .eyebrow { padding: 0 var(--pad-field-x); }
+  .switch { position: relative; }
+  .switch > summary {
+    list-style: none;
+    display: flex; align-items: center; gap: var(--gap-inline); min-height: var(--row-min);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field); cursor: pointer;
+  }
+  .switch > summary::-webkit-details-marker { display: none; }
+  .switch > summary::after { content: "▾"; margin-left: auto; color: var(--color-text-muted); }
+  .switch > summary:hover { border-color: var(--color-line-strong); }
+  .switch[open] > summary { border-color: var(--color-line-strong); background: var(--color-sunken); }
+  .switch-text { display: flex; flex-direction: column; min-width: 0; }
+  .switch-text strong, .switch-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switch-text strong { font-weight: var(--weight-semibold); }
+  .placeholder { color: var(--color-text-muted); }
+  .menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + var(--space-1));
+    z-index: var(--layer-overlay);
+    display: flex; flex-direction: column; gap: var(--space-px);
+    padding: var(--space-1);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-panel); box-shadow: var(--shadow-overlay);
+  }
+  .menu-item {
+    display: flex; align-items: center; gap: var(--gap-inline); min-height: var(--row-min);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    border-radius: var(--radius-control); text-decoration: none;
+  }
+  .menu-item:hover { background: var(--color-raised); }
+  .menu-rule { height: var(--space-px); background: var(--color-line-soft); margin: var(--space-1) 0; }
+  .foot {
+    margin-top: auto; display: flex; flex-direction: column; gap: var(--gap-inline);
+    padding-top: var(--gap-stack); border-top: var(--border-hair) solid var(--color-line);
+  }
+  .who { display: flex; flex-direction: column; gap: var(--gap-tight); padding: 0 var(--pad-field-x); }
+  .who-email { color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .org-static { padding: 0 var(--pad-field-x); display: flex; align-items: center; gap: var(--gap-tight); color: var(--color-text-muted); }
+
+  /* ==== the stage ========================================================== */
+  .stage {
+    min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    padding: var(--gap-section) var(--space-8);
+  }
+  .page-head {
+    display: flex; align-items: flex-end; gap: var(--gap-inline);
+    padding-bottom: var(--gap-stack); border-bottom: var(--border-hair) solid var(--color-line-strong);
+  }
+  .page-head-text { display: flex; flex-direction: column; gap: var(--gap-tight); min-width: 0; }
+  .page-head h1 {
+    margin: 0; font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .scope-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight); }
+  .scope-line .sep { color: var(--color-text-faint); }
+
+  /* progress toward the annotation gate, and the lock (ADR-0061) */
+  .progress { display: flex; flex-direction: column; gap: var(--gap-tight); max-width: var(--measure); }
+  .track {
+    height: var(--space-2); border-radius: var(--radius-pill); overflow: hidden;
+    background: var(--color-sunken); border: var(--border-hair) solid var(--color-line);
+  }
+  .track i { display: block; height: 100%; background: var(--color-text-muted); }
+  .progress-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-tight); }
+  .progress-line strong { font-family: var(--font-mono); font-size: var(--type-title); font-variant-numeric: tabular-nums; }
+  .lock { width: 11px; height: 11px; flex: none; color: var(--color-text-faint); }
+  .nav-link .lock { margin-left: auto; }
+  .steps-list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--gap-tight); }
+  .steps-list li { font-size: var(--type-body); line-height: var(--leading-snug); }
+  .steps-list li .data { display: block; }
+
+  /* panels and fields */
+  .card {
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+  }
+  .card h2 {
+    margin: 0; font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .card h3 { margin: 0; font-size: var(--type-ui); font-weight: var(--weight-semibold); }
+  .card p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
+  .card .muted { color: var(--color-text-muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-stack); align-items: start; }
+  @media (max-width: 1100px) { .two { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: var(--gap-tight); }
+  .field > label { font-size: var(--type-ui); font-weight: var(--weight-semibold); }
+  .field .hint { font-size: var(--type-data); color: var(--color-text-muted); max-width: var(--measure); line-height: var(--leading-normal); }
+  .input, .textarea {
+    width: 100%; font-family: var(--font-ui); font-size: var(--type-ui); color: var(--color-text);
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-field);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    line-height: var(--leading-normal); resize: none;
+  }
+  .input.mono { font-family: var(--font-mono); font-size: var(--type-data); }
+  .input.short { max-width: calc(var(--space-20) * 2); }
+  .input.is-wrong { border-color: var(--state-fail-line); }
+  .field-error { display: flex; align-items: flex-start; gap: var(--gap-tight); font-size: var(--type-data); color: var(--state-fail-fg); max-width: var(--measure); line-height: var(--leading-normal); }
+
+  .choices { display: flex; flex-wrap: wrap; gap: var(--gap-inline); }
+  .choice {
+    display: flex; align-items: flex-start; gap: var(--gap-inline);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field);
+    background: var(--color-raised); cursor: pointer; max-width: var(--measure);
+  }
+  .choice.is-chosen { border-color: var(--color-line-strong); background: var(--color-sunken); box-shadow: inset var(--border-thick) 0 0 var(--color-text); }
+  .choice span { display: block; font-size: var(--type-data); color: var(--color-text-muted); line-height: var(--leading-normal); }
+  .choice strong { font-weight: var(--weight-semibold); font-size: var(--type-ui); }
+
+  /* the payload example (decision 2) */
+  .payload { display: grid; grid-template-columns: auto 1fr; gap: var(--gap-tight) var(--space-4); align-items: baseline; }
+  .payload dt { font-family: var(--font-mono); font-size: var(--type-micro); letter-spacing: var(--tracking-micro); text-transform: uppercase; color: var(--color-text-muted); }
+  .payload dd { margin: 0; font-size: var(--type-body); line-height: var(--leading-snug); }
+  .payload dd .data { display: block; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-family: var(--font-mono); font-weight: var(--weight-regular);
+    font-size: var(--type-micro); letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); background: var(--color-raised);
+    padding: var(--pad-cell-y) var(--pad-cell-x);
+    border-bottom: var(--border-hair) solid var(--color-line-strong); white-space: nowrap;
+  }
+  td {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-cell-y) var(--pad-cell-x); height: var(--row-min);
+    border-bottom: var(--border-hair) solid var(--color-line);
+    color: var(--color-text); vertical-align: middle;
+  }
+  td.name { font-family: var(--font-ui); font-size: var(--type-ui); }
+  td.r, th.r { text-align: right; }
+  tr:last-child td { border-bottom: 0; }
+  tr.is-chosen td { background: var(--color-sunken); }
+  tr.is-chosen td:first-child { box-shadow: inset var(--border-thick) 0 0 var(--color-text); }
+  .table-wrap { overflow-x: auto; border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-panel); }
+  caption { caption-side: bottom; text-align: left; padding: var(--pad-cell-y) var(--pad-cell-x); font-size: var(--type-data); color: var(--color-text-muted); }
+
+  .judge-row {
+    display: flex; align-items: center; gap: var(--gap-inline);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field); background: var(--color-raised);
+  }
+  .judge-row .grow { flex: 1; min-width: 0; }
+  .judge-row .q { font-size: var(--type-ui); }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-inline); }
+  .actions .spacer { flex: 1; }
+  .divider { height: var(--space-px); background: var(--color-line-soft); }
+
+
+  /* ==== starter code (decision 11) ======================================== */
+  .toggle { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .keyrow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-inline);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-field);
+  }
+  .keyval { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--type-data); word-break: break-all; }
+  .key-plain { display: none; }
+  #showkey:checked ~ .keyrow .key-plain { display: block; }
+  #showkey:checked ~ .keyrow .key-masked { display: none; }
+  .toggle-btn {
+    display: inline-flex; align-items: center; gap: var(--gap-tight);
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    padding: var(--pad-control-y) var(--pad-control-x);
+    border-radius: var(--radius-control);
+    border: var(--border-hair) solid var(--color-action-quiet-line);
+    color: var(--color-text); cursor: pointer; white-space: nowrap;
+  }
+  .toggle-btn:hover { background: var(--color-raised); }
+  #showkey:checked ~ .keyrow .show-label { display: none; }
+  .hide-label { display: none; }
+  #showkey:checked ~ .keyrow .hide-label { display: inline; }
+
+  .tabs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight); }
+  .tabs label {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-control);
+    color: var(--color-text-muted); cursor: pointer;
+  }
+  .tabs label:hover { color: var(--color-text); border-color: var(--color-line-strong); }
+  #lang-curl:checked ~ .tabs label[for="lang-curl"],
+  #lang-node:checked ~ .tabs label[for="lang-node"],
+  #lang-py:checked ~ .tabs label[for="lang-py"] {
+    color: var(--color-text); background: var(--color-sunken);
+    border-color: var(--color-line-strong); font-weight: var(--weight-semibold);
+  }
+  .tabs .spacer { flex: 1; }
+  .pane { display: none; }
+  #lang-curl:checked ~ .panes .pane-curl,
+  #lang-node:checked ~ .panes .pane-node,
+  #lang-py:checked ~ .panes .pane-py { display: block; }
+  pre.code {
+    margin: 0; overflow-x: auto;
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+    font-family: var(--font-mono); font-size: var(--type-data); line-height: var(--leading-normal);
+    color: var(--color-text);
+  }
+  pre.code .c { color: var(--color-text-muted); }
+  pre.code .k { color: var(--state-warning-fg); }
+
+</style>
+
+<body data-surface="console">
+
+<span id="s-collecting" class="anchor"></span>
+<span id="s-unlocked" class="anchor"></span>
+<span id="s-picker" class="anchor"></span>
+
+<!-- ============ REVIEW CHROME — not part of the product ============ -->
+<nav class="review" data-tone="light" data-density="compact" aria-label="Review states">
+  <span class="review-label">Review · 6c r3</span>
+  <a href="#">1 · Create panel</a>
+  <a href="#s-collecting">2 · Collecting · 12 of 50</a>
+  <a href="#s-unlocked">3 · Gate open · 50</a>
+  <a href="#s-picker">M6 reference · model picker</a>
+</nav>
+
+<div class="app">
+
+  <!-- ============ THE SHELL (console-shell.html r2, approved) ============ -->
+  <aside class="rail" aria-label="Console">
+    <a class="wordmark" href="#">LabelLoop</a>
+
+    <div class="v v-home-level">
+      <a class="nav-link is-current" href="#" aria-current="page">Home</a>
+      <div class="context">
+        <span class="eyebrow">Panel</span>
+        <details class="switch">
+          <summary>
+            <span class="switch-text"><strong class="placeholder">Choose a panel</strong><span class="data">3 panels</span></span>
+          </summary>
+          <div class="menu" role="menu">
+            <a class="menu-item" href="#s-collecting" role="menuitem"><span class="switch-text"><strong>Refund reply gate</strong><span class="data">refund-reply</span></span></a>
+            <a class="menu-item" href="#s-collecting" role="menuitem"><span class="switch-text"><strong>Escalation summary gate</strong><span class="data">escalation-summary</span></span></a>
+            <div class="menu-rule"></div>
+            <a class="menu-item" href="#" role="menuitem"><span class="switch-text"><strong>Create panel</strong><span class="data">this screen</span></span></a>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="v v-panel-level">
+      <a class="nav-link" href="#"><span class="glyph">←</span> Home</a>
+      <div class="context">
+        <span class="eyebrow">Panel</span>
+        <details class="switch">
+          <summary>
+            <span class="switch-text"><strong>Triage routing gate</strong><span class="data">triage-routing</span></span>
+          </summary>
+          <div class="menu" role="menu">
+            <a class="menu-item" href="#s-collecting" role="menuitem"><span class="switch-text"><strong>Triage routing gate</strong><span class="data">triage-routing</span></span></a>
+            <a class="menu-item" href="#s-collecting" role="menuitem"><span class="switch-text"><strong>Refund reply gate</strong><span class="data">refund-reply</span></span></a>
+            <div class="menu-rule"></div>
+            <a class="menu-item" href="#" role="menuitem"><span class="switch-text"><strong>Create panel</strong></span></a>
+          </div>
+        </details>
+        <nav class="sections" aria-label="Triage routing gate">
+          <a class="nav-link is-current" href="#s-collecting" aria-current="page">Overview</a>
+          <span class="nav-link is-inert" aria-disabled="true" title="Judges are authored from an eval pass — annotate first (ADR-0061)">Judges <svg class="lock" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.2" y="5.2" width="7.6" height="5.4" rx="1"/><path d="M4.1 5.2V3.9a1.9 1.9 0 0 1 3.8 0v1.3"/></svg></span>
+          <a class="nav-link" href="#s-collecting">Traces</a>
+          <a class="nav-link" href="#s-collecting">Keys</a>
+          <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M5, and opens at 50 traces">Annotation <span class="mark neutral">M5</span></span>
+          <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Taxonomy <span class="mark neutral">M6</span></span>
+          <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Alignment <span class="mark neutral">M6</span></span>
+          <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M7">Fine-tunes <span class="mark neutral">M7</span></span>
+        </nav>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="who"><span class="data who-email">dana.okafor@fernhill.example</span></div>
+      <div class="org-static"><span class="mark neutral">engineer</span><span>Fernhill Support</span></div>
+      <a class="btn quiet" href="#">Sign out</a>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="stage">
+
+    <!-- ---------- CREATE: one step (decision 1) ---------- -->
+    <div class="v v-create">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>new panel</span></div>
+          <h1>Create panel</h1>
+        </div>
+      </header>
+
+      <section class="card">
+        <div class="two">
+          <div class="field">
+            <label for="p-name">Name</label>
+            <input class="input" id="p-name" value="Triage routing gate" readonly>
+            <span class="hint">For people. The slug below is what appears in your code.</span>
+          </div>
+          <div class="field">
+            <label for="p-slug">Slug</label>
+            <input class="input mono" id="p-slug" value="triage-routing" readonly>
+            <span class="hint">Lowercase, hyphenated. Fixed once the panel exists.</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="p-threshold">Pass threshold</label>
+          <input class="input short mono" id="p-threshold" value="0.60" readonly>
+          <span class="hint">The weighted share of judges that must pass, once this panel has judges. Your risk tolerance, not ours. Changeable later, in a new version.</span>
+        </div>
+        <div class="actions">
+          <span class="spacer"></span>
+          <a class="btn" href="#s-collecting">Create panel</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>No judges yet — that is the whole idea</h2>
+        <p>A new panel starts by <strong>collecting</strong>. It accepts calls, stores every trace and judges nothing, so you can wire it into your agent today and decide what to judge from what actually happens.</p>
+        <p class="muted">Judges are written later, from an annotation pass over these traces. That order is not advice: it is what lets us say which traces and whose annotations produced each judge, which is the record alignment scores and the audit log both rest on.</p>
+      </section>
+    </div>
+
+    <!-- ---------- THE PANEL HOME (decisions 2-6) ---------- -->
+    <div class="v v-panel-head">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>triage-routing</span></div>
+          <h1>Overview</h1>
+        </div>
+      </header>
+    </div>
+
+    <div class="v v-collecting">
+      <section class="card">
+        <div class="actions">
+          <span class="mark success">collecting</span>
+          <h2 style="margin:0">Send traffic — that is all there is to do yet</h2>
+        </div>
+        <div class="progress">
+          <div class="progress-line"><strong>12</strong><span class="muted">of 50 traces before annotation opens</span></div>
+          <div class="track"><i style="width:24%"></i></div>
+          <span class="data">first call 11 minutes ago · most recent 40 seconds ago</span>
+        </div>
+        <p class="muted">Fifty is the floor, not the goal — <strong>100 is where a first pass is worth doing</strong>, because that is where an expert stops seeing one-offs and starts seeing patterns. Nothing is thrown away below it: every trace you send is kept and annotated later.</p>
+        <p class="muted">Every call is stored and nothing is judged, so responses carry <span class="data">state: "collecting"</span> and no verdict. A step that blocks on a failure is never told everything is fine; treat it as a pass while you integrate.</p>
+      </section>
+    </div>
+
+    <div class="v v-unlocked">
+      <section class="card">
+        <div class="actions">
+          <span class="mark success">ready to annotate</span>
+          <h2 style="margin:0">50 traces collected — annotation is open</h2>
+        </div>
+        <div class="progress">
+          <div class="progress-line"><strong>50</strong><span class="muted">traces · 0 annotated · 100 is where a first pass is worth doing</span></div>
+          <div class="track"><i style="width:100%"></i></div>
+        </div>
+        <p>An expert reads these traces one at a time and says what went wrong in their own words. Nothing is sorted into categories yet — the categories come out of what they write.</p>
+        <p class="muted">The panel keeps collecting while they work. <strong>Judges stay locked</strong> until those notes are clustered into a taxonomy, because a judge is created from a category, and the category is what ties it back to the traces that produced it.</p>
+        <div class="actions">
+          <a class="btn" href="#s-unlocked">Start annotating</a>
+          <a class="btn quiet" href="#s-unlocked">Invite an expert</a>
+          <span class="data">annotation lands at M5</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- the starter code, on the panel home in both states -->
+    <!-- ============ STARTER CODE — both outcomes (decision 11) ============ -->
+    <div class="v v-starter">
+      <section class="card">
+        <h2>Send your first call</h2>
+        <p>Every panel is created with a key, so there is nothing else to set up. <strong>This is the only time the key is shown</strong> — LabelLoop stores a hash of it. Copy the snippet and the key travels with it.</p>
+
+        <input class="toggle" type="checkbox" id="showkey">
+        <div class="keyrow">
+          <span class="eyebrow">Key</span>
+          <span class="keyval">
+            <span class="key-masked">llk_test_••••••••••••••••••••••••••••••••••••••••••••••••••••9f3c</span>
+            <span class="key-plain">llk_test_9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c</span>
+          </span>
+          <label class="toggle-btn" for="showkey"><span class="show-label">Show</span><span class="hide-label">Hide</span></label>
+          <a class="btn quiet" href="#s-created">Copy key</a>
+        </div>
+
+        <input class="toggle" type="radio" name="lang" id="lang-curl" checked>
+        <input class="toggle" type="radio" name="lang" id="lang-node">
+        <input class="toggle" type="radio" name="lang" id="lang-py">
+        <div class="tabs">
+          <label for="lang-curl">curl</label>
+          <label for="lang-node">Node</label>
+          <label for="lang-py">Python</label>
+          <span class="spacer"></span>
+          <a class="btn quiet" href="#s-created">Copy code</a>
+        </div>
+        <div class="panes">
+<pre class="code pane pane-curl"><span class="c"># One call per artifact your agent produces. We judge it; we never generate it.</span>
+<span class="c"># LABELLOOP_URL is the API base you configured — http://localhost:3000 in development.</span>
+curl "$LABELLOOP_URL/v1/panels/pnl_01M2F8QK3T9V0XW4E7RB2NCHYD/evaluate" \
+  -H "Authorization: Bearer <span class="k">llk_test_••••9f3c</span>" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" <span class="c"># optional: makes a retry safe</span> \
+  -d '{
+        "artifact": "Refund request from acct 8812 — customer says the charge is duplicated.",
+        "context": { "route": "billing", "severity": "P2" }
+      }'</pre>
+
+<pre class="code pane pane-node"><span class="c">// One call per artifact your agent produces. We judge it; we never generate it.</span>
+const res = await fetch(
+  `${process.env.LABELLOOP_URL}/v1/panels/pnl_01M2F8QK3T9V0XW4E7RB2NCHYD/evaluate`,
+  {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.LABELLOOP_KEY}`, <span class="c">// the key above</span>
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(), <span class="c">// optional: makes a retry safe</span>
+    },
+    body: JSON.stringify({
+      <span class="c">// artifact — the thing being judged: what your agent produced, or</span>
+      <span class="c">// what it made a decision about. A string, up to 32k characters.</span>
+      artifact: issue.body,
+      <span class="c">// context — anything a judge needs, including your agent's own</span>
+      <span class="c">// decision. Flat string-to-string; you assemble it, we never gather it.</span>
+      context: { route: bot.route, severity: bot.severity },
+    }),
+  },
+)
+
+const { data } = await res.json()
+data.passed      <span class="c">// false when the panel failed — the field a gate reads</span>
+data.score       <span class="c">// weighted share of judges that passed, 0 to 1</span>
+data.complete    <span class="c">// false if a judge dropped out: the score is real but partial</span>
+data.trace_id    <span class="c">// the stored trace — this is what an expert annotates later</span>
+data.judges['mis-routed'].verdict    <span class="c">// that judge's raw yes/no</span>
+data.judges['mis-routed'].rationale  <span class="c">// one line of why, for a human</span></pre>
+
+<pre class="code pane pane-py"><span class="c"># One call per artifact your agent produces. We judge it; we never generate it.</span>
+import os, uuid, requests
+
+res = requests.post(
+    f"{os.environ['LABELLOOP_URL']}/v1/panels/pnl_01M2F8QK3T9V0XW4E7RB2NCHYD/evaluate",
+    headers={
+        "Authorization": f"Bearer {os.environ['LABELLOOP_KEY']}",  <span class="c"># the key above</span>
+        "Idempotency-Key": str(uuid.uuid4()),  <span class="c"># optional: makes a retry safe</span>
+    },
+    json={
+        <span class="c"># artifact — the thing being judged: what your agent produced, or</span>
+        <span class="c"># what it made a decision about. A string, up to 32k characters.</span>
+        "artifact": issue_body,
+        <span class="c"># context — anything a judge needs, including your agent's own</span>
+        <span class="c"># decision. Flat string-to-string; you assemble it, we never gather it.</span>
+        "context": {"route": bot_route, "severity": bot_severity},
+    },
+    timeout=30,
+)
+
+data = res.json()["data"]
+data["passed"]    <span class="c"># false when the panel failed — the field a gate reads</span>
+data["score"]     <span class="c"># weighted share of judges that passed, 0 to 1</span>
+data["trace_id"]  <span class="c"># the stored trace — this is what an expert annotates later</span>
+data["judges"]["mis-routed"]["rationale"]  <span class="c"># one line of why, for a human</span></pre>
+        </div>
+        <div class="v v-collecting">
+          <p class="muted"><strong>While the panel is collecting</strong>, the response carries <span class="data">state: "collecting"</span> and no verdicts, so the <span class="data">judges[…]</span> lines above return nothing yet. The call itself does not change when judges arrive — the same integration starts returning verdicts.</p>
+        </div>
+        <p class="muted">Copying puts the <strong>real</strong> key on your clipboard, not the masked one. Store it the way you store any other secret — an environment variable, as above — and never in a client your users can read.</p>
+      </section>
+    </div>
+
+    <div class="v v-collecting">
+      <section class="card">
+        <h2>What happens at 50</h2>
+        <ol class="steps-list">
+          <li><strong>Annotate.</strong> An expert reviews traces one at a time and writes what went wrong, in their own words.<span class="data">their work · M5</span></li>
+          <li><strong>Cluster.</strong> Those notes are grouped into a versioned taxonomy of failure categories, and each is marked as a deterministic check or an LLM judge.<span class="data">both of you, together · M6</span></li>
+          <li><strong>Author judges.</strong> Each category becomes one judge — a single yes/no question, with the model you pick for it. Each judge cites the category it came from.<span class="data">your work · M6</span></li>
+          <li><strong>Align.</strong> Each judge is measured against labels it has not seen, and either accepted or revised.<span class="data">both of you · M6</span></li>
+        </ol>
+        <p class="muted">This is the part of the product that is a shared surface rather than a console: an expert supplies the judgement, you supply the wiring, and the versioned record of which traces produced which judge is what makes the result citable later.</p>
+      </section>
+    </div>
+
+    <!-- ============ M6 REFERENCE — the model picker, where authoring lands ============ -->
+    <div class="v v-picker">
+      <section class="card">
+        <h2>Why this is here and not in the creation flow</h2>
+        <p>Judges are authored from an eval pass (ADR-0061), so the picker lands with authoring at M6, in a panel’s Judges section. It is drawn here because its content is <strong>measured</strong> and perishable — cost, latency spread, effort consequences, what constraining precision costs in failover — and that work should not be lost between milestones.</p>
+        <p class="muted"><strong>Not part of what this mockup asks you to approve for M4.</strong> M6 decides how a judge is authored from a taxonomy; this is the model half of that screen.</p>
+      </section>
+      <section class="card">
+        <div class="actions">
+          <span class="mark warning">M6 reference · not built at M4</span>
+        </div>
+        <h2 style="margin:0">Model for <span class="data">mis-routed</span></h2>
+        <p class="muted">Every judge runs on its own model, so a cheap one can answer the easy question while an expensive one answers the hard one. Prices are live from the provider’s catalogue; latency is measured, with the date it was measured.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Prices pulled 2026-09-16T00:31Z · latency and cost-per-call measured 2026-08-30 on one probe per model · “—” means we have not measured it</caption>
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th class="r">$/M in</th>
+                <th class="r">$/M out</th>
+                <th>Latency, measured</th>
+                <th class="r">Cost/call</th>
+                <th>Reasoning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="is-chosen">
+                <td class="name">gemini-3.5-flash-lite <span class="mark neutral">chosen</span></td>
+                <td class="r num">0.30</td><td class="r num">2.50</td>
+                <td class="num">847 – 972 ms</td><td class="r num">$0.00077</td>
+                <td class="num">minimal · 0 tokens</td>
+              </tr>
+              <tr>
+                <td class="name">gpt-5.6-luna</td>
+                <td class="r num">0.20</td><td class="r num">1.20</td>
+                <td class="num">2501 – 3471 ms</td><td class="r num">$0.00064</td>
+                <td class="num">max · 117 tokens</td>
+              </tr>
+              <tr>
+                <td class="name">glm-5.3-flash <span class="mark neutral">open weights</span></td>
+                <td class="r num">0.10</td><td class="r num">0.33</td>
+                <td class="num">2634 ms · one sample</td><td class="r num">$0.00042</td>
+                <td class="num">max · 203 tokens</td>
+              </tr>
+              <tr>
+                <td class="name">gpt-5.4-mini</td>
+                <td class="r num">0.75</td><td class="r num">4.50</td>
+                <td class="num">1434 ms · one sample</td><td class="r num">$0.00175</td>
+                <td class="num">none · 0 tokens</td>
+              </tr>
+              <tr>
+                <td class="name">claude-sonnet-5</td>
+                <td class="r num">2.00</td><td class="r num">10.00</td>
+                <td class="num">3829 – 5304 ms</td><td class="r num">$0.00724</td>
+                <td class="num">none · 0 tokens</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">The spread is the point: about <strong>9× the cost and 4× the latency</strong> between the cheapest and the most expensive here, on a probe both answered identically. Tiers do not line up across vendors — a “mini” from one is not a “flash” from another.</p>
+      </section>
+
+      <!-- DECISION 5: the effort dial carries its own measured consequence -->
+      <section class="card">
+        <h2>Reasoning effort</h2>
+        <p class="muted">What it costs on <span class="data">gemini-3.5-flash-lite</span> specifically. Measured 2026-08-30; another model’s numbers look nothing like these.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Effort</th><th class="r">Cost/call</th><th class="r">Latency</th><th class="r">Reasoning tokens</th><th></th></tr></thead>
+            <tbody>
+              <tr class="is-chosen"><td>minimal <span class="mark neutral">chosen</span></td><td class="r num">$0.00077</td><td class="r num">847 – 972 ms</td><td class="r num">0</td><td class="data">cheapest, and it still answered correctly</td></tr>
+              <tr><td>low</td><td class="r num">$0.00078</td><td class="r num">977 ms</td><td class="r num">0</td><td class="data">indistinguishable from minimal here</td></tr>
+              <tr><td>medium</td><td class="r num">$0.00092</td><td class="r num">1083 ms</td><td class="r num">93</td><td class="data"></td></tr>
+              <tr><td>high</td><td class="r num">$0.00136</td><td class="r num">1679 ms</td><td class="r num">269</td><td class="data">1.8× the cost of minimal, 1.7× the latency</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">This model lists reasoning as mandatory and still reported <strong>zero</strong> reasoning tokens at minimal across three runs — which is why we show what was measured rather than what the catalogue claims.</p>
+      </section>
+
+      <!-- DECISION 6: quantization, only where it binds, priced in failover -->
+      <section class="card">
+        <h2>Weight precision</h2>
+        <p class="muted">Offered because <span class="data">glm-5.3-flash</span> is open-weights and hosted by many providers at different precisions. Hosted proprietary models have no such variance, so this control does not appear for them.</p>
+        <div class="choices">
+          <span class="choice is-chosen"><span class="mark neutral">any</span><span><strong>Don’t constrain it</strong><span>Most failover, and consecutive calls may run at different precisions.</span></span></span>
+          <span class="choice"><span class="mark warning">fp8 only</span><span><strong>Constrain to fp8</strong><span>Consistent precision, far less failover.</span></span></span>
+        </div>
+        <p class="muted"><strong>What constraining costs.</strong> On 2026-08-30 this model had 20 endpoints, 13 of which could satisfy the rest of the pin; requiring <span class="data">fp8</span> left <strong>6</strong>, because 7 of the 13 simply never declared a precision. Today it lists 27 endpoints — fp8 ×15, undeclared ×9, fp4 ×2, nvfp4 ×1 (pulled 2026-09-16T00:31Z). Constrain it when you have measured a swing, not by default.</p>
+      </section>
+
+      <!-- DECISION 7: a real call, and what it reports -->
+      <section class="card">
+        <h2>Check this pin</h2>
+        <p class="muted">Costs one real call to the provider. Nothing else can answer it: the catalogue lists what a model advertises across all of its endpoints, and the endpoint that answers your judge may not be one of the ones that can.</p>
+        <div>
+          <div class="actions">
+            <span class="mark success">2 endpoints satisfy this pin</span>
+            <span class="data">served by google/gemini-3.5-flash-lite-preview-09-2026 · checked just now</span>
+          </div>
+          <p class="muted">That number is the failover you actually have, and it is frozen onto the judge version so a later change is visible rather than mysterious.</p>
+        </div>
+      </section>
+
+      <div class="actions">
+        <a class="btn quiet" href="#s-collecting">Back to the panel</a>
+      </div>
+    </div>
+
+    <!-- ============ STEP 4, refused pin — a field error (decision 7) ============ -->
+    <div class="v v-s3-fail">
+      <section class="card">
+        <div class="actions">
+          <h2 style="margin:0">Model for <span class="data">severity-understated</span></h2>
+          <span class="spacer"></span>
+          <span class="data">Judge 2 of 2</span>
+        </div>
+        <div class="field">
+          <label for="j2-model">Model</label>
+          <input class="input mono is-wrong" id="j2-model" value="anthropic/claude-haiku-4.5" readonly aria-describedby="j2-model-error">
+          <p class="field-error" id="j2-model-error">
+            <span class="mark fail">refused</span>
+            <span>no endpoint could serve this pin — the model, its capabilities, its data-collection stance and its quantizations may have no overlap</span>
+          </p>
+          <span class="hint">The provider’s own words, unedited. This is an answer, not a fault: the pin as written cannot be served, so the judge cannot be created with it. Change the model, the effort, or the precision — then check again.</span>
+        </div>
+        <div class="divider"></div>
+        <p class="muted">Every judge that fails is marked, not just the first — so one pass through fixes all of them. Nothing has been created: a panel is written in a single step at the end, and a refused pin means no rows at all.</p>
+      </section>
+
+      <div class="actions">
+        <a class="btn quiet" href="#s2">Back</a>
+        <span class="spacer"></span>
+        <a class="btn quiet" href="#s3">Check this pin</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

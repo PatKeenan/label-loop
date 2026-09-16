@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabelLoop — console shell (mockup 6b, r2 approved)</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  ============================================================================
+  SCREEN:     console-shell
+  ROLE:       admin, engineer (the console); annotator at M4 sees a holding state
+  IMPLEMENTS: PRODUCT.md 5.1 (tenancy, roles), 5.5 (role-adaptive surfaces);
+              mockups/CONSOLE_FLOW.md §2 (furniture), §3 (screens by level),
+              §4 (scope), §6 (where errors land)
+  DECISIONS:  ADR-0056 as amended 2026-09-14 (two levels, one sidebar),
+              ADR-0059 (organisation settings are admin-only), ADR-0047,
+              ADR-0057, ADR-0055
+  SURFACE:    data-surface="console" — dark + compact
+  REVISION:   r1 — org switcher first, panel switcher with an All-panels mode
+                   above a Panels nav item, Audit log and Billing in the nav,
+                   one inline banner for every non-field error.
+              r2 — the 6b review (CONSOLE_FLOW §8): two levels in one sidebar,
+                   "← Home" out of a panel, the panel switcher replaces Panels,
+                   the org at the foot, admin-only settings absent until M8,
+                   three error surfaces, no silent org swap.
+              r3 — Overview is live at M4 and a panel opens on it; Judges
+                   carries a padlock (ADR-0060 moved to M4, ADR-0061).
+  STATUS:     r2 APPROVED 2026-09-15; **r3 changes two nav items** and needs a
+              nod rather than a re-review · M4 phase 6b.
+              Phase 7 builds this frame; phase 8's screens go inside it.
+  ============================================================================
+
+  WHAT IS REVIEWED HERE, AND WHAT IS NOT
+  The FRAME: the sidebar at both levels, the panel switcher, the foot (settings,
+  identity, organisation), the page header, the modal slot and the three error
+  surfaces. The CONTENT of each screen is a labelled, dashed slot — Home, Traces
+  and Keys are phase 8's, the wizard is 6c's, and Home's M6 overview cards are
+  console-dashboard's, for which Phase A stays paused (ADR-0055).
+
+  The strip across the top is REVIEW CHROME, not product — light and compact
+  (the axes, not the console preset) so it cannot be mistaken for the console.
+  Each link is one state. Two things are clicked rather than linked: the panel
+  switcher, and the organisation at the foot in the "several orgs" state.
+
+  WHY THERE IS NO JAVASCRIPT
+  The flow is not meaningless without it (BRIEF rule). Menus are <details>; each
+  review state is a URL fragment selected with :target and read with :has().
+
+  DECISIONS ENCODED HERE (reject these, not the CSS)
+
+  1. TWO LEVELS, ONE SIDEBAR. Home (the organisation) and a panel. The sidebar
+     never swaps its contents: below the panel switcher it shows the panel's
+     sections when one is open, and nothing when you are Home.
+
+  2. "← HOME" UNDER THE WORDMARK. From inside a panel the link carries a back
+     arrow, so opening a panel reads as moving forward and leaving it as moving
+     back (stakeholder, r2). At Home it reads "Home", marked current. The
+     wordmark links Home as well.
+
+  3. THE PANEL SWITCHER IS THE PANELS SECTION. There is no "Panels" nav item
+     and no "All panels" entry — Home is the list. At Home the switcher reads
+     "Choose a panel"; its menu is every panel, then Create panel.
+
+  4. EVERY NAV ITEM BELONGS TO THE PANEL NAMED ABOVE IT. That is the whole
+     reason org-level entries left the nav. **Overview is live at M4** (r3): it
+     is the panel's home and its onboarding — collecting state, progress toward
+     the annotation gate, the integration snippet — and it becomes the dashboard
+     at M6. A panel therefore opens on Overview.
+
+  4b. TWO KINDS OF UNAVAILABLE, DRAWN DIFFERENTLY (r3). A milestone mark (M5,
+     M6) means "not built yet". A PADLOCK means "built, and not yours yet":
+     Judges is locked until an eval pass exists, because a judge must cite the
+     traces and annotations that produced it (ADR-0061). Traces is never
+     locked — locking a customer out of their own data would be a different
+     product.
+
+  5. THE ORGANISATION IS AT THE FOOT, and it is plain text for one membership —
+     the common case, and the default state here. For several it becomes a menu
+     opening upward, with the account's role IN EACH org, because switching to
+     an org where you are an annotator changes the whole shell. The page
+     header's scope line keeps the org visible without the top slot.
+
+  6. ORGANISATION SETTINGS: ADMINS ONLY, AND ABSENT UNTIL M8 (ADR-0059). Not
+     drawn in any M4 state. The "admin · M8" state shows where it will appear,
+     reached by switching to Kiln Studio, where this account is an admin — the
+     same person sees it in one org and not the other.
+
+  7. INERT SECTIONS ARE GREYED OUT AND LABELLED WITH THEIR MILESTONE — decided
+     at the 6b review (stakeholder), resolving plan open question 1. The labels
+     keep the console honest about what is not built yet, and give later
+     milestones something to point back at. The hidden alternative was drawn
+     for comparison in r2 and removed once rejected.
+
+  8. THREE ERROR SURFACES (CONSOLE_FLOW §6).
+     - Beside a field: 6c's.
+     - IN PLACE OF THE CONTENT when this screen cannot be shown — a failed load,
+       a refused role, a link to something not available. The sidebar stays
+       usable. A failed load offers Reload: a person re-issuing a read is always
+       safe, and the taxonomy's retryable flag governs automatic retries only.
+     - A TOAST, bottom-right, above everything, when an ACTION failed. It never
+       dismisses itself, carries the request id, says what state the action
+       left behind ("still active"), and offers no retry for a non-retryable
+       code.
+
+  9. NO SILENT ORG SWAP. A link naming an org or panel this account cannot see
+     is a not-found state that says nothing was switched, with a way Home. It
+     cannot name the org: the console never had its name, and ADR-0057 answers
+     an unknown and a non-member org identically.
+
+ 10. ONE MODAL SLOT, TWO TEMPERAMENTS. The key reveal has no close button, and
+     Escape and the backdrop do nothing — dismissal destroys the only copy. The
+     revoke confirmation dismisses on all three, because not revoking is safe.
+
+ 11. THE DESTRUCTIVE ACTION IS OUTLINED IN THE FAIL STATE, NOT FILLED —
+     "revoked access" is listed as the fail state's meaning in tokens.css, so
+     the colour answers a question about the data.
+
+ 12. JUDGES IS A SECTION, AND ITS AUTHORING IS THE LOCKED PART (r2, revised
+     r3). Traces is every trace the panel evaluated; Judges is the way into ONE
+     judge — its page sits inside this section rather than adding a third
+     sidebar level. At M4 the section is read-only and empty, because judges
+     come from an eval pass (ADR-0061).
+
+  DATA NOTES
+  - Orgs, panels and people are fictional; domains are .example. Panel names
+    follow the two personas as ADR-0036 reframes them — gates, not labels.
+  - The key plaintext is llk_test_ (prefix from NODE_ENV, Deviation 16; M4 runs
+    in development) and DELIBERATELY LOW-ENTROPY, per the DEV_KEY_PLAINTEXT
+    precedent, so the secret scanner stays quiet. A real key is 64 random hex
+    characters after the prefix.
+  - The request id is the W3C trace-context specification's own example value.
+
+  RESOLVED AT THE 6b REVIEW
+  - Q1. Inert sections: GREYED OUT, not hidden (decision 7).
+  - Q2. Inert labels: KEEP THE MILESTONE ("M5", "M6"), not "soon" (decision 7).
+  - Q3. The apparent tokens.css gaps are not tokens.css's to fill. ADR-0046
+        converts tokens.css into shadcn's theming convention, so these values
+        arrive with the components in phase 7: the rail width is shadcn
+        Sidebar's own --sidebar-width (this mockup now matches its 16rem
+        default); the Dialog overlay is a hard-coded class in the copied
+        component, which phase 7 replaces with a token-derived value rather
+        than keep a literal black; the toast is Sonner, a package shadcn
+        installs, which phase 7 confirms under D17. The scrim and toast widths
+        in THIS file remain calc()/color-mix() stand-ins; the slot height is
+        mockup-only.
+
+  - Q4. "No organisation" offers no way forward, because none exists —
+        membership management and org creation are unscheduled. ACCEPTED FOR
+        M4 (stakeholder, 2026-09-15).
+
+  NOT DRAWN (deliberate): screen content; Home's empty state and its M6 cards;
+  the wizard (6c); a runnable request example in the key reveal (6c); the
+  annotator surface (M5, paused); notifications, help, saved views; mobile —
+  the console is a desktop surface.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--type-ui);
+    line-height: var(--leading-ui);
+  }
+  :focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+  a { color: inherit; }
+
+  /* ==== review states ========================================================
+     Groups, used below:
+       PANEL  = s-panel s-judges s-keys s-reveal s-revoke s-toast s-loadfail
+       KEYS   = s-keys s-reveal s-revoke s-toast
+       TRACES = s-panel s-loadfail
+       ANN    = s-annotator s-forbidden
+       MULTI  = s-multi s-admin + ANN
+     No fragment at all is Home, one org — the landing and the common case.
+     Wrappers only: .v elements lay out as nothing (display: contents) when shown,
+     so never put .v on an element that carries styling of its own.
+     ========================================================================== */
+  .anchor { position: fixed; top: 0; left: 0; }
+  .v { display: none; }
+  .v-homelevel, .v-home, .v-staff, .v-eng, .v-single { display: contents; }
+
+  body:has(#s-panel:target, #s-keys:target, #s-reveal:target, #s-revoke:target,
+           #s-toast:target, #s-loadfail:target, #s-judges:target) .v-homelevel,
+  body:has(#s-panel:target, #s-keys:target, #s-reveal:target, #s-revoke:target,
+           #s-toast:target, #s-loadfail:target, #s-judges:target) .v-home,
+  body:has(#s-annotator:target, #s-forbidden:target) .v-homelevel,
+  body:has(#s-annotator:target, #s-forbidden:target) .v-home,
+  body:has(#s-annotator:target, #s-forbidden:target) .v-staff,
+  body:has(#s-annotator:target, #s-forbidden:target, #s-admin:target) .v-eng,
+  body:has(#s-notfound:target) .v-home,
+  body:has(#s-multi:target, #s-admin:target, #s-annotator:target, #s-forbidden:target) .v-single {
+    display: none;
+  }
+
+  body:has(#s-panel:target, #s-keys:target, #s-reveal:target, #s-revoke:target,
+           #s-toast:target, #s-loadfail:target, #s-judges:target) .v-panellevel,
+  body:has(#s-panel:target, #s-loadfail:target) .v-traces-head,
+  body:has(#s-panel:target) .v-traces-slot,
+  body:has(#s-loadfail:target) .v-loadfail,
+  body:has(#s-keys:target, #s-reveal:target, #s-revoke:target, #s-toast:target) .v-keys,
+  body:has(#s-judges:target) .v-judges,
+  body:has(#s-notfound:target) .v-notfound,
+  body:has(#s-annotator:target, #s-forbidden:target) .v-ann,
+  body:has(#s-annotator:target) .v-holding,
+  body:has(#s-forbidden:target) .v-forbidden,
+  body:has(#s-admin:target) .v-admin,
+  body:has(#s-admin:target) .v-settings,
+  body:has(#s-multi:target, #s-admin:target, #s-annotator:target, #s-forbidden:target) .v-multi {
+    display: contents;
+  }
+
+  /* Elements that are themselves positioned: shown directly, not via a wrapper. */
+  .scrim, .outside, .toast { display: none; }
+  body:has(#s-reveal:target) .scrim.reveal { display: grid; }
+  body:has(#s-revoke:target) .scrim.revoke { display: grid; }
+  body:has(#s-noorg:target) .outside { display: grid; }
+  body:has(#s-toast:target) .toast { display: flex; }
+
+  /* ==== review chrome (NOT product) ========================================= */
+  .review {
+    position: relative;
+    z-index: calc(var(--layer-toast) + 1);
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-bottom: var(--border-hair) solid var(--color-line-strong);
+  }
+  .review-label {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted); margin-right: var(--space-2);
+  }
+  .review a {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    text-decoration: none;
+  }
+  .review a:hover { border-color: var(--color-line-strong); }
+  .review-sep { width: var(--space-px); align-self: stretch; background: var(--color-line); margin: 0 var(--space-1); }
+  body:not(:has(.anchor:target)) .review a[href="#"],
+  body:has(#s-panel:target) .review a[href="#s-panel"],
+  body:has(#s-judges:target) .review a[href="#s-judges"],
+  body:has(#s-keys:target) .review a[href="#s-keys"],
+  body:has(#s-reveal:target) .review a[href="#s-reveal"],
+  body:has(#s-revoke:target) .review a[href="#s-revoke"],
+  body:has(#s-toast:target) .review a[href="#s-toast"],
+  body:has(#s-loadfail:target) .review a[href="#s-loadfail"],
+  body:has(#s-notfound:target) .review a[href="#s-notfound"],
+  body:has(#s-forbidden:target) .review a[href="#s-forbidden"],
+  body:has(#s-multi:target) .review a[href="#s-multi"],
+  body:has(#s-admin:target) .review a[href="#s-admin"],
+  body:has(#s-annotator:target) .review a[href="#s-annotator"],
+  body:has(#s-noorg:target) .review a[href="#s-noorg"] {
+    background: var(--color-action); color: var(--color-action-text); border-color: var(--color-action);
+  }
+
+  /* ==== shared primitives =================================================== */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .data { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .mark {
+    display: inline-block;
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+    border: var(--border-hair) solid;
+    border-radius: var(--radius-mark);
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase;
+    line-height: var(--leading-flat);
+    white-space: nowrap;
+  }
+  .mark.neutral { color: var(--state-neutral-fg); background: var(--state-neutral-tint); border-color: var(--state-neutral-line); }
+  .mark.warning { color: var(--state-warning-fg); background: var(--state-warning-tint); border-color: var(--state-warning-line); }
+  .mark.fail    { color: var(--state-fail-fg);    background: var(--state-fail-tint);    border-color: var(--state-fail-line); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--gap-tight);
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    line-height: var(--leading-ui);
+    padding: var(--pad-control-y) var(--pad-control-x);
+    border-radius: var(--radius-control);
+    border: var(--border-hair) solid var(--color-action);
+    background: var(--color-action); color: var(--color-action-text);
+    text-decoration: none; cursor: pointer; white-space: nowrap;
+    transition: background var(--duration-fast) var(--easing);
+  }
+  .btn:hover { background: var(--color-action-hover); }
+  .btn.quiet { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn.quiet:hover { background: var(--color-raised); }
+  .btn.danger { background: transparent; color: var(--state-fail-fg); border-color: var(--state-fail-line); }
+  .btn.danger:hover { background: var(--state-fail-tint); }
+  .btn.block { width: 100%; }
+
+  /* ==== the frame =========================================================== */
+  /* 16rem — shadcn Sidebar's default --sidebar-width, which phase 7 inherits (ADR-0046). */
+  .app { display: grid; grid-template-columns: calc(var(--space-16) * 4) 1fr; min-height: 0; }
+
+  .rail {
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    min-height: 0; overflow-y: auto;
+    padding: var(--pad-panel-y) var(--space-3);
+    background: var(--color-surface);
+    border-right: var(--border-hair) solid var(--color-line);
+  }
+  .wordmark {
+    padding: 0 var(--pad-field-x);
+    font-weight: var(--weight-semibold); letter-spacing: var(--tracking-snug);
+    text-decoration: none;
+  }
+
+  /* nav rows — Home link, sections, settings */
+  .nav-link {
+    display: flex; align-items: center; gap: var(--gap-inline);
+    min-height: var(--row-min);
+    padding: 0 var(--pad-field-x);
+    border-radius: var(--radius-control);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  a.nav-link:hover { background: var(--color-raised); }
+  .nav-link .mark { margin-left: auto; }
+  .nav-link .glyph { color: var(--color-text-muted); }
+  .nav-link.is-inert { color: var(--color-text-faint); cursor: not-allowed; }
+  .lock { width: 11px; height: 11px; flex: none; margin-left: auto; color: var(--color-text-faint); }
+  .is-current,
+  body:has(#s-judges:target) .nav-link[data-section="overview"],
+  body:has(#s-panel:target, #s-loadfail:target) .nav-link[data-section="traces"],
+  body:has(#s-keys:target, #s-reveal:target, #s-revoke:target, #s-toast:target) .nav-link[data-section="keys"] {
+    background: var(--color-sunken);
+    font-weight: var(--weight-semibold);
+    box-shadow: inset var(--border-thick) 0 0 var(--color-text);
+  }
+  body:has(#s-notfound:target) .home-link.is-current { background: transparent; font-weight: var(--weight-regular); box-shadow: none; }
+
+  /* the panel context: switcher, then its sections */
+  .context { display: flex; flex-direction: column; gap: var(--gap-tight); }
+  .context > .eyebrow { padding: 0 var(--pad-field-x); }
+  .sections { display: flex; flex-direction: column; gap: var(--space-px); }
+
+  /* menus */
+  .switch { position: relative; }
+  .switch > summary {
+    list-style: none;
+    display: flex; align-items: center; gap: var(--gap-inline);
+    min-height: var(--row-min);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field);
+    cursor: pointer;
+  }
+  .switch > summary::-webkit-details-marker { display: none; }
+  .switch > summary::after { content: "▾"; margin-left: auto; color: var(--color-text-muted); }
+  .switch.up > summary::after { content: "▴"; }
+  .switch > summary:hover { border-color: var(--color-line-strong); }
+  .switch[open] > summary { border-color: var(--color-line-strong); background: var(--color-sunken); }
+  .switch-text { display: flex; flex-direction: column; min-width: 0; }
+  .switch-text strong, .switch-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switch-text strong { font-weight: var(--weight-semibold); }
+  .placeholder { color: var(--color-text-muted); }
+
+  .menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + var(--space-1));
+    z-index: var(--layer-overlay);
+    display: flex; flex-direction: column; gap: var(--space-px);
+    padding: var(--space-1);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-overlay);
+  }
+  .switch.up .menu { top: auto; bottom: calc(100% + var(--space-1)); }
+  .menu-item {
+    display: flex; align-items: center; gap: var(--gap-inline);
+    min-height: var(--row-min);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    border-radius: var(--radius-control);
+    text-decoration: none;
+  }
+  .menu-item:hover { background: var(--color-raised); }
+  .menu-item .mark { margin-left: auto; }
+  .menu-rule { height: var(--space-px); background: var(--color-line-soft); margin: var(--space-1) 0; }
+  body:has(#s-panel:target, #s-keys:target, #s-reveal:target, #s-revoke:target,
+           #s-toast:target, #s-loadfail:target, #s-judges:target) .menu-item[data-panel="triage-routing"],
+  body:has(#s-multi:target) .menu-item[data-org="fernhill-support"],
+  body:has(#s-admin:target) .menu-item[data-org="kiln-studio"],
+  body:has(#s-annotator:target, #s-forbidden:target) .menu-item[data-org="quillon-docs"] {
+    background: var(--color-sunken); box-shadow: inset var(--border-thick) 0 0 var(--color-text);
+  }
+
+  /* the foot */
+  .foot {
+    margin-top: auto;
+    display: flex; flex-direction: column; gap: var(--gap-inline);
+    padding-top: var(--gap-stack);
+    border-top: var(--border-hair) solid var(--color-line);
+  }
+  .who { display: flex; flex-direction: column; gap: var(--gap-tight); padding: 0 var(--pad-field-x); }
+  .who-email { color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .org-line { display: flex; align-items: center; gap: var(--gap-tight); min-width: 0; }
+  .org-line span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .org-static { padding: 0 var(--pad-field-x); color: var(--color-text-muted); }
+
+  /* ==== the stage =========================================================== */
+  .stage {
+    min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    padding: var(--gap-section) var(--space-8);
+  }
+  .page-head {
+    display: flex; align-items: flex-end; gap: var(--gap-inline);
+    padding-bottom: var(--gap-stack);
+    border-bottom: var(--border-hair) solid var(--color-line-strong);
+  }
+  .page-head-text { display: flex; flex-direction: column; gap: var(--gap-tight); min-width: 0; }
+  .page-head h1 {
+    margin: 0;
+    font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .scope-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight); }
+  .scope-line .sep { color: var(--color-text-faint); }
+  .page-actions { margin-left: auto; display: flex; gap: var(--gap-inline); }
+
+  .slot {
+    flex: 1; min-height: calc(var(--space-20) * 4);
+    display: grid; place-content: center; justify-items: center; gap: var(--gap-tight);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    text-align: center;
+    background: var(--color-sunken);
+    border: var(--border-hair) dashed var(--color-line-strong);
+    border-radius: var(--radius-panel);
+  }
+  .slot p { margin: 0; max-width: var(--measure); color: var(--color-text-muted); font-size: var(--type-body); line-height: var(--leading-body); }
+  .slot .inline { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--gap-inline); margin-top: var(--gap-inline); }
+
+  /* surface 2 — in place of the content */
+  .statement {
+    align-self: flex-start;
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    max-width: var(--measure);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+  }
+  .statement.fail { box-shadow: inset var(--border-thick) 0 0 var(--state-fail-mark); }
+  .statement h2 {
+    margin: 0;
+    font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .statement p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); }
+  .statement .muted { color: var(--color-text-muted); }
+  .statement .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-inline); }
+
+  /* surface 3 — the action toast */
+  .toast {
+    position: fixed; right: var(--space-6); bottom: var(--space-6);
+    z-index: var(--layer-toast);
+    width: min(calc(100% - var(--space-12)), calc(var(--space-20) * 5));
+    flex-direction: column; gap: var(--gap-inline);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-overlay), inset var(--border-thick) 0 0 var(--state-fail-mark);
+  }
+  .toast-head { display: flex; align-items: center; gap: var(--gap-inline); }
+  .toast-head strong { font-weight: var(--weight-semibold); }
+  .toast p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); }
+  .toast .row { display: flex; align-items: center; gap: var(--gap-inline); }
+  .toast .row .btn { margin-left: auto; }
+
+  /* the modal slot */
+  .scrim {
+    position: fixed; inset: 0;
+    z-index: var(--layer-overlay);
+    place-items: center;
+    padding: var(--space-8);
+    background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  }
+  .modal {
+    width: min(100%, var(--measure));
+    display: flex; flex-direction: column; gap: var(--gap-stack);
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-overlay);
+  }
+  .modal h2 {
+    margin: 0;
+    font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .modal p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: var(--gap-tight) var(--space-4); margin: 0; }
+  .facts dt { align-self: center; }
+  .facts dd { margin: 0; font-family: var(--font-mono); font-size: var(--type-data); }
+  .secret-row { display: flex; align-items: stretch; gap: var(--gap-inline); }
+  .secret {
+    flex: 1; min-width: 0;
+    padding: var(--pad-field-y) var(--pad-field-x);
+    font-family: var(--font-mono); font-size: var(--type-data); line-height: var(--leading-snug);
+    word-break: break-all; user-select: all;
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-field);
+  }
+  .caution {
+    display: flex; align-items: flex-start; gap: var(--gap-inline);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    background: var(--state-warning-tint);
+    border: var(--border-hair) solid var(--state-warning-line);
+    border-radius: var(--radius-field);
+  }
+  .modal-actions { display: flex; justify-content: flex-end; gap: var(--gap-inline); }
+
+  /* outside the shell */
+  .outside {
+    position: fixed; inset: 0;
+    z-index: var(--layer-toast);
+    place-items: center;
+    padding: var(--space-8);
+    background: var(--color-bg);
+  }
+  .outside .statement { align-self: center; }
+</style>
+</head>
+
+<body data-surface="console">
+
+<!-- Review-state anchors. Selected with :target, read with :has(). -->
+<span id="s-panel" class="anchor"></span>
+<span id="s-judges" class="anchor"></span>
+<span id="s-keys" class="anchor"></span>
+<span id="s-reveal" class="anchor"></span>
+<span id="s-revoke" class="anchor"></span>
+<span id="s-toast" class="anchor"></span>
+<span id="s-loadfail" class="anchor"></span>
+<span id="s-notfound" class="anchor"></span>
+<span id="s-forbidden" class="anchor"></span>
+<span id="s-multi" class="anchor"></span>
+<span id="s-admin" class="anchor"></span>
+<span id="s-annotator" class="anchor"></span>
+<span id="s-noorg" class="anchor"></span>
+
+<!-- ============ REVIEW CHROME — not part of the product ============ -->
+<nav class="review" data-tone="light" data-density="compact" aria-label="Review states">
+  <span class="review-label">Review · 6b r2</span>
+  <a href="#">Home</a>
+  <a href="#s-panel">In a panel</a>
+  <a href="#s-judges">Overview</a>
+  <a href="#s-keys">Keys</a>
+  <a href="#s-reveal">Key reveal</a>
+  <a href="#s-revoke">Revoke confirm</a>
+  <span class="review-sep"></span>
+  <a href="#s-loadfail">Load failed</a>
+  <a href="#s-toast">Action failed</a>
+  <a href="#s-notfound">Link not available</a>
+  <a href="#s-forbidden">Role refused</a>
+  <span class="review-sep"></span>
+  <a href="#s-multi">Several orgs</a>
+  <a href="#s-admin">Admin · M8</a>
+  <a href="#s-annotator">Annotator at M4</a>
+  <a href="#s-noorg">No organisation</a>
+</nav>
+
+<div class="app">
+
+  <!-- ============ APP SHELL — the sidebar ============ -->
+  <aside class="rail" aria-label="Console">
+    <a class="wordmark" href="#">LabelLoop</a>
+
+    <div class="v v-staff">
+      <!-- HOME LINK (decision 2) -->
+      <div class="v v-homelevel">
+        <a class="nav-link home-link is-current" href="#" aria-current="page">Home</a>
+      </div>
+      <div class="v v-panellevel">
+        <a class="nav-link home-link" href="#"><span class="glyph">←</span> Home</a>
+      </div>
+
+      <!-- PANEL SWITCHER, then that panel's sections (decisions 3, 4) -->
+      <div class="context">
+        <span class="eyebrow">Panel</span>
+        <details class="switch">
+          <summary>
+            <span class="switch-text">
+              <span class="v v-homelevel"><strong class="placeholder">Choose a panel</strong><span class="data">3 panels</span></span>
+              <span class="v v-panellevel"><strong>Triage routing gate</strong><span class="data">triage-routing</span></span>
+            </span>
+          </summary>
+          <div class="menu" role="menu">
+            <a class="menu-item" data-panel="triage-routing" href="#s-panel" role="menuitem">
+              <span class="switch-text"><strong>Triage routing gate</strong><span class="data">triage-routing</span></span>
+            </a>
+            <a class="menu-item" data-panel="refund-reply" href="#s-panel" role="menuitem">
+              <span class="switch-text"><strong>Refund reply gate</strong><span class="data">refund-reply</span></span>
+            </a>
+            <a class="menu-item" data-panel="escalation-summary" href="#s-panel" role="menuitem">
+              <span class="switch-text"><strong>Escalation summary gate</strong><span class="data">escalation-summary</span></span>
+            </a>
+            <div class="menu-rule"></div>
+            <a class="menu-item" href="#" role="menuitem" title="Opens panel-create.html — drawn in 6c">
+              <span class="switch-text"><strong>Create panel</strong></span>
+            </a>
+          </div>
+        </details>
+
+        <div class="v v-panellevel">
+          <nav class="sections" aria-label="Triage routing gate">
+            <a class="nav-link" data-section="overview" href="#s-panel">Overview</a>
+            <span class="nav-link is-inert" aria-disabled="true" title="Authoring is locked until an eval pass exists (ADR-0061). The section itself is readable once judges exist.">Judges <svg class="lock" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.2" y="5.2" width="7.6" height="5.4" rx="1"/><path d="M4.1 5.2V3.9a1.9 1.9 0 0 1 3.8 0v1.3"/></svg></span>
+            <a class="nav-link" data-section="traces" href="#s-panel">Traces</a>
+            <a class="nav-link" data-section="keys" href="#s-keys">Keys</a>
+            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M5, and opens at 50 collected traces">Annotation <span class="mark neutral">M5</span></span>
+            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Taxonomy <span class="mark neutral">M6</span></span>
+            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M6">Alignment <span class="mark neutral">M6</span></span>
+            <span class="nav-link is-inert" aria-disabled="true" title="Arrives at M7">Fine-tunes <span class="mark neutral">M7</span></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+
+    <!-- THE FOOT: settings (admins, M8), identity, organisation, sign out -->
+    <div class="foot">
+      <div class="v v-settings">
+        <a class="nav-link" href="#s-admin" title="Admins only · appears at M8 (ADR-0059)"><span class="glyph">⚙︎</span> Organisation settings</a>
+      </div>
+
+      <div class="who">
+        <span class="data who-email">dana.okafor@fernhill.example</span>
+      </div>
+
+      <!-- One membership: plain text (decision 5) -->
+      <div class="v v-single">
+        <div class="org-static org-line"><span class="mark neutral">engineer</span><span>Fernhill Support</span></div>
+      </div>
+
+      <!-- Several memberships: a menu opening upward, role per org -->
+      <div class="v v-multi">
+        <details class="switch up">
+          <summary>
+            <span class="org-line">
+              <span class="v v-eng"><span class="mark neutral">engineer</span></span>
+              <span class="v v-admin"><span class="mark neutral">admin</span></span>
+              <span class="v v-ann"><span class="mark neutral">annotator</span></span>
+              <span>
+                <span class="v v-eng">Fernhill Support</span>
+                <span class="v v-admin">Kiln Studio</span>
+                <span class="v v-ann">Quillon Docs</span>
+              </span>
+            </span>
+          </summary>
+          <div class="menu" role="menu">
+            <a class="menu-item" data-org="fernhill-support" href="#s-multi" role="menuitem">
+              <span class="switch-text"><strong>Fernhill Support</strong><span class="data">fernhill-support</span></span>
+              <span class="mark neutral">engineer</span>
+            </a>
+            <a class="menu-item" data-org="kiln-studio" href="#s-admin" role="menuitem">
+              <span class="switch-text"><strong>Kiln Studio</strong><span class="data">kiln-studio</span></span>
+              <span class="mark neutral">admin</span>
+            </a>
+            <a class="menu-item" data-org="quillon-docs" href="#s-annotator" role="menuitem">
+              <span class="switch-text"><strong>Quillon Docs</strong><span class="data">quillon-docs</span></span>
+              <span class="mark neutral">annotator</span>
+            </a>
+          </div>
+        </details>
+      </div>
+
+      <a class="btn quiet block" href="#" title="Signs out; returns to Sign in">Sign out</a>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="stage">
+
+    <!-- HOME -->
+    <div class="v v-home">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data">
+            <span class="v v-eng">fernhill-support</span>
+            <span class="v v-admin">kiln-studio</span>
+          </div>
+          <h1>Home</h1>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="#" title="Opens panel-create.html — drawn in 6c">Create panel</a>
+        </div>
+      </header>
+      <section class="slot" aria-label="Screen content slot">
+        <span class="eyebrow">Screen content · not drawn in 6b</span>
+        <p><strong>At M4:</strong> the panel list, and its empty state on a database with no panel, where M4’s demo starts. Choosing a panel here or in the switcher opens it.</p>
+        <p><strong>From M6:</strong> overview cards across panels above the list — <code>console-dashboard</code>’s contents, for which Phase A stays paused.</p>
+      </section>
+    </div>
+
+    <!-- IN A PANEL: Overview — the panel's home and its onboarding (decision 4) -->
+    <div class="v v-judges">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>triage-routing</span></div>
+          <h1>Overview</h1>
+        </div>
+      </header>
+      <section class="slot" aria-label="Screen content slot">
+        <span class="eyebrow">Screen content · not drawn in 6b</span>
+        <p><strong>At M4:</strong> the panel’s home while it collects — state, progress toward the annotation gate, and the integration snippet carrying the key issued with the panel. Drawn in full in <code>panel-create.html</code>.</p>
+        <p><strong>At M6:</strong> this becomes the panel’s dashboard, and <strong>Judges</strong> unlocks once an eval pass exists — its read-only list at M4, its authoring at M6, each judge citing the taxonomy category it came from.</p>
+      </section>
+    </div>
+
+    <!-- IN A PANEL: Traces -->
+    <div class="v v-traces-head">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>triage-routing</span></div>
+          <h1>Traces</h1>
+        </div>
+      </header>
+    </div>
+    <div class="v v-traces-slot">
+      <section class="slot" aria-label="Screen content slot">
+        <span class="eyebrow">Screen content · not drawn in 6b</span>
+        <p>The trace table for <strong>triage-routing</strong>, and the one section never locked — a customer reads their own traffic from the first call. It exists today, unstyled and org-wide; phase 8 scopes it to the panel and extends it.</p>
+      </section>
+    </div>
+
+    <!-- SURFACE 2: a failed load, in place of the content -->
+    <div class="v v-loadfail">
+      <section class="statement fail" role="alert">
+        <div class="row"><span class="mark fail">failed</span><span class="eyebrow">Traces</span></div>
+        <h2>Traces couldn’t be loaded</h2>
+        <p>The server hit an internal error. Nothing about this panel has changed.</p>
+        <div class="row">
+          <span class="data">request 4bf92f3577b34da6a3ce929d0e0e4736</span>
+          <a class="btn quiet" href="#s-panel">Reload</a>
+        </div>
+      </section>
+    </div>
+
+    <!-- IN A PANEL: Keys -->
+    <div class="v v-keys">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>fernhill-support</span><span class="sep">/</span><span>triage-routing</span></div>
+          <h1>Keys</h1>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="#s-reveal">Issue key</a>
+        </div>
+      </header>
+      <section class="slot" aria-label="Screen content slot">
+        <span class="eyebrow">Screen content · not drawn in 6b</span>
+        <p>The keys for <strong>triage-routing</strong>: name, last four, status. Phase 8. What the shell owns is the modal either action opens, and the toast if the action fails.</p>
+        <div class="inline">
+          <a class="btn quiet" href="#s-reveal">Issue → reveal</a>
+          <a class="btn quiet" href="#s-revoke">Revoke → confirm</a>
+          <a class="btn quiet" href="#s-toast">Revoke → fails</a>
+        </div>
+      </section>
+    </div>
+
+    <!-- SURFACE 2: a link to something not available — no silent swap (decision 9) -->
+    <div class="v v-notfound">
+      <section class="statement" role="alert">
+        <span class="eyebrow">Not available</span>
+        <h2>This link isn’t available to your account</h2>
+        <p>What it points to doesn’t exist, or this account can’t see it. Nothing has been switched — you’re still in Fernhill Support.</p>
+        <div class="row"><a class="btn" href="#">Go to Home</a></div>
+      </section>
+    </div>
+
+    <!-- ANNOTATOR AT M4: the shell with no Home and no panel -->
+    <div class="v v-holding">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>quillon-docs</span></div>
+          <h1>Nothing to review yet</h1>
+        </div>
+      </header>
+      <section class="statement">
+        <p>You’re an annotator in Quillon Docs. Reviewing traces will open here once annotation is available in LabelLoop — until then there is nothing in the console for this role.</p>
+        <p class="muted">If you work in another organisation, switch to it at the foot of the sidebar.</p>
+      </section>
+    </div>
+
+    <!-- SURFACE 2: role refused — replaces content, keeps the shell -->
+    <div class="v v-forbidden">
+      <header class="page-head">
+        <div class="page-head-text">
+          <div class="scope-line data"><span>quillon-docs</span><span class="sep">/</span><span>keys</span></div>
+          <h1>Keys isn’t available to your role</h1>
+        </div>
+      </header>
+      <section class="statement" role="alert">
+        <p>Your role in Quillon Docs is <span class="mark neutral">annotator</span>, which doesn’t include this screen.</p>
+        <p class="muted">An admin of Quillon Docs can change your role. If you followed a link, it may have been meant for someone else.</p>
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<!-- ============ SURFACE 3 — the action toast (decision 8) ============ -->
+<!-- Never dismisses itself. No retry: INTERNAL is not retryable in the taxonomy. -->
+<div class="toast" role="alert">
+  <div class="toast-head"><span class="mark fail">failed</span><strong>Couldn’t revoke support-router</strong></div>
+  <p>The key is unchanged and <strong>still active</strong> — calls using it are still accepted.</p>
+  <div class="row">
+    <span class="data">request 4bf92f3577b34da6a3ce929d0e0e4736</span>
+    <a class="btn quiet" href="#s-keys">Dismiss</a>
+  </div>
+</div>
+
+<!-- ============ MODAL SLOT — one-time key reveal (decision 10) ============ -->
+<!-- No close button; Escape and the backdrop do nothing. The only exit is explicit. -->
+<div class="scrim reveal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reveal-title">
+    <span class="eyebrow">Key issued</span>
+    <h2 id="reveal-title">Copy this key now</h2>
+    <dl class="facts">
+      <dt class="eyebrow">Name</dt><dd>support-router</dd>
+      <dt class="eyebrow">Panel</dt><dd>triage-routing</dd>
+      <dt class="eyebrow">Can</dt><dd>evaluate this panel</dd>
+    </dl>
+    <div class="secret-row">
+      <div class="secret" aria-label="API key">llk_test_9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c</div>
+      <a class="btn quiet" href="#s-reveal">Copy</a>
+    </div>
+    <div class="caution">
+      <span class="mark warning">shown once</span>
+      <p>LabelLoop keeps only a hash of this key. Once this closes, the full key can’t be shown again — to you or anyone. If it’s lost, revoke it and issue another.</p>
+    </div>
+    <div class="modal-actions">
+      <a class="btn" href="#s-keys">I’ve copied it</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL SLOT — revoke confirmation (decisions 10, 11) ============ -->
+<!-- Escape, the backdrop and Cancel all dismiss: dismissing is the safe outcome. -->
+<div class="scrim revoke">
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="revoke-title">
+    <span class="eyebrow">Revoke key</span>
+    <h2 id="revoke-title">Revoke support-router?</h2>
+    <p>Calls using the key ending <span class="data">9f3c</span> are refused from the moment you confirm. The key stays in the list, marked revoked, and its history stays in the audit log.</p>
+    <p class="data">This can’t be undone. A replacement is a new key.</p>
+    <div class="modal-actions">
+      <a class="btn quiet" href="#s-keys">Cancel</a>
+      <a class="btn danger" href="#s-keys">Revoke key</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ OUTSIDE THE SHELL — no membership (CONSOLE_FLOW Q4) ============ -->
+<div class="outside">
+  <section class="statement" aria-labelledby="noorg-title">
+    <span class="eyebrow">LabelLoop</span>
+    <h2 id="noorg-title">This account isn’t in an organisation</h2>
+    <p>You’re signed in with GitHub as <span class="data">sam.reyes@mail.example</span>, but the account hasn’t been added to any LabelLoop organisation — and organisations can’t be created from here yet.</p>
+    <p class="muted">If you were expecting access, the person who administers your organisation needs to add this account.</p>
+    <div class="modal-actions">
+      <a class="btn quiet" href="#">Sign out</a>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

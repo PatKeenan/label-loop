@@ -1,8 +1,42 @@
-# Mockup Brief — Phase A: PAUSED (record)
+# Mockup Brief — Phase A: PARTIALLY RESUMED for the console frame (M4)
 
-**Status:** paused 2026-08-20. The project is backend-first (M0 → M1); the first
-milestone that needs a designed screen is **M5** (annotator surface). This file is now a
-record of what Phase A settled and what it left open — not a work queue.
+**Status:** paused 2026-08-20; **partially resumed 2026-09-11** (ADR-0055) for exactly three
+artifacts. Everything else in this file below the next section is the record of the pause,
+and still holds.
+
+## The M4 resume — three artifacts, in this order
+
+Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`, phase 6. Each is
+reviewed and approved before the next is drawn, because each is drawn from the one before.
+
+1. [x] **`CONSOLE_FLOW.md`** — *approved 2026-09-14.* The flow map. Every console screen
+   M4 → M8, its milestone, its entry point and its scope; screens that do not exist are
+   marked as such. Not a design.
+2. [x] **`console-shell.html`** — *r2 approved 2026-09-15.* The frame, redrawn after the first review. A persistent left
+   sidebar (ADR-0056, amended 2026-09-14) with two levels: Home and a panel, "← Home" out of
+   a panel, a **panel** switcher (the harvest's "classifier switcher", renamed by ADR-0019)
+   whose sections are always that panel's, and at the foot identity, the organisation, and
+   admin-only settings that appear at M8 (ADR-0059). Plus the modal slot and three error
+   surfaces. Phase 7 builds it, so phases 7–8 are blocked on its approval.
+3. [x] **`panel-create.html`** — *r3 approved 2026-09-15.* No longer a wizard:
+   creating a panel is **one step** (name, slug, threshold), and the panel's own **Overview** is
+   the onboarding screen — collecting state, progress toward the 50-trace annotation gate, and a
+   copyable curl / Node / Python snippet carrying the key issued with the panel. Judge authoring
+   is **locked behind an eval pass** (ADR-0061) and moves to M6; the measured model picker
+   survives in the file as an explicitly-marked M6 reference.
+
+**Why the resume is this narrow.** Drawing the wizard alone would have let one screen invent
+the app shell; drawing every screen would repeat what paused Phase A. `annotator-session` and
+`console-dashboard` stay paused, and the six blockers at the bottom of this file stay open —
+none of them gates these three.
+
+---
+
+# The pause, as recorded on 2026-08-20
+
+The project was backend-first (M0 → M1); the first milestone then expected to need a
+designed screen was **M5** (annotator surface). This part is a record of what Phase A settled
+and what it left open — not a work queue.
 
 Full design rationale, extracted verbatim from the screen files before they were deleted:
 **`thoughts/shared/research/2026-08-20_phase-a-design-harvest.md`**. That document also
@@ -36,6 +70,7 @@ milestone demands better.
    agreement, cost per call frontier vs fine-tune. The receipts. [5.10]
 3. `panel-create.html` (P1) — wizard: name, judges, prompt/context, model →
    version 1 + API key reveal (shown once). The interviewer's entry point. [5.2, 5.1]
+   *Brought forward to M4 by ADR-0055 — see the top of this file.*
 
 ## Deferred (unstyled until a milestone demands better)
 Trace explorer · taxonomy builder · fine-tune unlock and results · alignment session

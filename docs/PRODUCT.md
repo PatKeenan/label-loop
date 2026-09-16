@@ -31,7 +31,7 @@ Both send an artifact and receive per-judge verdicts. Where the artifact itself 
 
 ## 4. Core product loop
 
-1. **Create panel** — Team defines a panel in the UI: name, description, the artifact it judges, and its first judges. A judge is one binary question with a definition and optional few-shot examples, never a bundled multi-criteria call.
+1. **Create panel** — Team defines a panel in the UI: name, description, and the artifact it judges. **A panel can start in a collecting state, with no judges at all (ADR-0060):** it accepts calls, captures traces and judges nothing, because steps 5–7 below are where judges actually come from. Inventing them here, before any traffic has been seen, is guessing at failure modes. A judge is one binary question with a definition and optional few-shot examples, never a bundled multi-criteria call.
 2. **Choose the model** — Team selects which model their judges run on, globally or per judge. We route those calls, which is what makes trace capture and later model-swapping ours to do.
 3. **Get scoped token** — Team receives an API key scoped to that panel, and calls it as one step inside their own workflow.
 4. **Judge + trace** — Every call runs each judge independently and is fully traced: artifact, per-judge verdict and reasoning, latency, tokens, cost, model version. Judges are never bundled into one prompt — a bundled verdict cannot be attributed, measured, or paid against.
@@ -53,6 +53,8 @@ Both send an artifact and receive per-judge verdicts. Where the artifact itself 
 - Full tenant data isolation.
 
 ### 5.2 Panel & judge management
+- **Judges are authored only from an eval pass, never free-form (ADR-0061).** A judge carries a link to the annotations and traces that produced it, because "which traces, annotated by whom, led to this judge" is the claim alignment scores, the contribution ledger and the audit log all rest on. A panel's judge authoring is locked until it has collected enough traffic to annotate — **50 traces unlocks annotation and 100 is the ideal first pass** — and the panel's own home shows progress toward it. Traces are visible throughout; the lock is on authoring, never on seeing your own data.
+- **A panel may convene no judges — the collecting state (ADR-0060).** It accepts calls, captures every trace, costs no provider tokens, and says so explicitly in the response rather than auto-passing a gate nobody has configured yet. It leaves the state by activating a version that convenes judges.
 - CRUD for panels and for the judges inside them. A judge is one binary question and never a bundled multi-criteria call; the caller applies whatever policy they want across the per-judge results.
 - Judge type: `llm` or `code`. Code judges are deterministic checks (schema assertion, regex) with near-zero cost and latency and nothing to align.
 - **Judge polarity, set per judge and two-valued:** answering `true` either passes or fails. `is-missing-repro: true` is a failure; `on-brand: true` is a success. Every judge therefore carries a weight, participates in the score, and can fail the panel (ADR-0034). Without polarity the panel score is uncomputable, because summing raw booleans across judges that point in opposite directions is meaningless.

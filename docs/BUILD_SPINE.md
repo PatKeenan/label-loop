@@ -96,17 +96,26 @@ tooling.
 
 ## M4 — Console + auth + the interviewer flow (Categories 6, 1)
 OIDC login; roles admin/engineer/annotator enforced server-side. Minimal engineer
-console: create panel and judges (wizard → immutable version 1), issue/revoke keys, raw
-trace table. The judge wizard includes a **capability-gated model picker** — the
-catalogue client and per-endpoint gating are deferred here from M1 (ADR-0021), because a
-model is offerable only when an endpoint satisfying that judge's pin actually supports
-structured output, and the model-level capability list is a union across endpoints that
-do not all agree. Measurements to build this against — six models priced, timed and
+console: **create a panel in one step and start collecting** (ADR-0060, moved here from M5
+on 2026-09-15), issue/revoke keys, raw trace table, and a panel home that onboards —
+collecting state, progress toward the annotation threshold, and a copyable integration
+snippet carrying the key issued with the panel.
+**Judges are NOT authored here (ADR-0061).** They come only from an eval pass, so the
+Judges section ships locked, and authoring — with the **capability-gated model picker**
+whose API half landed in phase 4 (ADR-0021) — moves to M6 beside the taxonomy that
+produces them. The picker's reason for existing is unchanged: a model is offerable only
+when an endpoint satisfying that judge's pin actually supports structured output, and the
+model-level capability list is a union across endpoints that do not all agree. Measurements to build this against — six models priced, timed and
 validated against the live API, including a model that advertises structured output and
 still breaks the output contract — are in
 `thoughts/shared/research/2026-08-30_model-tier-measurements.md`.
-**Demo moment:** the full interviewer flow end-to-end, no seeding scripts.
-**Not now:** annotator UI polish, guest experts, taxonomy tooling, **and the client SDK**.
+**Demo moment:** sign in → create a panel in one step → copy the snippet → curl → watch
+traces arrive against a collecting panel, with the annotation gate counting up. No seeding
+scripts. (Rewritten 2026-09-15: it used to read "the full interviewer flow end-to-end",
+which meant a wizard authoring judges before any traffic existed — the order ADR-0061
+forbids.)
+**Not now:** annotator UI polish, guest experts, taxonomy tooling, judge authoring, **and
+the client SDK**.
 
 > **Corrected 2026-09-11.** This line used to read "Publish thin client SDK … language/
 > registry per STACK_DECISIONS.md D5 — see ADR-0002", which contradicted both of the things
@@ -118,6 +127,11 @@ still breaks the output contract — are in
 > needs an ADR superseding 0002 (stakeholder-confirmed 2026-09-11).
 
 ## M5 — Annotation loop (Category 2-part)
+**Collecting moved to M4** (ADR-0060, amended 2026-09-15), so this milestone inherits panels
+that already hold real traffic. What M5 owns is what happens to it: **annotation unlocks at
+50 collected traces** (ADR-0061), and the seeded panel's knowingly-wrong placeholder judge is
+deleted, below. The panel version n+1 write path stays with M6, which is where judges are
+authored.
 Annotator surface (screen: annotator-session): one trace at a time, agree/correct,
 failure note, session goal. Sampling queues: random, low-confidence. Every annotation
 row carries annotator_id + judge_version + dataset-version linkage (ADR-0003).
@@ -133,7 +147,7 @@ does not drop enum values), a rewritten `judge_versions_weight_matches_polarity`
 reason to be null. The prose caught up in a separate documentation pass. **The seeded panel
 did not:** three of its four judges were deleted as unexpressible, `needs-human` survives
 only because a panel with no judges makes `evaluate` throw `NOT_FOUND` and is knowingly
-wrong under ADR-0036, and what is left is a one-judge placeholder until the panel is
+wrong under ADR-0036 — **which ADR-0060 removes the need for, and it goes when that ships** — and what is left is a one-judge placeholder until the panel is
 re-authored from a real open-coding pass. Doing that migration here was cheap while every
 database was disposable; it would not have been once annotations FK to judge versions
 (ADR-0003).
