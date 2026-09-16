@@ -118,6 +118,14 @@ still breaks the output contract — are in
 > needs an ADR superseding 0002 (stakeholder-confirmed 2026-09-11).
 
 ## M5 — Annotation loop (Category 2-part)
+**Leads this milestone: a panel can COLLECT before it judges (ADR-0060).** A panel accepts
+calls, captures every trace and convenes no judges, so a team integrates and gathers real
+traffic BEFORE inventing judges — which is the order this product's own loop requires, since
+nobody knows their failure modes until an expert has read their traffic. It carries the
+`/v1` contract change (an explicit state, `passed`/`score` nullable), the schema change that
+makes a version with no judges representable, and **the panel version n+1 write path**, which
+nothing scheduled before now: leaving collecting mode IS that write. It also deletes the
+seeded panel's knowingly-wrong placeholder judge, below.
 Annotator surface (screen: annotator-session): one trace at a time, agree/correct,
 failure note, session goal. Sampling queues: random, low-confidence. Every annotation
 row carries annotator_id + judge_version + dataset-version linkage (ADR-0003).
@@ -133,7 +141,7 @@ does not drop enum values), a rewritten `judge_versions_weight_matches_polarity`
 reason to be null. The prose caught up in a separate documentation pass. **The seeded panel
 did not:** three of its four judges were deleted as unexpressible, `needs-human` survives
 only because a panel with no judges makes `evaluate` throw `NOT_FOUND` and is knowingly
-wrong under ADR-0036, and what is left is a one-judge placeholder until the panel is
+wrong under ADR-0036 — **which ADR-0060 removes the need for, and it goes when that ships** — and what is left is a one-judge placeholder until the panel is
 re-authored from a real open-coding pass. Doing that migration here was cheap while every
 database was disposable; it would not have been once annotations FK to judge versions
 (ADR-0003).
