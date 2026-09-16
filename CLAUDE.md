@@ -58,20 +58,32 @@ thoughts/ directory is decision provenance for the public writeup — write acco
 **M4 — console, auth, and the interviewer flow** (docs/BUILD_SPINE.md), from
 `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`. M0–M3 are complete (their
 plans are in `thoughts/shared/plans/complete/`), and two M5 polarity plans landed early. M4
-phases 1–5 — the backend half — are merged (#58–#63). **Next is phase 6**, the human review
-gate, which is mockup work rather than application code.
+phases 1–5 — the backend half — are merged (#58–#63), and **phase 6, the human review gate,
+is merged as #65**. **Next is phase 7**: the frame, BUILT — Tailwind + shadcn/ui, the
+`tokens.css` conversion (ADR-0046, and its two alias rules are load-bearing), and the sidebar
+shell drawn in `mockups/console-shell.html` r3.
 
-**Phase A has RESUMED, partially** (ADR-0055, 2026-09-11) — for exactly three artifacts: a
-console flow map, `mockups/console-shell.html`, and `mockups/panel-create.html` drawn inside
-the approved shell. `annotator-session` and `console-dashboard` stay paused, and the six
-product decisions listed in `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md`
-stay open — none of them gates the three artifacts above. Phase A was paused on 2026-08-20
-after four draft screens made six product decisions ahead of PRODUCT.md; that history is why
-the resume is scoped this narrowly. The Phase A hard rules above still apply in full.
-`mockups/tokens.css` (approved) and `tokens-preview.html` are retained. See
-`mockups/BRIEF.md` for the record.
+**Phase 8's scope changed underneath it — read the plan's Deviations 32–41 before planning or
+implementing it.** Two decisions taken during phase 6's review moved the milestone:
+**ADR-0060** (a panel COLLECTS before it judges, moved from M5 into M4) and **ADR-0061**
+(judges are authored only from an eval pass). So phase 8 no longer builds a judge wizard or a
+model-picker UI — both move to M6 beside the taxonomy — and instead builds one-step panel
+creation, a panel Overview that onboards (collecting state, progress toward the 50-trace
+annotation gate, an integration snippet), a key issued WITH the panel, a locked Judges
+section, and the `/v1` contract change that makes a judgeless panel legitimate. BUILD_SPINE's
+M4 deliverables and demo moment were rewritten to match.
+
+**Phase A's partial resume is COMPLETE** (ADR-0055). All three artifacts were reviewed and
+approved 2026-09-14/15: `mockups/CONSOLE_FLOW.md`, `mockups/console-shell.html` (r3) and
+`mockups/panel-create.html` (r3). Phase 7 and 8 build from those screens and never port their
+HTML (Phase C). `annotator-session` and `console-dashboard` stay PAUSED, and the six product
+decisions in `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open — none
+of them gated these three. `mockups/tokens.css` (approved) and `tokens-preview.html` are
+retained; the Phase A hard rules above still apply in full. See `mockups/BRIEF.md`.
 
 (This section read "backend-first: M0 is the priority, Phase A is PAUSED" until 2026-09-14,
-three milestones after it stopped being true. It was corrected before a context reset,
-because a fresh session reads this file first and treats it as overriding — and would have
-stalled or refused at phase 6.)
+three milestones after it stopped being true, and was corrected before a context reset —
+because a fresh session reads this file first and treats it as overriding, and would have
+stalled or refused at phase 6. Updated again on 2026-09-15 for the same reason: phase 6 is
+done, and a session starting from the stale text would have built a wizard that two ADRs
+had just removed.)
