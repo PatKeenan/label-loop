@@ -47,9 +47,20 @@ export const traces = pgTable(
     artifact: text('artifact').notNull(),
     /** Caller-supplied context. Their metadata, opaque to us. */
     context: jsonbColumn<Record<string, string>>('context'),
-    /** The panel decision, denormalised so the common read needs no fan-in. */
-    passed: boolean('passed').notNull(),
-    score: real('score').notNull(),
+    /**
+     * The panel decision, denormalised so the common read needs no fan-in.
+     *
+     * **Both are NULLABLE, and only for one reason** (ADR-0060): a COLLECTING panel — one
+     * with no judges yet — captures the trace in full and convenes nobody, so there is no
+     * verdict and no score. A score over zero judges is not 0, it is undefined, and storing
+     * a 0 would put a number in the trace table that reads as a real result.
+     *
+     * Null here therefore means exactly "this panel had no judges when the call arrived",
+     * and nothing else. A judged evaluation always writes both, including a partial one,
+     * where `complete` is what says the score was computed over a smaller denominator.
+     */
+    passed: boolean('passed'),
+    score: real('score'),
     /** False when a scoring judge did not run, so `score` is real but partial. */
     complete: boolean('complete').notNull(),
     /** Echoed from the panel version, so the decision is auditable from the row alone. */

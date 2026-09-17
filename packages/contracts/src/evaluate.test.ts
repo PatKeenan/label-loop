@@ -211,6 +211,7 @@ describe('evaluation response', () => {
     )
 
   const evaluation = {
+    state: 'judged' as const,
     passed: false,
     score: 0.5,
     complete: true,
@@ -218,6 +219,22 @@ describe('evaluation response', () => {
     aggregation: { policy: 'weighted_threshold' as const, panel_version: newId('pnv_') },
     judges: sixJudges(3),
     trace_id: newId('tr_'),
+  }
+
+  /**
+   * Parse, and assert the JUDGED shape while doing it.
+   *
+   * `passed` and `score` are nullable on the contract since ADR-0060, because a COLLECTING
+   * panel has no verdict — so every test below that reads them as numbers has to say it is
+   * looking at a judged evaluation. Stating it here makes that an assertion rather than a
+   * cast, and it is the invariant worth holding: **a judged panel always has both.**
+   */
+  const parseJudged = (input: unknown) => {
+    const parsed = evaluationSchema.parse(input)
+    if (parsed.state !== 'judged' || parsed.passed === null || parsed.score === null) {
+      throw new Error('expected a judged evaluation with a verdict and a score')
+    }
+    return { ...parsed, passed: parsed.passed, score: parsed.score }
   }
 
   test('carries the decision, the score, and the bar it was judged against', () => {
@@ -237,7 +254,7 @@ describe('evaluation response', () => {
   test('the score is recomputable from the judges alone — 3 of 6 equal weights is 0.5', () => {
     // The whole point of publishing `weight`: a caller can audit the arithmetic rather
     // than trusting it, which is what a deterministic gate needs.
-    const parsed = evaluationSchema.parse(evaluation)
+    const parsed = parseJudged(evaluation)
     const recomputed = Object.values(parsed.judges)
       .filter((judge) => judge.passed === true)
       .reduce((total, judge) => total + (judge.weight ?? 0), 0)
@@ -246,7 +263,7 @@ describe('evaluation response', () => {
   })
 
   test('a panel that clears its bar passes', () => {
-    const parsed = evaluationSchema.parse({
+    const parsed = parseJudged({
       ...evaluation,
       passed: true,
       score: 5 / 6,

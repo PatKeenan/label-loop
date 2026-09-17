@@ -153,14 +153,30 @@ export const TracesPage = () => {
                       than as a column of yes/no nobody can interpret.
                     */}
                     <span className="flex items-center gap-[var(--gap-tight)]">
-                      <Mark tone={trace.passed ? 'success' : 'fail'}>
-                        {trace.passed ? 'pass' : 'fail'}
-                      </Mark>
-                      {trace.complete ? null : <Mark tone="warning">partial</Mark>}
+                      {/*
+                        A NULL verdict is not a failure — it is a COLLECTING panel (ADR-0060):
+                        the trace was captured in full and no judge was convened, so there is
+                        nothing to pass or fail. Rendering it as `fail` would be the console
+                        inventing a verdict nobody reached, and `pass` would be worse.
+                      */}
+                      {trace.passed === null ? (
+                        <Mark tone="neutral">collecting</Mark>
+                      ) : (
+                        <Mark tone={trace.passed ? 'success' : 'fail'}>
+                          {trace.passed ? 'pass' : 'fail'}
+                        </Mark>
+                      )}
+                      {trace.passed !== null && !trace.complete ? (
+                        <Mark tone="warning">partial</Mark>
+                      ) : null}
                     </span>
                   </Cell>
                   <Cell>
-                    <Data className="text-foreground">{trace.score.toFixed(2)}</Data>
+                    {/* An em dash, not 0.00: a score over zero judges is undefined, and a
+                        number here would read as a real result. */}
+                    <Data className="text-foreground">
+                      {trace.score === null ? '—' : trace.score.toFixed(2)}
+                    </Data>
                   </Cell>
                   <Cell>
                     <Data>{trace.threshold.toFixed(2)}</Data>

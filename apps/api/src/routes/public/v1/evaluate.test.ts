@@ -74,6 +74,15 @@ const PINNED_JUDGE_VERSION = newId('jdv_')
 const PINNED_KEY = newId('key_')
 const PINNED_PLAINTEXT = `llk_test_${'d'.repeat(64)}`
 
+/**
+ * A COLLECTING panel: a live version with NO judges (ADR-0060). Its own panel, for the same
+ * reason the pinned one is — every other test here asserts on the main panel's judge count.
+ */
+const COLLECTING_PANEL = newId('pnl_')
+const COLLECTING_PANEL_VERSION = newId('pnv_')
+const COLLECTING_KEY = newId('key_')
+const COLLECTING_PLAINTEXT = `llk_test_${'e'.repeat(64)}`
+
 /** Deliberately unlike the default: every field must be shown to survive the round trip. */
 const ROUTED_PIN: ModelPin = {
   capabilities: ['structured_outputs'],
@@ -176,7 +185,28 @@ const seedFixtures = async () => {
     .set({ currentVersionId: PINNED_PANEL_VERSION })
     .where(eq(schema.panels.id, PINNED_PANEL))
 
+  // A panel with a live version and no judges. Nothing else is inserted for it — that
+  // absence IS the fixture.
+  await db
+    .insert(schema.panels)
+    .values({ id: COLLECTING_PANEL, orgId: ORG, slug: 'collecting', name: 'Collecting' })
+  await db
+    .insert(schema.panelVersions)
+    .values({ id: COLLECTING_PANEL_VERSION, panelId: COLLECTING_PANEL, version: 1, threshold: 0.5 })
+  await db
+    .update(schema.panels)
+    .set({ currentVersionId: COLLECTING_PANEL_VERSION })
+    .where(eq(schema.panels.id, COLLECTING_PANEL))
+
   await db.insert(schema.apiKeys).values([
+    {
+      id: COLLECTING_KEY,
+      orgId: ORG,
+      panelId: COLLECTING_PANEL,
+      name: 'Collecting panel',
+      hash: sha256Hex(COLLECTING_PLAINTEXT),
+      last4: COLLECTING_PLAINTEXT.slice(-4),
+    },
     {
       id: PINNED_KEY,
       orgId: ORG,
@@ -747,5 +777,91 @@ describe('429 — the key has spent its allowance (M2)', () => {
     )
     const after = await db.select().from(schema.traces)
     expect(after.length).toBe(before.length)
+  })
+})
+
+/**
+ * ADR-0060 — a panel with no judges is a legitimate state, not a refusal.
+ *
+ * It used to answer `NOT_FOUND` (*"This panel version convenes no judges"*), which forced a
+ * customer to invent judges before a single trace could exist. **Nothing asserted that
+ * refusal**, so nothing broke when it was removed — which is exactly why these tests exist
+ * now: the new behaviour is the one a customer meets on day one.
+ */
+describe('a collecting panel', () => {
+  const collectingRequest = (body: unknown) =>
+    evaluateRequest(body, { key: COLLECTING_PLAINTEXT, panel: COLLECTING_PANEL })
+
+  test('accepts the call and says plainly that nothing was judged', async () => {
+    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    expect(res.status).toBe(200)
+
+    const { data } = (await res.json()) as { data: Evaluation }
+    expect(data.state).toBe('collecting')
+    // Null, not false. A gate told `false` blocks everything; told `true` it ships
+    // everything believing it is protected. Neither default is silently safe, which is why
+    // the state is explicit and these are absent.
+    expect(data.passed).toBeNull()
+    expect(data.score).toBeNull()
+    expect(data.judges).toEqual({})
+    // Vacuously true — no judge was skipped, because there were none to skip.
+    expect(data.complete).toBe(true)
+    // Still echoed: the bar this panel is configured with does not stop existing.
+    expect(data.threshold).toBe(0.5)
+  })
+
+  test('captures the trace in full — that is the entire point of the state', async () => {
+    const context = { agent_decision: 'p2' }
+    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT, context }))
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    const [row] = await db.select().from(schema.traces).where(eq(schema.traces.id, data.trace_id))
+    expect(row).toBeDefined()
+    // The artifact and the caller's context are what an annotator later reads. A collecting
+    // panel that dropped them would be collecting nothing.
+    expect(row?.artifact).toBe(ARTIFACT)
+    expect(row?.context).toEqual(context)
+    expect(row?.panelVersionId).toBe(COLLECTING_PANEL_VERSION)
+    expect(row?.apiKeyId).toBe(COLLECTING_KEY)
+    expect(row?.passed).toBeNull()
+    expect(row?.score).toBeNull()
+  })
+
+  test('writes no verdict rows — there was no judge to have an opinion', async () => {
+    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    const verdicts = await db
+      .select()
+      .from(schema.traceVerdicts)
+      .where(eq(schema.traceVerdicts.traceId, data.trace_id))
+    expect(verdicts).toEqual([])
+  })
+
+  test('reaches no provider at all, so it costs nothing', async () => {
+    // A provider that fails the test if it is touched. Counting calls would prove the same
+    // thing one step later; this one cannot be satisfied by a call that happens to return
+    // nothing, and "spends no tokens" is the claim ADR-0060 rests the state on.
+    const refuses: ModelProvider = {
+      name: 'refuses',
+      evaluate: async () => {
+        throw new Error('a collecting panel must not reach a provider')
+      },
+    }
+
+    const res = await appWith(refuses).request(collectingRequest({ artifact: ARTIFACT }))
+    expect(res.status).toBe(200)
+    expect(reporter.reports).toEqual([])
+  })
+
+  test('still enqueues the follow-up — a collecting trace is one an annotator will read', async () => {
+    const before = queue.sent.length
+    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    expect(queue.sent.length).toBe(before + 1)
+    // It counts toward the 50 that unlocks annotation (ADR-0061), so it cannot be skipped
+    // just because no judge ran.
+    expect(queue.sent.at(-1)?.payload).toMatchObject({ trace_id: data.trace_id })
   })
 })

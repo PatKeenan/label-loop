@@ -34,8 +34,9 @@ const generate = async () => {
       c.json(
         {
           data: {
-            passed: true,
-            score: 1,
+            state: 'collecting' as const,
+            passed: null,
+            score: null,
             complete: true,
             threshold: 1,
             aggregation: {

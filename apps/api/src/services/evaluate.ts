@@ -183,7 +183,10 @@ export const aggregate = (
   const finalScore = clamp01(score)
 
   return {
-    // A panel that got nothing back from any judge does not reach this line — see
+    // Reached only when the panel HAS judges — a collecting panel returns before this,
+    // from `evaluate` below, rather than being aggregated over an empty set.
+    state: 'judged',
+    // A panel that got nothing back from any judge does not reach this line either — see
     // `evaluate` below, which refuses rather than reporting a score of zero.
     passed: requiredHeld && finalScore >= threshold,
     score: finalScore,
@@ -296,14 +299,13 @@ export const evaluate = async (
   if (panel === undefined) {
     throw new AppError('NOT_FOUND', 'This panel has no live version to evaluate against.')
   }
-  if (panel.judges.length === 0) {
-    throw new AppError('NOT_FOUND', 'This panel version convenes no judges.')
-  }
 
   // Minted here, before the row exists, and bound to the logger immediately. CONVENTIONS
   // asks for the `tr_` id on evaluation-path lines "once the row exists" — but the row
-  // cannot exist yet: its `passed`, `score` and `complete` columns are NOT NULL and are
-  // not known until every judge has answered. Minting the id in the application (which is
+  // cannot exist yet: `complete` and `threshold` are NOT NULL and are not known until
+  // every judge has answered. (`passed` and `score` became nullable with ADR-0060, for a
+  // different reason — a collecting panel has no verdict at all — and that does not change
+  // what this comment is about.) Minting the id in the application (which is
   // why `packages/db` generates ids there rather than by a database default) gets the same
   // property one step earlier: every judge-call and retry line for this evaluation carries
   // the id of the trace they will end up in.
@@ -319,6 +321,70 @@ export const evaluate = async (
     },
     'evaluation started',
   )
+
+  /**
+   * A PANEL WITH NO JUDGES IS A LEGITIMATE STATE, not a refusal (ADR-0060).
+   *
+   * It used to throw `NOT_FOUND` — *"This panel version convenes no judges"* — which forced a
+   * customer to invent judges before a single trace could exist. That is backwards: the
+   * product's own loop runs traces → open coding → axial coding → judges, so nobody knows
+   * their failure modes until an expert has read real traffic. This repository paid the cost
+   * too, keeping a judge it knew was invalid just to satisfy the check.
+   *
+   * **The trace is still captured in full** — artifact, context, the pinned panel version, the
+   * key that authorised it — because the trace is the entire point of this state. What does
+   * not happen is the fan-out, so no provider is called and no tokens are spent.
+   *
+   * It returns BEFORE `aggregate`, rather than aggregating over an empty set. A score over
+   * zero judges is not 0, it is undefined, and computing one would put a number in front of a
+   * caller that means nothing. The follow-up is still enqueued: a collecting trace is one an
+   * annotator will read, and it counts toward the gate that unlocks annotation (ADR-0061).
+   */
+  if (panel.judges.length === 0) {
+    const collecting: Evaluation = {
+      state: 'collecting',
+      passed: null,
+      score: null,
+      // Vacuously true: no judge was skipped because there were none to skip. `state` is
+      // what says nothing was judged — see the contract's note on this field.
+      complete: true,
+      threshold: panel.threshold,
+      aggregation: {
+        policy: 'weighted_threshold',
+        panel_version: parseId('pnv_', panel.panelVersionId),
+      },
+      judges: {},
+      trace_id: parseId('tr_', traceId),
+    }
+
+    await insertTrace(
+      deps.db,
+      {
+        id: traceId,
+        orgId: panel.orgId,
+        panelId: panel.panelId,
+        panelVersionId: panel.panelVersionId,
+        apiKeyId: command.apiKey.id,
+        requestId: command.requestId,
+        artifact: command.request.artifact,
+        context: command.request.context ?? null,
+        passed: null,
+        score: null,
+        complete: true,
+        threshold: panel.threshold,
+      },
+      // No verdict rows: there was no judge to have an opinion.
+      [],
+    )
+
+    await enqueueFollowUp(deps, traceId, command.requestId, logger)
+
+    logger.info(
+      { panel_id: panel.panelId, panel_version_id: panel.panelVersionId },
+      'evaluation collected — panel convenes no judges',
+    )
+    return collecting
+  }
 
   // In parallel: judges are independent by construction — one judge, one failure category,
   // never bundled into one multi-criteria prompt (ADR-0019) — so the panel's latency is
