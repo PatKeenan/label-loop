@@ -13,6 +13,7 @@ import {
   SidebarProvider,
 } from '../ui/sidebar.tsx'
 import type { Membership } from './context.ts'
+import { forgetIssuedKeys } from './issued-key.ts'
 import { Data } from './mark.tsx'
 import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
@@ -88,6 +89,9 @@ export const ConsoleShell = ({
       // the previous user's rows would still be in memory and rendered for a frame the
       // next time one of those views mounts.
       queryClient.removeQueries({ type: 'inactive' })
+      // The one-time key plaintext lives outside the query cache, so invalidation does not
+      // reach it. A credential minted as one account must not survive into the next.
+      forgetIssuedKeys()
     },
   })
 

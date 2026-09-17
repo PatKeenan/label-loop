@@ -1,8 +1,10 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import { validateConsoleSearch } from './components/shell/context.ts'
 import { HomePage } from './routes/home.tsx'
+import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
-import { PanelKeysPage, PanelOverviewPage } from './routes/panel.tsx'
+import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
+import { PanelCreatePage } from './routes/panel-create.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
 import { TracesPage } from './routes/traces.tsx'
 
@@ -21,8 +23,10 @@ import { TracesPage } from './routes/traces.tsx'
  * phase's — see `components/shell/context.ts` for the reasoning):
  *
  *     /                        Home, in the account's default org
+ *     /panels/new              create a panel — one step
  *     /p/$panelSlug            that panel's Overview
- *     /p/$panelSlug/traces     …its sections
+ *     /p/$panelSlug/judges     …its sections
+ *     /p/$panelSlug/traces
  *     /p/$panelSlug/keys
  *     ?org=acme-support        on any of the above
  *
@@ -63,6 +67,20 @@ const panelRoute = createRoute({
   component: PanelOverviewPage,
 })
 
+/** One step: name, slug, threshold. The wizard was deleted at its own review (ADR-0061). */
+const panelCreateRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/panels/new',
+  component: PanelCreatePage,
+})
+
+/** Read-only and locked at M4 — authoring lands at M6, beside the taxonomy (ADR-0061). */
+const panelJudgesRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/p/$panelSlug/judges',
+  component: PanelJudgesPage,
+})
+
 const panelTracesRoute = createRoute({
   getParentRoute: () => consoleRoute,
   path: '/p/$panelSlug/traces',
@@ -90,7 +108,14 @@ const loginRoute = createRoute({
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    consoleRoute.addChildren([homeRoute, panelRoute, panelTracesRoute, panelKeysRoute]),
+    consoleRoute.addChildren([
+      homeRoute,
+      panelCreateRoute,
+      panelRoute,
+      panelJudgesRoute,
+      panelTracesRoute,
+      panelKeysRoute,
+    ]),
     loginRoute,
   ]),
 })

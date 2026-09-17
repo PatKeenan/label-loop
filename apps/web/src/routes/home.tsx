@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useConsoleContext } from '../components/shell/context.ts'
 import { ContentSlot, PageHead } from '../components/shell/page-head.tsx'
 import { Button } from '../components/ui/button.tsx'
@@ -23,10 +24,11 @@ export const HomePage = () => {
         scope={[context.orgSlug]}
         title="Home"
         actions={
-          // Disabled rather than absent: the entry point is shell furniture, and phase 8
-          // fills in what it opens. The panel switcher carries the same entry for the same
-          // reason.
-          <Button disabled>Create panel</Button>
+          <Button asChild>
+            <Link to="/panels/new" search={{ org: context.orgSlug }}>
+              Create panel
+            </Link>
+          </Button>
         }
       />
       <ContentSlot label="Screen content · phase 8">

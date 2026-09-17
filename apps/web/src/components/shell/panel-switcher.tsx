@@ -94,13 +94,10 @@ export const PanelSwitcher = ({
           ))}
           {panels.data === undefined || panels.data.length === 0 ? null : <DropdownMenuSeparator />}
           <DropdownMenuItem
-            // Phase 8 builds the screen; the entry point is shell furniture and exists now
-            // so the switcher is not re-invented when it arrives.
-            disabled
+            onSelect={() => void navigate({ to: '/panels/new', search })}
             className="flex min-h-[var(--row-min)] items-center"
           >
             <strong className="font-semibold">Create panel</strong>
-            <Data className="ml-auto">phase 8</Data>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

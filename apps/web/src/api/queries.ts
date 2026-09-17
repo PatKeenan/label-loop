@@ -66,6 +66,40 @@ export const panelsQuery = (orgId: string) =>
   })
 
 /**
+ * ONE panel — its Overview and its Judges section, which are two views of the same object
+ * and so are one read. Addressed by SLUG, because that is what the URL carries.
+ */
+export const panelQuery = (orgId: string, slug: string) =>
+  queryOptions({
+    queryKey: ['panel', orgId, slug],
+    queryFn: async () => {
+      const response = await api.internal.panels[':slug'].$get({ param: { slug } }, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+  })
+
+/**
+ * Every key in the active org.
+ *
+ * **Org-wide, and the Keys screen filters by panel.** `GET /internal/keys` is not
+ * panel-scoped, and CONSOLE_FLOW §4 is explicit that the API is shaped the easy way round on
+ * purpose: scoping it later is a narrowing, where widening a panel-scoped read would not be.
+ * Filtering in the client is correct HERE and not for traces — a key list is bounded by how
+ * many credentials an org has issued, where a trace list is unbounded and paginated, so
+ * filtering a page of traces would silently drop rows.
+ */
+export const keysQuery = (orgId: string) =>
+  queryOptions({
+    queryKey: ['keys', orgId],
+    queryFn: async () => {
+      const response = await api.internal.keys.$get(undefined, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data.keys
+    },
+  })
+
+/**
  * The trace list.
  *
  * **Org-wide, not panel-scoped, and that is still true at phase 7.** `GET /internal/traces`
