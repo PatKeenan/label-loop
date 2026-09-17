@@ -30,6 +30,40 @@ import { LoadFailed } from '../components/shell/statement.tsx'
  * language as an unbuilt screen so it reads as scaffolding rather than as product, and it
  * goes away in phase 8 along with the org-wide read.
  */
+/**
+ * The table's columns.
+ *
+ * **`Recorded` was called `Follow-up`, and that meant nothing to anyone reading it** — the
+ * stakeholder asked what it was, which is the answer about the label. It is `recorded_at`:
+ * the moment the asynchronous `record-evaluation` job ran for this evaluation, `pending`
+ * until it has. The word now matches the field on the wire, so the console and the API say
+ * the same thing.
+ *
+ * **Whether it belongs on a CUSTOMER's table at all is a separate question, and it is phase
+ * 8's** (open question 2 covers this table's columns). It is here because M0 was proving the
+ * async seam works end to end and a null is how a dropped enqueue is found — an operator's
+ * signal, not an answer about the caller's evaluation. `jobs/record-evaluation.ts` is candid
+ * that stamping this is the job's ONLY effect today; metering (M2) and annotation sampling
+ * (M5) are the work it exists to carry later.
+ */
+const COLUMNS: readonly { label: string; title?: string }[] = [
+  { label: 'Trace' },
+  { label: 'Panel' },
+  {
+    label: 'Verdict',
+    title:
+      'The panel decision. “partial” means a scoring judge did not run, so the score is real but incomplete.',
+  },
+  { label: 'Score' },
+  { label: 'Threshold' },
+  {
+    label: 'Recorded',
+    title:
+      'When this evaluation’s asynchronous follow-up ran. “pending” means it has not yet — the decision above is unaffected either way.',
+  },
+  { label: 'Created' },
+]
+
 export const TracesPage = () => {
   const queryClient = useQueryClient()
   const context = useConsoleContext()
@@ -85,16 +119,19 @@ export const TracesPage = () => {
           <table className="w-full border-collapse text-data">
             <thead>
               <tr className="border-b border-border-strong text-left">
-                {['Trace', 'Panel', 'Verdict', 'Score', 'Threshold', 'Follow-up', 'Created'].map(
-                  (column) => (
-                    <th
-                      key={column}
-                      className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
-                    >
-                      {column}
-                    </th>
-                  ),
-                )}
+                {COLUMNS.map(({ label, title }) => (
+                  <th
+                    key={label}
+                    // A column whose meaning is not obvious from its name says so on hover
+                    // rather than relying on the reader to already know. `title` is the
+                    // plainest thing that works on a table head; if more than one column
+                    // needs a richer explanation, that is phase 8's to design.
+                    {...(title === undefined ? {} : { title })}
+                    className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
+                  >
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>

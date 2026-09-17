@@ -20,7 +20,7 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
 > | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
-> | **7 — the frame, built** | — | **automated verification green; awaiting manual verification** |
+> | **7 — the frame, built** | #67 | **VERIFIED by the stakeholder 2026-09-16** |
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -30,11 +30,21 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > Phase 6 is mockup work under a PARTIAL Phase A resume (ADR-0055), not application code — see
 > CLAUDE.md "Current phase". Open question 3 below applies directly to 6c.
 >
-> **Phase 7 (2026-09-16).** Every automated check is green and every step but one is `[x]`; the
-> org switcher's BEHAVIOUR is `[~]` because verifying it needs a second membership that no seed
-> creates. Deviations 42–51. Two things need a stakeholder decision recorded rather than just a
-> look: **Sonner was admitted into D17** (asked and answered during the phase; D17 and ADR-0046
-> amended), and **the URL shape** the flow map left to this phase.
+> **Phase 7 is VERIFIED (stakeholder, 2026-09-16)**, walked through in the running console
+> rather than read: sign-in, Home, the panel switcher, a panel's Overview, the section nav with
+> its padlock and milestone marks, the trace table on real data, Keys, and both not-available
+> states. That walk-through is where Deviations 53 and 54 came from — four bugs no automated
+> check in this phase could have caught. The org switcher's BEHAVIOUR stays `[~]`: verifying it
+> needs a second membership no seed creates.
+>
+> Two stakeholder decisions were taken during the phase and are recorded, not just looked at:
+> **Sonner was admitted into D17** (D17 and ADR-0046 amended), and **the URL shape** the flow
+> map left to this phase.
+>
+> **The plan STAYS in `approved/`, because phase 8 is in it and is unbuilt** — 17 unchecked
+> steps, and its scope was rewritten by ADR-0060 and ADR-0061 (Deviations 32–41). CLAUDE.md's
+> hard rule is that implementation comes only from `approved/`, so filing this under `complete/`
+> now would strand the document phase 8 has to be built from.
 
 # M4 — console, auth, and the interviewer flow
 
@@ -527,8 +537,10 @@ layout — they become things that go *inside* something that already exists.
       - **`--spacing`** — aliased onto `--space-1`; verified in the built stylesheet, where
         `.p-4` compiles to `calc(var(--space-1) * 4)`.
 - [~] Org switcher sends the active org header phase 1 validates; switching re-scopes the view —
-      BUILT and typechecked; **the behaviour is stakeholder manual verification** (needs a second
-      membership, which no seed creates). See Deviation 44 for the URL shape.
+      BUILT, typechecked, and its ONE-membership rendering verified in the running console (plain
+      text at the foot, not a menu — 6b decision 5). **Switching itself remains unverified**: it
+      needs a second membership no seed creates, and no phase has scheduled one. Carried, not
+      forgotten. See Deviation 45 for the URL shape.
 - [x] Existing screens re-skinned inside the shell; behaviour unchanged (Claude — login outside
       the shell, traces inside it. See Deviation 45: traces is still ORG-WIDE and says so.)
 - [x] `apps/web/nginx.conf` still serves the bundle correctly (ADR-0020: SPA fallback, a real
@@ -551,11 +563,24 @@ layout — they become things that go *inside* something that already exists.
       `vite`, below the level CI enforces and not introduced here.)
 
 ### Manual verification
-- [ ] The shell renders in both tones and both surfaces, matching `tokens-preview.html`
-- [ ] Diff the converted tokens against the approved `mockups/tokens.css` and confirm by eye
+- [x] The shell renders in both tones and both surfaces, matching `tokens-preview.html`
+      (stakeholder 2026-09-16, in the running console; the computed-style check behind it is
+      Deviation 43)
+- [x] Diff the converted tokens against the approved `mockups/tokens.css` and confirm by eye
       that no approved value was lost — the check ADR-0046 exists to make possible
-- [ ] Switching org in the sidebar changes what the trace table shows, and cannot reach an org
-      the signed-in account is not a member of
+      (stakeholder 2026-09-16; `diff` reports zero lines present only in the approved file)
+- [~] Switching org in the sidebar changes what the trace table shows, and cannot reach an org
+      the signed-in account is not a member of — **the second half is verified**: a URL naming
+      an org this account is not in renders the not-available state with the sidebar intact and
+      never names the org (ADR-0057). The first half needs a second membership no seed creates.
+
+**Two changes came out of the walk-through itself**, both stakeholder-raised and both fixed
+before verification: the panel switcher kept its focus ring after a plain click and sat 4px
+from the nav (Deviation 54), and the trace table's `Follow-up` column meant nothing to a reader
+— it is `recorded_at`, now labelled **Recorded** to match the wire, with the explanation on
+hover. **Whether that column belongs on a customer's table at all is open question 2's**, in
+phase 8: it is an operator's signal (a null is how a dropped enqueue is found), not an answer
+about the caller's evaluation.
 
 ---
 
