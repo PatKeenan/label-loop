@@ -1,3 +1,4 @@
+import { ACTIVE_ORG_HEADER } from '@labelloop/contracts'
 import type { MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app-env.ts'
 import { AppError } from '../errors.ts'
@@ -28,15 +29,12 @@ import { listMemberships, type Membership, type OrgRole } from '../repositories/
  */
 
 /**
- * The header the console names its active org with (ADR-0047).
- *
- * Exported because three places must agree on the spelling and only one of them can be
- * wrong silently: this middleware reads it, `routes/internal/index.ts` must allow it through
- * CORS preflight, and the tests assert on it. A custom request header is not on the CORS
- * safelist, so a header allowed here and forgotten there fails only in a real browser —
- * never in a test, which sends no preflight.
+ * Re-exported so this middleware's existing readers keep one import, but OWNED by
+ * `@labelloop/contracts` since M4 phase 7 — the console has to send this header and cannot
+ * import from here, because this module pulls better-auth and a database pool with it.
+ * The comment explaining why the spelling matters travels with the definition.
  */
-export const ACTIVE_ORG_HEADER = 'X-LabelLoop-Org'
+export { ACTIVE_ORG_HEADER }
 
 /** What an internal route may assume once this middleware has run. */
 export type AuthenticatedSession = {

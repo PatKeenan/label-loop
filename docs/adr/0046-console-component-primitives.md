@@ -1,6 +1,6 @@
 # ADR-0046: The console adopts shadcn/ui, and `tokens.css` becomes its theme
 
-**Status:** Accepted · **Date:** 2026-09-11 · **Milestone:** M4
+**Status:** Accepted · **Date:** 2026-09-11 · **Milestone:** M4 · **Amended:** 2026-09-16
 
 ## Decision
 `apps/web` adopts **shadcn/ui** for component primitives, recorded as STACK_DECISIONS **D17**.
@@ -53,6 +53,32 @@ the combobox and the dialog back in scope as hand-written accessible components.
 **shadcn as shipped, with Tailwind's theme as a second token system.** This is the version that
 genuinely conflicts with CLAUDE.md, and it is the one NOT taken. The objection was raised before
 the decision and answered by the conversion condition above rather than waived.
+
+## Amendment — 2026-09-16, the toast is a package (M4 phase 7)
+
+The decision below says shadcn components are **copied into the repo**, ours to maintain. One
+is not: shadcn's toast **is Sonner**, an npm package its generated `sonner.tsx` is a thin
+wrapper around, and the older copied `toast` component is deprecated upstream. The original
+text therefore did not describe the thing it was about to authorise.
+
+**The decision now admits `sonner` as a runtime dependency**, on the stakeholder's call, put
+to them rather than assumed in either direction. The argument that carried it is the one
+ADR-0020 used about nginx and this ADR used about the combobox: declining means diverging
+from the library at the one place M4 needs a toast, and re-deriving stacking, focus handling
+and dismissal by hand. It replaces work rather than adding surface.
+
+Two things did NOT come with it:
+
+- **`next-themes` was removed.** shadcn's generated wrapper imports it to read the active
+  theme. There is no Next.js here, and no theme provider — tone is `data-tone` /
+  `data-surface`, which is CSS and not React state. Sonner is pinned to the setting that
+  makes it add no palette of its own, so the tokens decide the toast's appearance.
+- **Sonner's defaults.** `duration: Infinity`, because CONSOLE_FLOW §6 makes that surface an
+  ACTION failure carrying a request id and a statement of what the action left behind. A
+  toast that dismisses itself takes that away on a timer.
+
+Recorded as an amendment rather than a new ADR because it changes what D17's scope INCLUDES,
+not what was decided: shadcn/ui, themed by the approved palette, is untouched.
 
 ## Consequences
 - **Tailwind and a build-step configuration enter `apps/web`**, which has had neither.

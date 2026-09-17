@@ -5,7 +5,16 @@
     // exists. `bun` stays in `types` because the test runner is still Bun's.
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun", "vite/client"],
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+
+    // shadcn's copied components import through `@/`, and the CLI emits that on every
+    // `shadcn add`. Mirrored in `vite.config.ts` `resolve.alias` — the two have to agree
+    // or the typecheck and the bundle disagree about the same import. Code this repo
+    // wrote keeps relative imports with explicit extensions. No `baseUrl`: TypeScript 7
+    // removed it, and `paths` now resolves relative to this file, which is what we wanted.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

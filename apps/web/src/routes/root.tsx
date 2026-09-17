@@ -1,60 +1,196 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet } from '@tanstack/react-router'
-import { auth } from '../api/client.ts'
-import { meQuery } from '../api/queries.ts'
+import { ConsoleShell } from '../components/shell/console-shell.tsx'
+import { isStaffRole, useConsoleContext, usePanelContext } from '../components/shell/context.ts'
+import { Statement } from '../components/shell/statement.tsx'
+import { useSurface } from '../components/shell/surface.ts'
+import { Button } from '../components/ui/button.tsx'
+import { Toaster } from '../components/ui/sonner.tsx'
+import { LoginPage } from './login.tsx'
 
 /**
- * The shell every route renders inside: who is signed in, and a way out.
- *
- * Unstyled on purpose (CLAUDE.md Phase C). `mockups/tokens.css` does not enter this app —
- * the mockups are disposable spec for M5's designed screens, and importing them here would
- * turn a spec into scaffold. What is being proved at M0 is that a real session reaches a
- * real typed call; anything that made it look finished would obscure that.
+ * The root route's component: the toaster, and whatever `/login` or the console layout
+ * renders. It holds no chrome of its own — the frame is `ConsoleLayout`'s, because `/login`
+ * has nothing to navigate and must not be inside it.
  */
-export const RootLayout = () => {
-  const queryClient = useQueryClient()
-  const me = useQuery(meQuery)
+export const RootLayout = () => (
+  <>
+    <Outlet />
+    {/*
+      ERROR SURFACE 3 (CONSOLE_FLOW §6), mounted once at the root so it outlives any screen
+      that navigates away while an action is still in flight. It is for an ACTION that
+      failed — never a failed load, which replaces the content instead — and it never
+      dismisses itself. See `ui/sonner.tsx` for why that is a decision and not a default.
 
-  const signOut = useMutation({
-    mutationFn: async () => {
-      await auth.signOut()
-    },
-    onSuccess: async () => {
-      // Everything in the cache was read as this user, so none of it may be shown again.
-      //
-      // `invalidateQueries` rather than `clear`, and that is a correction rather than a
-      // preference: `clear` empties the cache WITHOUT notifying the observers watching it,
-      // so the components carry on rendering the signed-out user's rows until something
-      // unrelated happens to re-render them. Invalidating refetches what is on screen —
-      // `me` now answers "nobody", which is what puts the login form back.
-      await queryClient.invalidateQueries()
-      // Then drop what is NOT on screen. Invalidation only marks those stale, which means
-      // the previous user's rows would still be in memory and rendered for a frame the
-      // next time one of those views mounts.
-      queryClient.removeQueries({ type: 'inactive' })
-    },
-  })
+      Nothing in phase 7 raises one: the first action that can fail is phase 8's revoke. It
+      is mounted now because it is shell furniture, and the point of building the frame here
+      is that phase 8's screens find it already standing.
+    */}
+    <Toaster />
+  </>
+)
+
+/**
+ * THE CONSOLE LAYOUT — everything that is not `/login` renders inside this.
+ *
+ * It is a pathless layout route, so the shell MOUNTS ONCE and survives navigation between
+ * sections: switching from Traces to Keys does not re-run the session read or re-open the
+ * rail. That is also what makes "the sidebar never swaps its contents" (6b decision 1) true
+ * structurally rather than by each screen redrawing the same rail — the failure Deviation 39a
+ * caught in the mockup itself.
+ *
+ * Every state the 6b screen draws outside the normal case is resolved here, because each one
+ * is a statement about WHO IS ASKING rather than about a screen.
+ */
+export const ConsoleLayout = () => {
+  const queryClient = useQueryClient()
+  const context = useConsoleContext()
+  const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
+
+  if (context.state === 'pending') return <Loading />
+
+  // Signed out: the form, not a redirect. The guard is on the SERVER — `sessionAuth` on
+  // `/internal/*` — and this is only what the browser does about it. Real
+  // redirect-after-401 is phase 8's, where the router context earns itself.
+  if (context.state === 'signed-out') return <LoginPage />
+
+  // Outside the shell entirely: there is no org to draw a console for. CONSOLE_FLOW Q4 — it
+  // offers no way forward because none exists: membership management and org creation are
+  // unscheduled, and a button to nowhere would be worse than the sentence.
+  if (context.state === 'no-org') {
+    return (
+      <Outside>
+        <Statement eyebrow="LabelLoop" title="This account isn’t in an organisation">
+          <p className="m-0">
+            You’re signed in, but the account hasn’t been added to any LabelLoop organisation — and
+            organisations can’t be created from here yet.
+          </p>
+          <p className="m-0 text-muted-foreground">
+            If you were expecting access, the person who administers your organisation needs to add
+            this account.
+          </p>
+        </Statement>
+      </Outside>
+    )
+  }
+
+  if (context.state === 'failed') {
+    return (
+      <Outside>
+        <Statement tone="fail" title="LabelLoop couldn’t be reached">
+          <p className="m-0">The console could not read your session. Nothing has been changed.</p>
+        </Statement>
+      </Outside>
+    )
+  }
+
+  // A link naming an org this account cannot see resolves to the org it is STILL in, and the
+  // shell renders AROUND the message. NO SILENT SWAP (6b decision 9) — and the sidebar stays
+  // usable, which is surface 2's defining property (CONSOLE_FLOW §6). Rendering this as a
+  // bare page instead was the first draft, and it contradicted both.
+  const org = context.state === 'not-a-member' ? context.fallback : context
+  const notAMember = context.state === 'not-a-member'
+
+  // An annotator — or a guest expert, PRODUCT.md 5.1's invited SME — gets no console at M4.
+  // The shell renders with no Home link, no switcher and no sections: the frame is still
+  // theirs, and the org switcher at its foot is the way out for someone who also works in
+  // another organisation. `isStaffRole` is an allow list, deliberately (see its comment).
+  const isStaff = isStaffRole(org.role)
 
   return (
-    <>
-      <header>
-        <h1>LabelLoop console</h1>
-        <nav>
-          <Link to="/">Traces</Link>
-        </nav>
-        {me.data === null || me.data === undefined ? null : (
-          <p>
-            Signed in as {me.data.email} · {me.data.role} of {me.data.active_org_id}{' '}
-            <button type="button" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
-              Sign out
-            </button>
+    <ConsoleShell
+      email={org.email}
+      orgSlug={org.orgSlug}
+      memberships={org.memberships}
+      activeOrgId={org.orgId}
+      isStaff={isStaff}
+      panel={panel.state === 'ready' ? { slug: panel.slug, name: panel.name } : null}
+    >
+      {notAMember ? (
+        // It cannot name the org that was ASKED for: the console never had its name, and
+        // ADR-0057 answers an unknown and a non-member org identically.
+        <Statement eyebrow="Not available" title="This link isn’t available to your account">
+          <p className="m-0">
+            What it points to doesn’t exist, or this account can’t see it. Nothing has been switched
+            — you’re still in {org.orgName}.
           </p>
-        )}
-      </header>
-      <hr />
-      <main>
+          <div>
+            <Button asChild>
+              <Link to="/" search={{ org: org.orgSlug }}>
+                Go to Home
+              </Link>
+            </Button>
+          </div>
+        </Statement>
+      ) : !isStaff ? (
+        <Statement eyebrow={org.orgSlug} title="Nothing to review yet">
+          <p className="m-0">
+            Your role in {org.orgName} is {org.role.replace('_', ' ')}. Reviewing traces will open
+            here once annotation is available in LabelLoop — until then there is nothing in the
+            console for this role.
+          </p>
+          <p className="m-0 text-muted-foreground">
+            If you work in another organisation, switch to it at the foot of the sidebar.
+          </p>
+        </Statement>
+      ) : panel.state === 'not-found' ? (
+        // A panel slug this org does not have. Same posture as the org: not found and not
+        // permitted are the same answer (ADR-0057, applied to panels by Deviation 14).
+        <Statement eyebrow="Not available" title="This panel isn’t available to your account">
+          <p className="m-0">
+            It doesn’t exist in {org.orgName}, or this account can’t see it. Nothing has been
+            switched.
+          </p>
+          <div>
+            <Button asChild>
+              <Link to="/" search={{ org: org.orgSlug }}>
+                Go to Home
+              </Link>
+            </Button>
+          </div>
+        </Statement>
+      ) : panel.state === 'failed' ? (
+        <Statement
+          tone="fail"
+          title="This panel couldn’t be loaded"
+          actions={
+            <Button
+              variant="outline"
+              onClick={() => void queryClient.invalidateQueries({ queryKey: ['panels'] })}
+            >
+              Reload
+            </Button>
+          }
+        >
+          <p className="m-0">The panel list could not be read. Nothing has been changed.</p>
+        </Statement>
+      ) : (
         <Outlet />
-      </main>
-    </>
+      )}
+    </ConsoleShell>
+  )
+}
+
+/** The console's loading state, at the one moment there is no shell to put it in. */
+const Loading = () => (
+  <Outside>
+    <p className="text-muted-foreground">Loading…</p>
+  </Outside>
+)
+
+/**
+ * A centred page with no sidebar, for the states that exist BEFORE there is a console to
+ * draw: no membership, an unreadable session, a link to an org this account cannot see.
+ * `data-surface="console"` so the palette is the console's even where the frame is not.
+ */
+const Outside = ({ children }: { children: React.ReactNode }) => {
+  useSurface('console')
+  return (
+    <div
+      data-surface="console"
+      className="grid min-h-screen place-items-center bg-background p-[var(--space-8)] text-foreground"
+    >
+      {children}
+    </div>
   )
 }

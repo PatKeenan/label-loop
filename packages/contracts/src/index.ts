@@ -7,5 +7,6 @@
 export * from './envelope.ts'
 export * from './errors.ts'
 export * from './evaluate.ts'
+export * from './headers.ts'
 export * from './ids.ts'
 export * from './model-pin.ts'

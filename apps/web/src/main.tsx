@@ -5,6 +5,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ApiError } from './errors/api-error.ts'
 import { router } from './router.tsx'
+// The theme. ADR-0046: `mockups/tokens.css` converted into shadcn's convention, and the
+// one place this app decides anything about colour, type, spacing or density.
+import './styles/tokens.css'
 
 /**
  * The console's entrypoint — the browser equivalent of `apps/api/src/server.ts`: the one

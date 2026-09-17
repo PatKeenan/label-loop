@@ -102,6 +102,53 @@ Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.m
   evaluation**, and **white-label/custom domains** — all named in the source session as
   parked, and parked here too.
 
+## Trace detail — one record, full page (raised 2026-09-16)
+
+Clicking a trace row to read what went in and what each judge said. Raised by the
+stakeholder while walking through the M4 phase 7 shell; recorded here because
+`mockups/CONSOLE_FLOW.md` §3 lists both this and the trace explorer as **Unscheduled**, and
+no milestone owns either.
+
+**The capture side is already done, and that is the part that would have been expensive.**
+Because we are the inference path for judge calls (ADR-0001), every field this screen needs
+is written server-side today: `traces.artifact` (the caller's own output — we never generated
+it), `traces.context` (their opaque string map, where a DECIDING agent's output lives per
+ADR-0037), `panel_version_id` pinning the exact configuration that judged it, and one
+`trace_verdicts` row per judge carrying `rationale` — the reasoning, written before the
+verdict — plus `reasons[]`, `verdict`, `confidence`, `served_by`, `latency_ms`, `attempts`
+and token counts. Nothing needs to be captured differently. What is missing is a read
+(`GET /internal/traces` returns only the decision columns) and a screen.
+
+**Three things make it more than a UI job, and they are why it is parked rather than
+scheduled:**
+
+- **The role guard does not exist yet.** `GET /internal/traces` is the one internal route
+  with no `requireRole` (M4 plan, Deviation 32), so an annotator's session can read it. That
+  is harmless while the rows carry no verdicts; a detail page carrying rationale and
+  confidence makes it material.
+- **Harvest blocker 2 is open: whether confidence is withheld from annotators.** Showing a
+  judge's confidence to an SME before they annotate biases the annotation, which is the
+  input the whole flywheel runs on. This screen cannot be designed without answering it,
+  and the answer may be that the engineer console and the annotator surface show different
+  fields of the same record.
+- **M5 already builds a one-trace-at-a-time view**, on the annotator surface
+  (`annotator-session`): one trace, agree/correct, failure note. Two full views of one record
+  is a divergence risk, and the honest question is whether this is a second screen or the
+  engineer's read of the same one. PRODUCT.md 5.5 makes them deliberately different
+  experiences, so "share the component" is not automatically the answer.
+
+**The cheaper increment, and it may be enough:** the M4 plan's open question 2 — still open,
+and phase 8's to decide — asks whether the trace table gets raw payloads **expanding in
+place** rather than inline. Expanding rows inside the existing table needs no new route, no
+new screen and no third sidebar level, and it answers "what did the agent send" without
+committing to a full page. Its own unresolved constraint is the harvest's Q1: ten columns do
+not fit a laptop viewport.
+
+**One thing to decide deliberately if it is ever built:** `artifact` is the customer's own
+production data, and a full-page view makes it the most exposed thing in the console.
+Redaction, retention and whether reading one is itself an audit event are all unscheduled —
+M8 owns the audit log, and this would be a candidate writer.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps

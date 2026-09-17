@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -7,7 +9,21 @@ import { defineConfig } from 'vite'
  * opinions in it would be one more thing between the proof and the reader.
  */
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind v4 is a Vite plugin rather than a PostCSS step and needs no config file:
+  // the theme is declared in `src/styles/tokens.css` itself (ADR-0046, D17), which is
+  // what keeps ONE token source and keeps it the approved one.
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      // `@/` exists because shadcn requires it, not because this repo wanted an alias:
+      // every component the CLI copies in imports `@/lib/utils` and `@/components/ui/*`,
+      // and rewriting those by hand on every `shadcn add` is churn with a drift bug in
+      // it. It resolves to `apps/web/src`, is mirrored in `tsconfig.json` `paths`, and
+      // is deliberately not used by code this repo wrote — our own imports stay
+      // relative with explicit extensions, as they are everywhere else.
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   // There is ONE .env in this repo, at the root, and this is what keeps that true for the
   // console too — Vite would otherwise look in `apps/web` and find nothing, silently
   // falling back to the default API URL. Only `VITE_`-prefixed variables are exposed to
