@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { auth } from '../api/client.ts'
 import { meQuery } from '../api/queries.ts'
 import { Eyebrow } from '../components/shell/mark.tsx'
+import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Input } from '../components/ui/input.tsx'
 
@@ -169,11 +170,14 @@ export const LoginPage = () => {
  * The signed-out page. `data-surface="console"` because the palette is still the console's —
  * this is the engineer's door, not the annotator's — but there is no shell around it.
  */
-const Frame = ({ children }: { children: React.ReactNode }) => (
-  <div
-    data-surface="console"
-    className="grid min-h-screen place-items-center bg-background p-[var(--space-8)] text-foreground"
-  >
-    {children}
-  </div>
-)
+const Frame = ({ children }: { children: React.ReactNode }) => {
+  useSurface('console')
+  return (
+    <div
+      data-surface="console"
+      className="grid min-h-screen place-items-center bg-background p-[var(--space-8)] text-foreground"
+    >
+      {children}
+    </div>
+  )
+}

@@ -1299,6 +1299,40 @@ Recorded as they happen; decision provenance, not a changelog.
     and phase 7's job was the frame. Worth revisiting once phase 8's screens are in and the real
     number is known.
 
+53. **THREE BUGS FOUND BY DRIVING THE RUNNING CONSOLE, none of which any check in this phase
+    would have caught.** Recorded together because they share a cause: every automated gate here
+    — typecheck, lint, tests, build, even the computed-style probe against the built stylesheet —
+    verifies the console in PIECES. All three only exist once it is assembled and clicked through.
+
+    (a) **Every portalled overlay rendered LIGHT on the dark console.** Radix — and so every
+    shadcn overlay: both switchers' menus, the Dialog the key reveal and revoke confirmation will
+    use, the Sheet, tooltips, Sonner — renders into `document.body`, OUTSIDE the element carrying
+    `data-surface="console"`. The approved tokens resolve tone by ANCESTRY, so a portalled menu
+    reads every token from the `:root` default, which is light. Confirmed rather than guessed:
+    the open menu's `--color-surface` computed to `#FFFFFF` where the shell's was `#161A21`.
+
+    No error anywhere — the tokens are all defined and simply read from the wrong scope. Fixed
+    with `useSurface`, which mirrors the preset onto the document element for as long as a
+    surface is mounted, in a layout effect so there is no light first frame. **The 6b mockup
+    could not have surfaced this**: its menus are `details` elements that never leave the tree.
+
+    (b) **The section nav stopped highlighting on the URL most people arrive by.** TanStack's
+    `Link` matches search params by DEFAULT (`activeOptions.includeSearch`), every nav link
+    carries `?org=`, and the URL you land on after signing in does not — so at `/p/some-panel`
+    nothing was marked current, while `/p/some-panel?org=demo` was. `includeSearch: false`.
+
+    (c) **The "link isn't available" state replaced the whole page instead of rendering inside
+    the shell.** The approved 6b screen puts it in the stage with the sidebar intact, and
+    CONSOLE_FLOW §6 makes "the sidebar stays usable" surface 2's DEFINING property. Worse, it
+    undercut its own message: the state exists to say *nothing has been switched*, which the
+    console can DEMONSTRATE by still showing that org at the foot, and a bare page cannot.
+    `ConsoleContext`'s `not-a-member` now carries the fallback org so the shell renders around it.
+
+    **The lesson worth keeping for phase 8**, since it builds three screens on this frame: the
+    phase's automated verification was green and its manual verification had not started, and
+    that gap is exactly where these lived. A token conversion can be proved with a probe; a
+    SHELL cannot.
+
 ---
 
 ## Open questions for the human

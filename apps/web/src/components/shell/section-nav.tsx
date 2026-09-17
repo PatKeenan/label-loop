@@ -87,10 +87,15 @@ export const SectionNav = ({
             to={section.to}
             params={{ panelSlug }}
             search={{ org: orgSlug }}
-            // Overview is the panel's index, so it would otherwise mark itself current on
-            // every child route. `activeOptions.exact` is what keeps "current" meaning one
-            // row rather than two.
-            activeOptions={{ exact: section.to === '/p/$panelSlug' }}
+            // `exact` because Overview is the panel's index, so it would otherwise mark
+            // itself current on every child route — "current" has to mean one row.
+            //
+            // `includeSearch: false` because TanStack matches search params by DEFAULT, and
+            // `?org=` is on every link here but NOT on the URL you land on after signing in.
+            // With the default, the whole nav silently stops highlighting on exactly the
+            // path most people arrive by. Found by clicking through the running console;
+            // no test would have caught it, because it is a match rule and not a route.
+            activeOptions={{ exact: section.to === '/p/$panelSlug', includeSearch: false }}
             activeProps={{ className: cn(ROW, CURRENT) }}
             inactiveProps={{ className: cn(ROW, 'hover:bg-secondary') }}
           >

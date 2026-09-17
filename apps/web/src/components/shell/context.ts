@@ -74,23 +74,32 @@ export type OrgRole = Membership['role']
  */
 export const isStaffRole = (role: OrgRole): boolean => role === 'admin' || role === 'engineer'
 
+/** Everything the shell needs once an org has been settled on. */
+export type ResolvedOrg = {
+  orgId: string
+  orgSlug: string
+  orgName: string
+  role: OrgRole
+  email: string
+  memberships: readonly Membership[]
+}
+
 export type ConsoleContext =
   | { state: 'pending' }
   | { state: 'signed-out' }
   | { state: 'failed'; error: unknown }
   /** Signed in, but a member of no org at all — CONSOLE_FLOW Q4. */
   | { state: 'no-org' }
-  /** The URL named an org slug that is not one of this account's memberships. */
-  | { state: 'not-a-member'; currentOrgName: string }
-  | {
-      state: 'ready'
-      orgId: string
-      orgSlug: string
-      orgName: string
-      role: OrgRole
-      email: string
-      memberships: readonly Membership[]
-    }
+  /**
+   * The URL named an org slug that is not one of this account's memberships.
+   *
+   * It carries the org the person is STILL in, because the shell renders AROUND this state
+   * rather than replacing the page: surface 2's defining property is that the sidebar stays
+   * usable (CONSOLE_FLOW §6), and "nothing has been switched" is a claim the console should
+   * demonstrate by still showing that org, not merely assert in a sentence.
+   */
+  | { state: 'not-a-member'; fallback: ResolvedOrg }
+  | ({ state: 'ready' } & ResolvedOrg)
 
 /**
  * Resolve the active org from the URL and the bootstrap read.
@@ -127,21 +136,26 @@ export const useConsoleContext = (): ConsoleContext => {
     requested === undefined ? fallback : memberships.find((m) => m.org_slug === requested)
 
   if (active === undefined) {
-    // Deliberately reports the org the person is STILL in, not the one they asked for:
-    // the message's job is "nothing has been switched".
-    return { state: 'not-a-member', currentOrgName: fallback.org_name }
+    // Deliberately reports the org the person is STILL in, not the one they asked for: the
+    // message's job is "nothing has been switched", and the shell renders around it.
+    return { state: 'not-a-member', fallback: resolved(fallback, email, memberships) }
   }
 
-  return {
-    state: 'ready',
-    orgId: active.org_id,
-    orgSlug: active.org_slug,
-    orgName: active.org_name,
-    role: active.role,
-    email,
-    memberships,
-  }
+  return { state: 'ready', ...resolved(active, email, memberships) }
 }
+
+const resolved = (
+  membership: Membership,
+  email: string,
+  memberships: readonly Membership[],
+): ResolvedOrg => ({
+  orgId: membership.org_id,
+  orgSlug: membership.org_slug,
+  orgName: membership.org_name,
+  role: membership.role,
+  email,
+  memberships,
+})
 
 /**
  * The panel this view is about, or `null` at Home.

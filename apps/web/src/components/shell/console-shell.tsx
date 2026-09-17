@@ -17,6 +17,7 @@ import { Data } from './mark.tsx'
 import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
 import { SectionNav } from './section-nav.tsx'
+import { useSurface } from './surface.ts'
 
 /**
  * THE CONSOLE'S FRAME — built once here, so phase 8's screens are things that go INSIDE
@@ -66,6 +67,9 @@ export const ConsoleShell = ({
   children: React.ReactNode
 }) => {
   const queryClient = useQueryClient()
+  // Mirrors the preset below onto `<html>`, so portalled overlays resolve the same tokens.
+  // Without it every menu, dialog and toast renders LIGHT on the dark console — see the hook.
+  useSurface('console')
 
   const signOut = useMutation({
     mutationFn: async () => {

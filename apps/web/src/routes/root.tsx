@@ -3,6 +3,7 @@ import { Link, Outlet } from '@tanstack/react-router'
 import { ConsoleShell } from '../components/shell/console-shell.tsx'
 import { isStaffRole, useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Statement } from '../components/shell/statement.tsx'
+import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Toaster } from '../components/ui/sonner.tsx'
 import { LoginPage } from './login.tsx'
@@ -83,48 +84,50 @@ export const ConsoleLayout = () => {
     )
   }
 
-  // A link naming an org this account cannot see. NO SILENT SWAP (6b decision 9): it says
-  // nothing was switched, and it cannot name the org — the console never had its name, and
-  // ADR-0057 answers an unknown and a non-member org identically.
-  if (context.state === 'not-a-member') {
-    return (
-      <Outside>
-        <Statement eyebrow="Not available" title="This link isn’t available to your account">
-          <p className="m-0">
-            What it points to doesn’t exist, or this account can’t see it. Nothing has been switched
-            — you’re still in {context.currentOrgName}.
-          </p>
-          <div>
-            <Button asChild>
-              <Link to="/">Go to Home</Link>
-            </Button>
-          </div>
-        </Statement>
-      </Outside>
-    )
-  }
+  // A link naming an org this account cannot see resolves to the org it is STILL in, and the
+  // shell renders AROUND the message. NO SILENT SWAP (6b decision 9) — and the sidebar stays
+  // usable, which is surface 2's defining property (CONSOLE_FLOW §6). Rendering this as a
+  // bare page instead was the first draft, and it contradicted both.
+  const org = context.state === 'not-a-member' ? context.fallback : context
+  const notAMember = context.state === 'not-a-member'
 
   // An annotator — or a guest expert, PRODUCT.md 5.1's invited SME — gets no console at M4.
   // The shell renders with no Home link, no switcher and no sections: the frame is still
   // theirs, and the org switcher at its foot is the way out for someone who also works in
   // another organisation. `isStaffRole` is an allow list, deliberately (see its comment).
-  const isStaff = isStaffRole(context.role)
+  const isStaff = isStaffRole(org.role)
 
   return (
     <ConsoleShell
-      email={context.email}
-      orgSlug={context.orgSlug}
-      memberships={context.memberships}
-      activeOrgId={context.orgId}
+      email={org.email}
+      orgSlug={org.orgSlug}
+      memberships={org.memberships}
+      activeOrgId={org.orgId}
       isStaff={isStaff}
       panel={panel.state === 'ready' ? { slug: panel.slug, name: panel.name } : null}
     >
-      {!isStaff ? (
-        <Statement eyebrow={context.orgSlug} title="Nothing to review yet">
+      {notAMember ? (
+        // It cannot name the org that was ASKED for: the console never had its name, and
+        // ADR-0057 answers an unknown and a non-member org identically.
+        <Statement eyebrow="Not available" title="This link isn’t available to your account">
           <p className="m-0">
-            Your role in {context.orgName} is {context.role.replace('_', ' ')}. Reviewing traces
-            will open here once annotation is available in LabelLoop — until then there is nothing
-            in the console for this role.
+            What it points to doesn’t exist, or this account can’t see it. Nothing has been switched
+            — you’re still in {org.orgName}.
+          </p>
+          <div>
+            <Button asChild>
+              <Link to="/" search={{ org: org.orgSlug }}>
+                Go to Home
+              </Link>
+            </Button>
+          </div>
+        </Statement>
+      ) : !isStaff ? (
+        <Statement eyebrow={org.orgSlug} title="Nothing to review yet">
+          <p className="m-0">
+            Your role in {org.orgName} is {org.role.replace('_', ' ')}. Reviewing traces will open
+            here once annotation is available in LabelLoop — until then there is nothing in the
+            console for this role.
           </p>
           <p className="m-0 text-muted-foreground">
             If you work in another organisation, switch to it at the foot of the sidebar.
@@ -135,12 +138,12 @@ export const ConsoleLayout = () => {
         // permitted are the same answer (ADR-0057, applied to panels by Deviation 14).
         <Statement eyebrow="Not available" title="This panel isn’t available to your account">
           <p className="m-0">
-            It doesn’t exist in {context.orgName}, or this account can’t see it. Nothing has been
+            It doesn’t exist in {org.orgName}, or this account can’t see it. Nothing has been
             switched.
           </p>
           <div>
             <Button asChild>
-              <Link to="/" search={{ org: context.orgSlug }}>
+              <Link to="/" search={{ org: org.orgSlug }}>
                 Go to Home
               </Link>
             </Button>
@@ -180,11 +183,14 @@ const Loading = () => (
  * draw: no membership, an unreadable session, a link to an org this account cannot see.
  * `data-surface="console"` so the palette is the console's even where the frame is not.
  */
-const Outside = ({ children }: { children: React.ReactNode }) => (
-  <div
-    data-surface="console"
-    className="grid min-h-screen place-items-center bg-background p-[var(--space-8)] text-foreground"
-  >
-    {children}
-  </div>
-)
+const Outside = ({ children }: { children: React.ReactNode }) => {
+  useSurface('console')
+  return (
+    <div
+      data-surface="console"
+      className="grid min-h-screen place-items-center bg-background p-[var(--space-8)] text-foreground"
+    >
+      {children}
+    </div>
+  )
+}
