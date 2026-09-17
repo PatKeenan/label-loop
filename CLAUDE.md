@@ -58,10 +58,27 @@ thoughts/ directory is decision provenance for the public writeup — write acco
 **M4 — console, auth, and the interviewer flow** (docs/BUILD_SPINE.md), from
 `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`. M0–M3 are complete (their
 plans are in `thoughts/shared/plans/complete/`), and two M5 polarity plans landed early. M4
-phases 1–5 — the backend half — are merged (#58–#63), and **phase 6, the human review gate,
-is merged as #65**. **Next is phase 7**: the frame, BUILT — Tailwind + shadcn/ui, the
-`tokens.css` conversion (ADR-0046, and its two alias rules are load-bearing), and the sidebar
-shell drawn in `mockups/console-shell.html` r3.
+phases 1–5 — the backend half — are merged (#58–#63), phase 6's human review gate as #65, and
+**phase 7, the frame BUILT, is merged as #67 and verified**: Tailwind + shadcn/ui, the
+`tokens.css` conversion under ADR-0046, and the sidebar shell from `mockups/console-shell.html`
+r3. **Next is phase 8**, and the plan stays in `approved/` until it lands.
+
+**Two things phase 7 leaves behind that phase 8 has to know**, beyond the scope change spelled
+out below:
+
+- **Deviations 53–54 are phase 7's, and they constrain what phase 8 writes.** `useSurface`
+  mirrors the surface preset onto `<html>`, and without it every PORTALLED overlay — the
+  one-time key reveal, the revoke confirmation, every menu and toast — renders light on the
+  dark console, silently, because the approved tokens resolve tone by ancestry.
+  `useMenuFocusReturn` belongs on any menu phase 8 adds. Both live in `components/shell/`.
+- **`apps/web/src/styles/tokens.css` §1–§5 are VERBATIM from `mockups/tokens.css`**, and
+  `diff` between them reporting only the header and §6–§7 is the check ADR-0046 exists to make
+  possible. The file is excluded from Biome to keep that true, and `shadcn add` WRITES INTO IT
+  — diff it after every one.
+
+**Three things phase 8 deletes**, so they are not mistaken for finished work: the org-wide
+notice on the trace table, the throwaway GitHub button in `login.tsx` (Deviation 11), and the
+disabled `Create panel` / `Issue key` stubs.
 
 **Phase 8's scope changed underneath it — read the plan's Deviations 32–41 before planning or
 implementing it.** Two decisions taken during phase 6's review moved the milestone:
@@ -86,4 +103,6 @@ three milestones after it stopped being true, and was corrected before a context
 because a fresh session reads this file first and treats it as overriding, and would have
 stalled or refused at phase 6. Updated again on 2026-09-15 for the same reason: phase 6 is
 done, and a session starting from the stale text would have built a wizard that two ADRs
-had just removed.)
+had just removed. Updated on 2026-09-16 when phase 7 merged — the same edit, for the third
+time, which is the argument for making it part of merging a phase rather than a thing
+someone remembers.)
