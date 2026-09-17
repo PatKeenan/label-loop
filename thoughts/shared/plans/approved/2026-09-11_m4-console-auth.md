@@ -1184,10 +1184,15 @@ Recorded as they happen; decision provenance, not a changelog.
     **Two things had to be enabled or removed to get there**, both worth knowing:
     `biome.json` needed `css.parser.tailwindDirectives`, without which Biome reports every
     `@theme` and `@custom-variant` as a parse error and then refuses to format the file at all.
-    And **`biome.json` is strict JSON, not JSONC** — a `//` comment explaining the exclusion made
-    Biome fall back to config DISCOVERY, which walked into a stale git worktree under
-    `.claude/worktrees/` and failed with "found a nested root configuration". The explanation
-    lives in `tokens.css`'s own header instead.
+    And **`biome.json` is strict JSON, not JSONC**: a `//` comment explaining the exclusion makes
+    Biome reject its own config. The explanation lives in `tokens.css`'s own header instead.
+
+    That one cost a wrong diagnosis worth recording. The comment made Biome fall back to config
+    DISCOVERY, which walked into a stale git worktree under `.claude/worktrees/` and reported
+    "found a nested root configuration" — an error about a directory that had nothing to do with
+    the change. The worktree has since been removed (clean tree, no stash, HEAD already an
+    ancestor of `main`, 512 MB reclaimed), and the comment STILL breaks the config, which is the
+    real rule. **The misleading error was the environment; the cause was the comment.**
 
 43. **The alias layer is ONE `@theme inline` block, not a per-tone copy — and that was measured,
     because the comment explaining it was wrong the first time.** §2 and §3 repeat themselves in
@@ -1276,7 +1281,18 @@ Recorded as they happen; decision provenance, not a changelog.
     (`github.com/shadcn-ui/cn`), MIT, zero runtime dependencies, and it replaces the classic
     `clsx` + `tailwind-merge` pair. Two dependencies down to one.
 
-51. **The bundle grew from 437 kB to 626 kB (139 kB to 201 kB gzipped).** Named rather than
+51. **`.claude/launch.json` is added, so the console can be previewed without remembering a
+    command.** Not in the plan, and added because the first thing that happens after a phase that
+    changes how everything LOOKS is someone wanting to look at it. One entry, `bun run --cwd
+    apps/web dev` on port 5173 — the port `vite.config.ts` already pins with `strictPort`,
+    because the API's `WEB_ORIGIN` and better-auth's trusted origin both name it.
+
+    The console needs the API for anything past the sign-in screen: `set -a && . ./.env && set
+    +a` then `docker compose -f infra/docker-compose.yml up -d` (compose's project directory is
+    `infra/`, so the repo-root `.env` is NOT read — Deviation 12). Seeded sign-in is
+    `demo@labelloop.test` / `localdev-password`, both local fixtures from `scripts/seed.ts`.
+
+52. **The bundle grew from 437 kB to 626 kB (139 kB to 201 kB gzipped).** Named rather than
     discovered later: that is Tailwind's output plus Radix, lucide and Sonner, and it is ~45%
     more over the wire on the console's first load. Vite's 500 kB chunk warning now fires. Not
     addressed here — code-splitting the console is a change to how it loads, not to how it looks,
