@@ -162,7 +162,14 @@ export const ConsoleShell = ({
                 </Link>
               )}
 
-              <div className="flex flex-col gap-[var(--gap-tight)]">
+              {/*
+                `--gap-stack`, not `--gap-tight`. The switcher answers "which panel" and the nav
+                answers "what within it" — two questions, so they get a real gap. The approved
+                mockup used 4px here, but its switcher is a `details` element with no focus ring;
+                ours is a button carrying the approved 4px `--shadow-focus`, so at 4px the ring and
+                the first nav row touched exactly.
+              */}
+              <div className="flex flex-col gap-[var(--gap-stack)]">
                 <PanelSwitcher
                   orgId={activeOrgId}
                   orgSlug={orgSlug}

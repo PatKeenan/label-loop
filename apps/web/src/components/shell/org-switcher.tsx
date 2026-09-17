@@ -8,6 +8,7 @@ import {
 } from '../ui/dropdown-menu.tsx'
 import type { Membership } from './context.ts'
 import { Data, Mark } from './mark.tsx'
+import { useMenuFocusReturn } from './menu-focus.ts'
 
 /**
  * The organisation, at the FOOT of the sidebar (6b decision 5, ADR-0056 as amended).
@@ -33,6 +34,7 @@ export const OrgSwitcher = ({
   activeOrgId: string
 }) => {
   const navigate = useNavigate()
+  const { triggerProps, contentProps } = useMenuFocusReturn()
   const active = memberships.find((m) => m.org_id === activeOrgId)
   if (active === undefined) return null
 
@@ -48,6 +50,7 @@ export const OrgSwitcher = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        {...triggerProps}
         className={
           'flex min-h-[var(--row-min)] w-full items-center gap-[var(--gap-inline)] rounded-md ' +
           'border bg-secondary px-[var(--pad-field-x)] py-[var(--pad-field-y)] text-left ' +
@@ -60,6 +63,7 @@ export const OrgSwitcher = ({
       </DropdownMenuTrigger>
       {/* Opens UPWARD, because it lives at the foot of the rail. */}
       <DropdownMenuContent
+        {...contentProps}
         side="top"
         align="start"
         className="w-(--radix-dropdown-menu-trigger-width)"

@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu.tsx'
 import { Data, Eyebrow } from './mark.tsx'
+import { useMenuFocusReturn } from './menu-focus.ts'
 
 /**
  * The panel switcher — and, deliberately, THE PANELS SECTION (6b decision 3).
@@ -32,6 +33,7 @@ export const PanelSwitcher = ({
   activePanelSlug: string | null
 }) => {
   const navigate = useNavigate()
+  const { triggerProps, contentProps } = useMenuFocusReturn()
   const panels = useQuery(panelsQuery(orgId))
   const active = panels.data?.find((panel) => panel.slug === activePanelSlug) ?? null
 
@@ -43,6 +45,7 @@ export const PanelSwitcher = ({
       <Eyebrow className="px-[var(--pad-field-x)]">Panel</Eyebrow>
       <DropdownMenu>
         <DropdownMenuTrigger
+          {...triggerProps}
           className={
             'flex min-h-[var(--row-min)] w-full items-center gap-[var(--gap-inline)] rounded-md ' +
             'border bg-secondary px-[var(--pad-field-x)] py-[var(--pad-field-y)] text-left ' +
@@ -70,7 +73,11 @@ export const PanelSwitcher = ({
           </span>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
+        <DropdownMenuContent
+          {...contentProps}
+          align="start"
+          className="w-(--radix-dropdown-menu-trigger-width)"
+        >
           {panels.data?.map((panel) => (
             <DropdownMenuItem
               key={panel.id}

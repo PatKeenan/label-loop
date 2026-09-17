@@ -1333,6 +1333,29 @@ Recorded as they happen; decision provenance, not a changelog.
     that gap is exactly where these lived. A token conversion can be proved with a probe; a
     SHELL cannot.
 
+54. **The panel switcher kept the focus ring after a plain click, and sat 4px from the nav.**
+    Stakeholder, looking at the running console: the switcher had "a white border around it that
+    needs to go", and Overview needed "more breathing room".
+
+    Both are one collision. The border is the approved `--shadow-focus` — 4px of
+    `--graphite-paper` drawn OUTSIDE the element — and it was showing because **Radix returns
+    focus to the trigger programmatically when a menu closes, which Chrome treats as
+    keyboard-ish, so `:focus-visible` matches after a mouse click.** Measured on a
+    `data-state="closed"` trigger: `matches(':focus-visible')` true, the full ring present. The
+    gap below it was `--gap-tight`, 4px at compact — exactly the ring's width, so they touched.
+
+    **Neither half was fixed by deleting the ring.** It is the approved focus treatment and it is
+    how a keyboard user knows where they are; removing it to fix a mouse-only artifact trades an
+    accessibility affordance for a cosmetic one. `useMenuFocusReturn` records whether the menu
+    was opened by POINTER and, if so, prevents Radix's focus return — so a mouse user gets no
+    stuck ring and a keyboard user still lands back on the trigger, ringed. Verified both paths:
+    pointer → `focus-visible` false and no shadow; keyboard → focus returned, ring present.
+
+    The gap became `--gap-stack`. The approved mockup's 4px was drawn when the switcher was a
+    `details` element with no ring, so this is not a departure from the approved screen so much
+    as the first time that spacing met a focusable control. **Worth noting for phase 8**: the
+    same helper belongs on any menu it adds.
+
 ---
 
 ## Open questions for the human
