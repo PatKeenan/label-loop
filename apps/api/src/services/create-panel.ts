@@ -12,6 +12,7 @@ import {
   insertPanelVersion,
   linkPanelVersionJudge,
 } from '../repositories/panels.ts'
+import { type IssuedApiKey, issueApiKeyOn } from './api-keys.ts'
 
 /**
  * Creating a panel and its judges — **the first write path for immutable versions** outside
@@ -70,7 +71,22 @@ export type CreatePanelInput = {
   actorId: string | null
   requestId: string | null
   panel: { slug: string; name: string; threshold: number }
+  /**
+   * May be EMPTY (ADR-0060). A panel with no judges is created COLLECTING: it accepts calls,
+   * captures every trace and convenes nobody. That is the normal state of a new panel since
+   * ADR-0061 moved judge authoring behind an eval pass, not an edge case — the console never
+   * sends judges at M4, and this path stays for seeding and tests until M6 replaces it.
+   */
   judges: NewJudgeInput[]
+  /**
+   * Issue a key WITH the panel, in the same transaction.
+   *
+   * One act rather than two, because the console's onboarding screen hands the person a
+   * runnable snippet and a snippet needs a credential in it. Two steps would allow a panel
+   * that exists with no key, stranding someone on that screen; the transaction makes that
+   * state unrepresentable instead of recoverable.
+   */
+  key?: { name: string; nodeEnv: string }
 }
 
 export type CreatedJudge = {
@@ -85,7 +101,14 @@ export type CreatedJudge = {
 export type PinFailure = { index: number; slug: string; reason: string }
 
 export type CreatePanelResult =
-  | { ok: true; panelId: string; panelVersionId: string; judges: CreatedJudge[] }
+  | {
+      ok: true
+      panelId: string
+      panelVersionId: string
+      judges: CreatedJudge[]
+      /** Present only when `key` was asked for. Its plaintext exists exactly once. */
+      key?: IssuedApiKey
+    }
   /**
    * EVERY failing judge, not the first. Reporting one at a time would have a person fix it,
    * resubmit, and pay for the other judges' validating calls again — only to learn the next
@@ -130,6 +153,7 @@ export const createPanel = async ({
   requestId,
   panel,
   judges,
+  key,
 }: CreatePanelInput): Promise<CreatePanelResult> => {
   const now = () => new Date(clock.now())
 
@@ -273,10 +297,32 @@ export const createPanel = async ({
         requestId,
       })
 
-      return createdJudges
+      // The key, LAST and inside the same transaction. Last because it references the panel;
+      // inside because a panel whose key failed would leave someone on the onboarding screen
+      // with a snippet and nothing to authenticate it.
+      const issued =
+        key === undefined
+          ? undefined
+          : await issueApiKeyOn(tx, {
+              clock,
+              nodeEnv: key.nodeEnv,
+              orgId,
+              panelId,
+              name: key.name,
+              actorId,
+              requestId,
+            })
+
+      return { createdJudges, issued }
     })
 
-    return { ok: true, panelId, panelVersionId, judges: created }
+    return {
+      ok: true,
+      panelId,
+      panelVersionId,
+      judges: created.createdJudges,
+      ...(created.issued === undefined ? {} : { key: created.issued }),
+    }
   } catch (error) {
     // The one constraint a well-formed request can still hit, because it depends on what
     // already exists. Anything else is unexpected and propagates to the central handler.
