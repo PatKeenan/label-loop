@@ -47,6 +47,8 @@ export const createTraceRoutes = () =>
         traces: traces.map((trace) => ({
           id: trace.id,
           panel_id: trace.panelId,
+          // Null for a trace captured while the panel was COLLECTING: it convened no
+          // judges, so there is no verdict and no score (ADR-0060).
           passed: trace.passed,
           score: trace.score,
           complete: trace.complete,

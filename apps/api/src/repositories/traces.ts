@@ -21,8 +21,9 @@ export type TraceRow = {
   requestId: string
   artifact: string
   context: Record<string, string> | null
-  passed: boolean
-  score: number
+  /** Both null for a COLLECTING panel — no judges, so no verdict and no score (ADR-0060). */
+  passed: boolean | null
+  score: number | null
   complete: boolean
   threshold: number
 }
@@ -101,13 +102,15 @@ export const markTraceRecorded = async (
  * One row of the console's trace list. Deliberately NOT the whole trace: the list renders
  * a table, and `artifact` is unbounded caller text while `context` is an arbitrary object,
  * so selecting them would put the largest two columns on the page that reads the most rows.
- * The detail view (M4) fetches those by id, for the one trace being looked at.
+ * A detail view would fetch those by id, for the one trace being looked at — it is
+ * UNSCHEDULED (`docs/PARKING_LOT.md`), not M4's, and the read does not exist yet.
  */
 export type TraceListItem = {
   id: string
   panelId: string
-  passed: boolean
-  score: number
+  /** Null when the panel was COLLECTING: it convened no judges (ADR-0060). */
+  passed: boolean | null
+  score: number | null
   complete: boolean
   threshold: number
   /** Null until the follow-up job has run; the console shows it as "pending". */

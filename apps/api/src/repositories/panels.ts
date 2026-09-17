@@ -1,7 +1,7 @@
 import type { ModelPin, ModelPinValidation } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq } from 'drizzle-orm'
 import type { Executor } from './executor.ts'
 
 /**
@@ -122,6 +122,113 @@ export const findLivePanel = async (
       .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
   }
 }
+
+/**
+ * ONE panel, addressed the way the console addresses it: by SLUG, within the session's org.
+ *
+ * By slug rather than id because the slug is what lives in the URL (`/p/triage-routing`) and
+ * what a person can read and share — the console resolves it here rather than holding an id
+ * it never showed anyone. `orgId` is a required argument, not an optional filter, exactly as
+ * `listPanels` and `listTraces` have it: there is no way to call this across tenants, which
+ * is the property that stops a console growing the classic "authenticate then forget to
+ * filter" hole.
+ *
+ * It answers TWO screens with one read, because they are two views of one object: the
+ * panel's Overview (its state, and progress toward the annotation gate) and its Judges
+ * section (the current version, read-only). Splitting them would be two round trips for a
+ * page that renders both.
+ *
+ * `undefined` for a panel that does not exist AND for one in another org — deliberately
+ * indistinguishable, so the response cannot confirm that a panel exists (ADR-0057, applied
+ * to panels the same way `panelBelongsToOrg` applies it).
+ */
+export const findPanelBySlug = async (db: Database, orgId: string, slug: string) => {
+  const panel = await db.query.panels.findFirst({
+    // Both predicates, always. The slug is unique per ORG (`panels_org_slug_key`), not
+    // globally, so a slug alone would be ambiguous as well as leaky.
+    where: and(eq(schema.panels.orgId, orgId), eq(schema.panels.slug, slug)),
+    columns: { id: true, slug: true, name: true, createdAt: true, currentVersionId: true },
+    with: {
+      currentVersion: {
+        columns: { id: true, threshold: true, aggregationPolicy: true },
+        with: {
+          judgeVersions: {
+            with: {
+              judgeVersion: {
+                columns: {
+                  id: true,
+                  type: true,
+                  polarity: true,
+                  weight: true,
+                  required: true,
+                  question: true,
+                  model: true,
+                  modelPin: true,
+                },
+                with: { judge: { columns: { id: true, slug: true, name: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (panel === undefined) return undefined
+
+  // A panel with no live version cannot be evaluated at all, so it has no threshold to
+  // report. It is representable — `currentVersionId` is nullable — and the console renders
+  // it as a panel that exists and cannot yet be called.
+  const version = panel.currentVersion ?? null
+
+  const [counted] = await db
+    .select({ traces: count() })
+    .from(schema.traces)
+    .where(eq(schema.traces.panelId, panel.id))
+
+  return {
+    id: panel.id,
+    slug: panel.slug,
+    name: panel.name,
+    createdAt: panel.createdAt,
+    panelVersionId: version?.id ?? null,
+    threshold: version?.threshold ?? null,
+    aggregationPolicy: version?.aggregationPolicy ?? null,
+    /**
+     * Every trace this panel has captured, judged or not. It is what the Overview counts
+     * toward the annotation gate (ADR-0061), so it deliberately does NOT filter by state:
+     * a collecting trace is exactly the kind an annotator will read.
+     */
+    traceCount: counted?.traces ?? 0,
+    judges: (version?.judgeVersions ?? [])
+      .map(({ judgeVersion }) => ({
+        judgeId: judgeVersion.judge.id,
+        judgeVersionId: judgeVersion.id,
+        slug: judgeVersion.judge.slug,
+        name: judgeVersion.judge.name,
+        type: judgeVersion.type,
+        polarity: judgeVersion.polarity,
+        weight: judgeVersion.weight,
+        required: judgeVersion.required,
+        question: judgeVersion.question,
+        model: judgeVersion.model,
+        modelPin: judgeVersion.modelPin,
+      }))
+      // Same reason `findLivePanel` sorts: Postgres promises no row order, and an unstable
+      // one would make the response — and every test over it — quietly nondeterministic.
+      .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
+  }
+}
+
+/**
+ * DERIVED from the query, never restated.
+ *
+ * The first draft wrote this shape out by hand and got it wrong twice in one go — `model` is
+ * nullable and `type` is a union, not `string` — which the typecheck refused. That is the
+ * same rule `queries.ts` states for responses and the same mistake Deviation 48 caught in
+ * the console's role union: a hand-written type is the thing that drifts.
+ */
+export type ConsolePanelRead = NonNullable<Awaited<ReturnType<typeof findPanelBySlug>>>
 
 /**
  * Does this panel belong to this org?

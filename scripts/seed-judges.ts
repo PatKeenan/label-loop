@@ -65,8 +65,12 @@ export const DEFAULT_SEED_MODEL = 'fake:deterministic'
  * them.
  *
  * Three of those four were `does_not_score` labels and were deleted by ADR-0034. The
- * fourth survives here only because a panel with no judges makes `evaluate` throw
- * `NOT_FOUND`, and it is knowingly WRONG: `needs-human` asks a question that produces a
+ * fourth survived only because a panel with no judges made `evaluate` throw `NOT_FOUND` —
+ * **and that reason is now gone: ADR-0060 shipped in M4 phase 8, so a judgeless panel is a
+ * legitimate collecting state and this judge no longer holds anything up.** Deleting it is
+ * BUILD_SPINE's M5 line, alongside re-authoring the panel from a real open-coding pass; it
+ * is left here rather than removed in passing because the seed's other tests assert on it.
+ * It remains knowingly WRONG: `needs-human` asks a question that produces a
  * fact the caller's system needs — their bot routes on the answer — rather than gating
  * something their agent produced, which is work rather than evaluation (ADR-0036). It
  * clears the polarity bar and fails the one that matters.

@@ -10,6 +10,7 @@ import { createAuth } from '../../auth.ts'
 import { loadConfig } from '../../config.ts'
 import { createFakeProvider, createModelGateway, FAKE_MODEL } from '../../llm/index.ts'
 import { type ModelProvider, ProviderError } from '../../llm/provider.port.ts'
+import { sha256Hex } from '../../middleware/api-key-auth.ts'
 import { createMemoryRateLimitStore } from '../../rate-limit/memory-store.ts'
 import { fakeCatalogue } from '../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
@@ -298,5 +299,180 @@ describe('tenancy and roles', () => {
     expect(
       (await app().request('http://localhost/internal/panels', { headers: { cookie } })).status,
     ).toBe(403)
+  })
+})
+
+/**
+ * ADR-0060 and ADR-0061 — a panel is created COLLECTING, with a key, in one step.
+ *
+ * Both changes removed a requirement that **nothing asserted**: `judges` used to be
+ * `min(1)`, and no test checked it, so making it optional broke nothing. These are the tests
+ * for the path the console actually takes at M4, where it sends no judges at all.
+ */
+describe('a panel created with no judges', () => {
+  const collectingBody = (slug: string) => ({
+    slug,
+    name: `Panel ${slug}`,
+    threshold: 0.5,
+    // No `judges` key at all — not an empty array. The console omits it, so the default is
+    // what has to work, and a test passing `[]` would not prove that.
+  })
+
+  test('is created, reports itself collecting, and is live immediately', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const response = await postPanel(cookie, collectingBody('collects'))
+    expect(response.status).toBe(201)
+
+    const { data } = (await response.json()) as {
+      data: { panel_id: string; state: string; active: boolean; judges: unknown[] }
+    }
+    expect(data.state).toBe('collecting')
+    expect(data.judges).toEqual([])
+    // Version 1 is activated in the same transaction: a panel that cannot be called is not
+    // a panel anyone can start collecting with.
+    expect(data.active).toBe(true)
+  })
+
+  test('comes with a key, and the plaintext is returned exactly once', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const response = await postPanel(cookie, collectingBody('with-key'))
+
+    const { data } = (await response.json()) as {
+      data: { panel_id: string; key: { id: string; last4: string; plaintext: string } | null }
+    }
+    expect(data.key).not.toBeNull()
+    const key = data.key
+    if (key === null) throw new Error('a created panel carries its key')
+
+    // The onboarding snippet needs a credential in it, so this is the whole point.
+    expect(key.plaintext.startsWith('llk_test_')).toBe(true)
+    expect(key.plaintext.endsWith(key.last4)).toBe(true)
+
+    // Only the HASH is stored. A key readable back out of the database would make "shown
+    // once" a claim rather than a property.
+    const [row] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.id, key.id))
+    expect(row?.panelId).toBe(data.panel_id)
+    expect(row?.hash).toBe(sha256Hex(key.plaintext))
+    expect(JSON.stringify(row)).not.toContain(key.plaintext)
+  })
+
+  test('and that key can immediately evaluate the panel it was issued with', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const created = await postPanel(cookie, collectingBody('runnable'))
+    const { data } = (await created.json()) as {
+      data: { panel_id: string; key: { plaintext: string } | null }
+    }
+    const plaintext = data.key?.plaintext
+    if (plaintext === undefined) throw new Error('a created panel carries its key')
+
+    // The snippet the console hands over, driven exactly as a person would paste it.
+    const response = await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ artifact: 'the agent’s output' }),
+    })
+
+    expect(response.status).toBe(200)
+    const evaluation = (await response.json()) as { data: { state: string; passed: null } }
+    expect(evaluation.data.state).toBe('collecting')
+    expect(evaluation.data.passed).toBeNull()
+  })
+
+  test('the panel and its key are one transaction — neither exists without the other', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    // A taken slug fails AFTER the panel insert is attempted, so if the key were issued
+    // outside the transaction this would leave an orphan credential behind.
+    await postPanel(cookie, collectingBody('atomic'))
+    const before = await db.select().from(schema.apiKeys)
+
+    const conflict = await postPanel(cookie, collectingBody('atomic'))
+    expect(conflict.status).toBe(422)
+
+    const after = await db.select().from(schema.apiKeys)
+    expect(after.length).toBe(before.length)
+  })
+})
+
+/**
+ * `GET /internal/panels/:slug` — the panel's Overview and its Judges section in one read.
+ */
+describe('reading one panel', () => {
+  const getPanel = (cookie: string, slug: string) =>
+    app().request(`http://localhost/internal/panels/${slug}`, { headers: { cookie } })
+
+  test('reports collecting, its trace count, and no judges', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    await postPanel(cookie, { slug: 'readable', name: 'Readable', threshold: 0.5 })
+
+    const { data } = (await (await getPanel(cookie, 'readable')).json()) as {
+      data: { state: string; trace_count: number; judges: unknown[]; threshold: number }
+    }
+    expect(data.state).toBe('collecting')
+    expect(data.judges).toEqual([])
+    expect(data.threshold).toBe(0.5)
+    // What the Overview counts toward the annotation gate (ADR-0061).
+    expect(data.trace_count).toBe(0)
+  })
+
+  test('reports its judges, read-only, once it has them', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    await postPanel(cookie, panelBody('judged-read'))
+
+    const { data } = (await (await getPanel(cookie, 'judged-read')).json()) as {
+      data: { state: string; judges: { slug: string; question: string; model: string }[] }
+    }
+    expect(data.state).toBe('judged')
+    expect(data.judges.length).toBe(1)
+    expect(data.judges[0]?.slug).toBeDefined()
+    expect(data.judges[0]?.question).toBeDefined()
+  })
+
+  test('counts a trace the panel actually captured', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const created = await postPanel(cookie, { slug: 'counts', name: 'Counts', threshold: 0.5 })
+    const { data } = (await created.json()) as {
+      data: { panel_id: string; key: { plaintext: string } | null }
+    }
+    const plaintext = data.key?.plaintext
+    if (plaintext === undefined) throw new Error('a created panel carries its key')
+
+    await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ artifact: 'one' }),
+    })
+
+    const read = (await (await getPanel(cookie, 'counts')).json()) as {
+      data: { trace_count: number }
+    }
+    // A COLLECTING trace counts. The gate is about how much an expert has to read, and a
+    // trace with no verdict is exactly the kind they read first.
+    expect(read.data.trace_count).toBe(1)
+  })
+
+  test('another org’s panel is NOT_FOUND, never FORBIDDEN', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const theirs = newId('pnl_')
+    await db
+      .insert(schema.panels)
+      .values({ id: theirs, orgId: OTHER_ORG, slug: 'not-yours', name: 'Not yours' })
+
+    const response = await getPanel(cookie, 'not-yours')
+    // 404 and not 403: a 403 would confirm the panel exists, which is the same posture
+    // ADR-0057 takes for orgs.
+    expect(response.status).toBe(404)
+    const parsed = errorEnvelopeSchema.safeParse(await response.json())
+    expect(parsed.data?.error.code).toBe('NOT_FOUND')
+  })
+
+  test('a slug that does not exist is the SAME answer', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const response = await getPanel(cookie, 'no-such-panel-anywhere')
+    expect(response.status).toBe(404)
+  })
+
+  test('an annotator cannot read one', async () => {
+    const cookie = await signIn(ANNOTATOR_EMAIL)
+    expect((await getPanel(cookie, 'readable')).status).toBe(403)
   })
 })

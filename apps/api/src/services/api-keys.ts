@@ -4,6 +4,7 @@ import { sha256Hex } from '../middleware/api-key-auth.ts'
 import type { Clock } from '../ports/clock.ts'
 import { insertApiKey, revokeApiKey as revokeRow } from '../repositories/api-keys.ts'
 import { recordAuditEvent } from '../repositories/audit-events.ts'
+import type { Executor } from '../repositories/executor.ts'
 
 /**
  * Issuing and revoking API keys (ADR-0003) — the first write path `api_keys` has had outside
@@ -74,48 +75,52 @@ export type IssueApiKeyInput = {
  * middleware, while the panel arrives in a request body, so the route checks it belongs to
  * the org before calling this.
  */
-export const issueApiKey = async ({
-  db,
-  clock,
-  nodeEnv,
-  orgId,
-  panelId,
-  name,
-  actorId,
-  requestId,
-}: IssueApiKeyInput): Promise<IssuedApiKey> => {
+/**
+ * The key and its audit event, written on a handle the CALLER owns.
+ *
+ * Split out of `issueApiKey` so a key can be issued INSIDE someone else's transaction — which
+ * `createPanel` needs, because ADR-0061 makes "a panel and its first key" one act from the
+ * console's point of view (a panel created with no key would strand a person on an onboarding
+ * screen with a snippet and no credential to put in it). The atomicity rule is unchanged and
+ * is the whole reason `Executor` exists: the row and its event go together or neither does.
+ */
+export const issueApiKeyOn = async (
+  tx: Executor,
+  { clock, nodeEnv, orgId, panelId, name, actorId, requestId }: Omit<IssueApiKeyInput, 'db'>,
+): Promise<IssuedApiKey> => {
   const plaintext = `${keyPrefix(nodeEnv)}${randomSecret()}`
   const id = newId('key_', clock.now())
   const last4 = plaintext.slice(-4)
 
-  await db.transaction(async (tx) => {
-    await insertApiKey(tx, {
-      id,
-      orgId,
-      panelId,
-      name,
-      hash: sha256Hex(plaintext),
-      last4,
-      // The same value the audit row records as actor, so "who issued this key" has one
-      // answer whether you ask the row or the log. Null when a script did it (ADR-0058).
-      createdBy: actorId,
-    })
-    await recordAuditEvent(tx, {
-      orgId,
-      actorType: actorId === null ? 'system' : 'user',
-      actorId,
-      action: 'api_key.issued',
-      subjectType: 'api_key',
-      subjectId: id,
-      // `last4` and the panel, never the plaintext or the hash. This table has no DELETE
-      // (ADR-0051) and M8 adds export, so anything written here is permanent and leaves.
-      data: { panel_id: panelId, name, last4 },
-      requestId,
-    })
+  await insertApiKey(tx, {
+    id,
+    orgId,
+    panelId,
+    name,
+    hash: sha256Hex(plaintext),
+    last4,
+    // The same value the audit row records as actor, so "who issued this key" has one
+    // answer whether you ask the row or the log. Null when a script did it (ADR-0058).
+    createdBy: actorId,
+  })
+  await recordAuditEvent(tx, {
+    orgId,
+    actorType: actorId === null ? 'system' : 'user',
+    actorId,
+    action: 'api_key.issued',
+    subjectType: 'api_key',
+    subjectId: id,
+    // `last4` and the panel, never the plaintext or the hash. This table has no DELETE
+    // (ADR-0051) and M8 adds export, so anything written here is permanent and leaves.
+    data: { panel_id: panelId, name, last4 },
+    requestId,
   })
 
   return { id, last4, plaintext }
 }
+
+export const issueApiKey = async ({ db, ...input }: IssueApiKeyInput): Promise<IssuedApiKey> =>
+  db.transaction(async (tx) => issueApiKeyOn(tx, input))
 
 export type RevokeApiKeyInput = {
   db: Database

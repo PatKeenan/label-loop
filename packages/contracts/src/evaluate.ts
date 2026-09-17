@@ -284,30 +284,55 @@ export const aggregationSchema = z
  * one. Returning only the summary would make the second case impossible; returning only
  * the detail would make every caller reimplement the same policy.
  */
+export const EVALUATION_STATES = ['collecting', 'judged'] as const
+
 export const evaluationSchema = z
   .object({
-    passed: z.boolean().openapi({
+    state: z.enum(EVALUATION_STATES).openapi({
       description:
-        'Whether the panel’s score met its configured threshold, and no required judge ' +
-        'failed. The panel decides this only because the customer configured the weights ' +
-        'and the bar — we never decide a caller’s risk tolerance on their behalf.',
-      example: false,
+        'Whether this panel convened judges. `judged` is the normal case. `collecting` ' +
+        'means the panel has no judges yet: the call was accepted, the trace was captured ' +
+        'in full, and NOTHING was judged — so `passed` and `score` are null and `judges` ' +
+        'is empty. It costs no provider tokens. A new panel starts here by design, because ' +
+        'judges cannot be authored before someone has read real traffic (ADR-0060). ' +
+        '**Treat `collecting` as a pass while you integrate**, and check for it rather ' +
+        'than reading `passed` as a boolean — a gate that treats null as false blocks ' +
+        'everything, and one that treats it as true ships everything believing it is ' +
+        'protected. Neither default is silently safe, which is why this field exists ' +
+        'instead of one.',
+      example: 'judged',
     }),
+    passed: z
+      .boolean()
+      .nullable()
+      .openapi({
+        description:
+          'Whether the panel’s score met its configured threshold, and no required judge ' +
+          'failed. The panel decides this only because the customer configured the weights ' +
+          'and the bar — we never decide a caller’s risk tolerance on their behalf. ' +
+          '**Null when `state` is `collecting`**: no judge ran, so there is no verdict to ' +
+          'report, and a boolean here would be a claim we cannot support either way.',
+        example: false,
+      }),
     score: z
       .number()
       .min(0)
       .max(1)
+      .nullable()
       .openapi({
         description:
           'The weighted share of judges that passed, from 0 to 1. Six equally weighted ' +
           'judges with three passing scores 0.5. Skipped, failed and errored judges are ' +
           'absent from both the numerator and the denominator. Check `complete` before ' +
-          'trusting this as a whole-panel number.',
+          'trusting this as a whole-panel number. **Null when `state` is `collecting`** — ' +
+          'a score over zero judges is not 0, it is undefined.',
         example: 0.5,
       }),
     complete: z.boolean().openapi({
       description:
-        'Whether every judge on the panel actually ran. When false, some judge ' +
+        'Whether every judge on the panel actually ran. **True when `state` is ' +
+        '`collecting`**, vacuously: no judge was skipped because there were none to skip. ' +
+        'It is `state`, not this field, that says whether anything was judged. When false, some judge ' +
         'was skipped, failed or errored and `score` was computed over a SMALLER ' +
         'denominator — so the number is real but partial, and a gate reading `passed` ' +
         'alone would be acting on incomplete information. We return the partial result ' +
@@ -363,5 +388,6 @@ export type VerdictStatus = (typeof VERDICT_STATUSES)[number]
 export type Verdict = z.infer<typeof verdictSchema>
 export type AggregationPolicy = (typeof AGGREGATION_POLICIES)[number]
 export type Aggregation = z.infer<typeof aggregationSchema>
+export type EvaluationState = (typeof EVALUATION_STATES)[number]
 export type Evaluation = z.infer<typeof evaluationSchema>
 export type EvaluateResponse = z.infer<typeof evaluateResponseSchema>
