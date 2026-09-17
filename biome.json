@@ -13,7 +13,8 @@
       "!**/*.gen.ts",
       "!packages/db/migrations",
       "!mockups",
-      "!bun.lock"
+      "!bun.lock",
+      "!apps/web/src/styles/tokens.css"
     ]
   },
   "formatter": {
@@ -60,6 +61,11 @@
       "semicolons": "asNeeded",
       "trailingCommas": "all",
       "arrowParentheses": "always"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "json": {

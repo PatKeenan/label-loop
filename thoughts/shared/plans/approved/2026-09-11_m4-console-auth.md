@@ -20,6 +20,7 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
 > | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
+> | **7 — the frame, built** | — | **automated verification green; awaiting manual verification** |
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -28,6 +29,12 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 >
 > Phase 6 is mockup work under a PARTIAL Phase A resume (ADR-0055), not application code — see
 > CLAUDE.md "Current phase". Open question 3 below applies directly to 6c.
+>
+> **Phase 7 (2026-09-16).** Every automated check is green and every step but one is `[x]`; the
+> org switcher's BEHAVIOUR is `[~]` because verifying it needs a second membership that no seed
+> creates. Deviations 42–51. Two things need a stakeholder decision recorded rather than just a
+> look: **Sonner was admitted into D17** (asked and answered during the phase; D17 and ADR-0046
+> amended), and **the URL shape** the flow map left to this phase.
 
 # M4 — console, auth, and the interviewer flow
 
@@ -497,32 +504,51 @@ layout — they become things that go *inside* something that already exists.
   maintain; ADR-0046 names that cost).
 
 ### Steps
-- [ ] Tailwind + shadcn configured; build produces a working bundle
-- [ ] Token conversion complete, with a comment naming ADR-0046 and the alias rule
-- [ ] Every value in the approved palette still reachable — nothing dropped in translation
-- [ ] Sidebar shell built to the approved 6b screen, with inert sections greyed out and labelled
-      with their milestone (open question 1, answered)
-- [ ] **Three values the 6b mockup could only stand in for arrive with the components, not from
-      `tokens.css`** (6b review, Deviation 36). Check each against the COPY actually installed,
-      not against memory of shadcn:
-      - rail width is the Sidebar component's `--sidebar-width` (the mockup matches its 16rem
-        default);
-      - the Dialog overlay ships as a hard-coded black class — replace it with a value derived
-        from our tokens, since `tokens.css` forbids a literal light or dark value;
-      - toasts are Sonner, a separate package `shadcn add` installs — confirm it sits under D17
-        before adding it, and use a non-expiring duration for action failures (CONSOLE_FLOW §6);
-      - Tailwind v4's `--spacing` base aliases onto our 4px `--space-1`
-- [ ] Org switcher sends the active org header phase 1 validates; switching re-scopes the view
-- [ ] Existing screens re-skinned inside the shell; behaviour unchanged
-- [ ] `apps/web/nginx.conf` still serves the bundle correctly (ADR-0020: SPA fallback, a real
+- [x] Tailwind + shadcn configured; build produces a working bundle (Claude — `bun run --cwd
+      apps/web build`, 626 kB / 201 kB gzipped, up from 437 kB / 139 kB)
+- [x] Token conversion complete, with a comment naming ADR-0046 and the alias rule (Claude)
+- [x] Every value in the approved palette still reachable — nothing dropped in translation
+      (Claude — `diff apps/web/src/styles/tokens.css mockups/tokens.css` reports **zero** lines
+      present only in the approved file; §1–§5 are verbatim, see Deviation 42)
+- [x] Sidebar shell built to the approved 6b screen, with inert sections greyed out and labelled
+      with their milestone (open question 1, answered) — Claude. Both levels, the padlock/
+      milestone distinction (r3), the foot, and the three error surfaces.
+- [x] **Three values the 6b mockup could only stand in for arrive with the components, not from
+      `tokens.css`** (6b review, Deviation 36). Checked against the COPY actually installed:
+      - **rail width** — `sidebar.tsx:30` reads `const SIDEBAR_WIDTH = "16rem"`. The approved
+        mockup's `calc(var(--space-16) * 4)` is 256px, the same number, so nothing is overridden.
+      - **Dialog overlay** — shipped as `bg-black/50` in BOTH `dialog.tsx` and `sheet.tsx` (the
+        mockup only predicted one). Replaced with `bg-overlay`, which §6 derives as
+        `color-mix(in srgb, var(--color-bg) 72%, transparent)` — the mockup's own ratio, and
+        tone-aware, where a literal is what tokens.css rule 3 forbids.
+      - **toasts** — Sonner. **It does NOT sit under D17 as D17 was written**, and the answer was
+        the stakeholder's: admitted, and D17 and ADR-0046 amended to say so. `duration: Infinity`.
+        See Deviation 43 — `next-themes` came with it and was refused.
+      - **`--spacing`** — aliased onto `--space-1`; verified in the built stylesheet, where
+        `.p-4` compiles to `calc(var(--space-1) * 4)`.
+- [~] Org switcher sends the active org header phase 1 validates; switching re-scopes the view —
+      BUILT and typechecked; **the behaviour is stakeholder manual verification** (needs a second
+      membership, which no seed creates). See Deviation 44 for the URL shape.
+- [x] Existing screens re-skinned inside the shell; behaviour unchanged (Claude — login outside
+      the shell, traces inside it. See Deviation 45: traces is still ORG-WIDE and says so.)
+- [x] `apps/web/nginx.conf` still serves the bundle correctly (ADR-0020: SPA fallback, a real
       404 for a missing fingerprinted asset, `immutable` on `/assets/`, `no-store` on the shell)
+      — Claude, against the REAL image rather than `vite preview`, which has its own fallback and
+      would have proved nothing. `docker build -f apps/web/Dockerfile` then curl: `/p/x/traces`
+      → 200 text/html; `/assets/nope-deadbeef.js` → **404**, not the shell; both the JS and the
+      NEW CSS asset `immutable` with `Content-Encoding: gzip`; `/index.html` `no-store`. No
+      config change was needed — the new CSS asset was already covered by `gzip_types`.
 
 ### Automated verification
-- [ ] `bun run --cwd apps/web build` succeeds
-- [ ] `bun test apps/web` passes (the error-map exhaustiveness test especially)
-- [ ] `bun run typecheck`, `bun run lint` clean
-- [ ] `bun audit --audit-level=high` clean — Tailwind and shadcn's tree are new surface, and
-      CI fails a PR on any high advisory
+- [x] `bun run --cwd apps/web build` succeeds (Claude)
+- [x] `bun test apps/web` passes (Claude — 34 pass / 0 fail; the error-map exhaustiveness test
+      is untouched by this phase and still green)
+- [x] `bun run typecheck`, `bun run lint` clean (Claude — both required real fixes, not
+      suppressions: Deviations 46 and 47)
+- [x] `bun audit --audit-level=high` clean — Tailwind and shadcn's tree are new surface, and
+      CI fails a PR on any high advisory (Claude — 458 packages, 0 at high. One MODERATE remains
+      and is pre-existing: esbuild's dev-server advisory, reached through `drizzle-kit` and
+      `vite`, below the level CI enforces and not introduced here.)
 
 ### Manual verification
 - [ ] The shell renders in both tones and both surfaces, matching `tokens-preview.html`
@@ -1139,6 +1165,123 @@ Recorded as they happen; decision provenance, not a changelog.
     `panel-create.html` r3. **Open and not decided:** whether 50 is the right floor, whether it
     should be per-panel, and how alignment sessions are reached once judges are authored this
     way (carried to M6 by ADR-0061).
+
+### Phase 7
+
+42. **§1–§5 of the converted `tokens.css` are VERBATIM, and the file is excluded from Biome to
+    keep them that way.** ADR-0046's last consequence is that the conversion is "reviewable as a
+    diff against a file with an existing approval, so a lost or altered design token is visible
+    rather than inferred". That only works if the diff is otherwise empty — so the converted file
+    is the approved file with a header above it and two new sections below it, and
+    `diff apps/web/src/styles/tokens.css mockups/tokens.css` reports **zero** lines present only
+    in the approved copy.
+
+    Biome broke it on first run: it lowercases every hex literal and collapses the blank lines
+    between palette blocks, changing **61 lines** of approved source and leaving the check
+    reporting noise instead of changes. The file is now in `biome.json`'s exclude list, beside
+    `mockups` and for the same reason. §6 and §7 are hand-formatted.
+
+    **Two things had to be enabled or removed to get there**, both worth knowing:
+    `biome.json` needed `css.parser.tailwindDirectives`, without which Biome reports every
+    `@theme` and `@custom-variant` as a parse error and then refuses to format the file at all.
+    And **`biome.json` is strict JSON, not JSONC** — a `//` comment explaining the exclusion made
+    Biome fall back to config DISCOVERY, which walked into a stale git worktree under
+    `.claude/worktrees/` and failed with "found a nested root configuration". The explanation
+    lives in `tokens.css`'s own header instead.
+
+43. **The alias layer is ONE `@theme inline` block, not a per-tone copy — and that was measured,
+    because the comment explaining it was wrong the first time.** §2 and §3 repeat themselves in
+    full because a custom property's `var()` references resolve where the property is DECLARED,
+    so `:root { --card: var(--color-surface) }` would freeze at the light value. `@theme inline`
+    declares nothing: Tailwind emits the value into the utility, so `bg-card` compiles to
+    `background-color: var(--color-surface)` and resolves at the element.
+
+    The first draft's comment claimed `inline` "means these four names are never emitted as CSS
+    variables". **It does emit them** — into `@layer theme`, where §1's unlayered declarations
+    beat them. The behaviour is the same and the reason is not, so the comment was corrected to
+    the measured one. Verified in a browser against the BUILT stylesheet, not reasoned about:
+    console preset → `rounded-md` 4px on `#161A21`; annotator preset → 6px on `#FFFFFF`;
+    `data-tone="light" data-density="compact"` → white at 4px and `--type-ui` 13px, so the two
+    axes still compose independently; `--radius-md` stays 6px in all three while
+    `--radius-control` follows density, so there is no cycle and no clobber.
+
+44. **`shadcn add` WRITES INTO THE THEME FILE, and what it wrote is the decision ADR-0046 did not
+    take.** Adding `sidebar` appended a `.dark { --sidebar: hsl(240 5.9% 10%); … }` block — eight
+    literal colours, in shadcn's vocabulary, keyed off a `.dark` class — and spliced a matching
+    light set INLINE onto an approved line in §1, mid-file, where a diff would show it as an edit
+    to `--radius-mark`. Both were removed and §1–§5 rebuilt from the approved source.
+
+    Recorded because it is not a one-off: every future `shadcn add` will do it. A standing note
+    now sits at the foot of `tokens.css` saying to diff the file after each one.
+
+    **Three copied components also reached past our tokens**, all silently: `dialog.tsx` and
+    `sheet.tsx` with `bg-black/50`, `sidebar.tsx` with raw `var(--sidebar-border)` /
+    `var(--sidebar-accent)`, and `sonner.tsx` with `var(--popover)`. The last three matter more
+    than they look: **§6 aliases shadcn's names for utility GENERATION only**, so `bg-popover`
+    works and a raw `var(--popover)` resolves to nothing at all — no error, just an unstyled
+    element. `--radius` is declared for real, in both density blocks, precisely because copied
+    components read it that way.
+
+45. **The URL shape is `/p/$panelSlug/...` with an orthogonal `?org=<slug>`.** CONSOLE_FLOW §4
+    states the rule and says "the URL's shape is phase 7's", so this is that decision: the org is
+    a SEARCH param because it re-scopes whatever screen you are on rather than naming a different
+    one, which means one `validateSearch` on the root route covers the tree. The URL carries the
+    slug, the wire carries the id, and no extra round trip is bought — `GET /internal/me` already
+    returns `memberships` with both, from the join Deviation 2 added. Full reasoning in
+    `components/shell/context.ts` and the decisions log.
+
+46. **`ACTIVE_ORG_HEADER` moved to `@labelloop/contracts`.** Not in the plan. `session.ts`'s own
+    comment said "three places must agree on the spelling and only one of them can be wrong
+    silently"; the console is a fourth, and it CANNOT import from `apps/api/src/middleware` —
+    that module pulls better-auth and a `pg.Pool` into a browser bundle. Hard-coding the string
+    in `apps/web` would have recreated exactly the drift the comment warns about. `session.ts`
+    re-exports it so its existing readers are unchanged.
+
+47. **The trace table is still ORG-WIDE inside a panel's Traces section, and the screen says so.**
+    `GET /internal/traces` takes no panel filter, and CONSOLE_FLOW §3 gives phase 8 the job of
+    scoping it. The plan's phase 7 asks for the screen to be re-skinned and moved inside the
+    shell, which is what proves the conversion on real data — so the table is where the mockup
+    puts it, with a dashed notice naming the gap and phase 8.
+
+    Considered and rejected: filtering client-side by `panel_id`, which silently drops rows the
+    50-row page did not contain; and leaving it unlabelled, which is the console showing an org's
+    rows under a panel's heading and asserting something untrue. The notice is drawn in the same
+    dashed language as an unbuilt screen so it reads as scaffolding, and it goes away with the
+    org-wide read.
+
+48. **The typecheck caught a hand-written role union that was missing a role.** The first draft of
+    `context.ts` wrote `'admin' | 'engineer' | 'annotator'`; the schema has a FOURTH,
+    `guest_expert` — PRODUCT.md 5.1's invited SME. The union is now DERIVED from what
+    `GET /internal/me` returns, which is the rule `queries.ts` already states for response shapes.
+
+    The bug it would have caused is not cosmetic: the shell decides who sees a console from that
+    value. It is now an ALLOW list (`isStaffRole`), so a role added to the schema defaults to
+    seeing nothing until someone decides otherwise — the opposite default hands a console to
+    whoever is added next. This is the internal surface's stated guarantee working as designed,
+    the same way Deviation 6 described.
+
+49. **Three lint findings in copied components were FIXED rather than suppressed, and one removed
+    behaviour.** `sidebar.tsx` writes a `sidebar_state` cookie to remember a collapsed rail. It is
+    unreachable here — the rail is `collapsible="none"` and nothing renders a trigger — and a
+    cookie remembering view state is the shape ADR-0047 rejected for the org, so it was deleted
+    with a note rather than silenced with a rule override. Two `useExhaustiveDependencies`
+    findings were real (`setOpenMobile` is a `useState` setter, so it can never change).
+
+    No `biome.json` override for `components/ui/**` was added, deliberately: silencing lint on
+    copied code is how a real bug hides in it, and ADR-0046 is explicit that these components are
+    ours to maintain. The cost is that a future `shadcn add` may need the same three fixes again.
+
+50. **`shadcn` no longer generates `lib/utils.ts`; it installs `cn`.** Checked rather than
+    assumed, since an unfamiliar one-word package name is worth a look: it is shadcn-ui's own
+    (`github.com/shadcn-ui/cn`), MIT, zero runtime dependencies, and it replaces the classic
+    `clsx` + `tailwind-merge` pair. Two dependencies down to one.
+
+51. **The bundle grew from 437 kB to 626 kB (139 kB to 201 kB gzipped).** Named rather than
+    discovered later: that is Tailwind's output plus Radix, lucide and Sonner, and it is ~45%
+    more over the wire on the console's first load. Vite's 500 kB chunk warning now fires. Not
+    addressed here — code-splitting the console is a change to how it loads, not to how it looks,
+    and phase 7's job was the frame. Worth revisiting once phase 8's screens are in and the real
+    number is known.
 
 ---
 
