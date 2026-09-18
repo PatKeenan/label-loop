@@ -61,9 +61,8 @@ export const meetsRules = (rules: readonly NameRule[], value: string): boolean =
   rules.every((rule) => rule.test(value))
 
 /**
- * A labelled field whose rules show WHILE IT MATTERS: when the field has focus, or when any rule
- * is broken. Once everything passes and focus moves on, the list tucks away — so a finished form
- * is a calm form, not three paragraphs of ticks.
+ * A labelled field whose rules show as soon as it has content, and stay — so nothing below it
+ * moves when focus leaves (see the note at the checklist). An empty field shows them on focus.
  *
  * A server error that is one of the rule labels is not repeated: the ✕ beside that rule already
  * says it. Anything else the server reports — "that slug is taken" — shows beneath.
@@ -85,7 +84,6 @@ export const RuledField = ({
   error?: string | undefined
   children: React.ReactNode
 }) => {
-  const broken = value !== '' && !meetsRules(rules, value)
   const serverOnly = error !== undefined && !rules.some((rule) => rule.label === error)
 
   return (
@@ -106,9 +104,12 @@ export const RuledField = ({
       <RuleChecklist
         rules={rules}
         value={value}
-        className={
-          broken || (error !== undefined && !serverOnly) ? '' : 'hidden group-focus-within:flex'
-        }
+        // Shown once the field has content, and KEPT — never collapsed on blur. The first
+        // version tucked it away when focus left a valid field, and that moved everything below
+        // it: pressing the submit button blurred the field, the list collapsed, the (centred)
+        // form shifted, and the click landed where the button had been. The button looked dead.
+        // Empty fields show it only on focus, so an untouched form still opens calm.
+        className={value !== '' || error !== undefined ? '' : 'hidden group-focus-within:flex'}
       />
     </div>
   )

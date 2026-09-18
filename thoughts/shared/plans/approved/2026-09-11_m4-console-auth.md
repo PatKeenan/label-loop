@@ -1559,6 +1559,12 @@ one PR would have been very large for a repository meant to be read.
     the attack this rule exists to refuse, in its own source. Caught by reading the diff; every
     such character is now an escape, and a scan found no others in the touched files.
 
+    **And the first checklist made the submit button unclickable.** It collapsed when focus left
+    a valid field — so pressing Create blurred the name, the list folded, the vertically-centred
+    form shifted ~26px, and the click landed where the button had been. The stakeholder reported
+    it as "the button is always disabled"; the DOM said enabled. The checklist now stays once a
+    field has content, and nothing moves at the moment of a click.
+
 ---
 
 ## Open questions for the human
