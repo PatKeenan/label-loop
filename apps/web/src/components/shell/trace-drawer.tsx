@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { ArrowDownToLineIcon, ArrowUpFromLineIcon, ChevronRightIcon } from 'lucide-react'
+import { useState } from 'react'
 import { traceDetailQuery } from '../../api/queries.ts'
 import { ApiError } from '../../errors/api-error.ts'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet.tsx'
@@ -36,6 +38,12 @@ export const TraceDrawer = () => {
     enabled: context.state === 'ready' && traceId !== undefined,
   })
 
+  // Open by default: the request is usually what someone opened the drawer to read. Collapsing
+  // it is for the reader working down the judges, and it stays how they left it between traces.
+  const [requestOpen, setRequestOpen] = useState(true)
+  const contextCount =
+    detail.data?.context === null ? 0 : Object.keys(detail.data?.context ?? {}).length
+
   // Drops `trace` and keeps everything else, so closing returns to exactly the list underneath.
   const close = () => void navigate({ to: '.', search: { ...search, trace: undefined } })
 
@@ -52,19 +60,9 @@ export const TraceDrawer = () => {
             {traceId}
           </SheetTitle>
           <SheetDescription asChild>
-            <div className="flex flex-wrap items-center gap-[var(--gap-inline)]">
+            <div>
               {detail.data === undefined ? null : (
-                <>
-                  <Decision passed={detail.data.passed} complete={detail.data.complete} />
-                  <Data className="tabular-nums">
-                    <span className="text-foreground">
-                      {detail.data.score === null ? '—' : detail.data.score.toFixed(2)}
-                    </span>
-                    {' / '}
-                    {detail.data.threshold.toFixed(2)}
-                  </Data>
-                  <Data>{new Date(detail.data.created_at).toLocaleString()}</Data>
-                </>
+                <Data>{new Date(detail.data.created_at).toLocaleString()}</Data>
               )}
             </div>
           </SheetDescription>
@@ -81,53 +79,107 @@ export const TraceDrawer = () => {
             </p>
           ) : (
             <>
-              <Section title="Input">
-                <Field label="Artifact">
-                  {/* The caller's own output, verbatim — we never generated it (ADR-0019). */}
-                  <pre className="m-0 max-h-[24rem] overflow-auto rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
-                    {detail.data.artifact}
-                  </pre>
-                </Field>
-                <Field label="Context">
-                  {detail.data.context === null || Object.keys(detail.data.context).length === 0 ? (
-                    <span className="text-ui text-muted-foreground">None sent.</span>
-                  ) : (
-                    <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
-                      {Object.entries(detail.data.context).map(([key, value]) => (
-                        <div key={key} className="contents">
-                          <dt>
-                            <Data>{key}</Data>
-                          </dt>
-                          <dd className="m-0 font-mono text-data break-words text-foreground">
-                            {value}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </Field>
-              </Section>
-
-              <Section
-                title={
-                  detail.data.judges.length === 0
-                    ? 'Judges'
-                    : `Judges · ${detail.data.judges.length}`
-                }
+              {/*
+                IN, then OUT — two bordered blocks with a DIRECTION, because the first draft set
+                both at one level and a reader could not tell what was sent from what came back.
+                Borders and direction do the separating, not a new fill (a lighter surface on
+                dark reads as a raised slab — the lesson of the create dialog's footer band).
+              */}
+              <details
+                open={requestOpen}
+                onToggle={(event) => setRequestOpen(event.currentTarget.open)}
+                className="group rounded-lg border"
               >
-                {detail.data.judges.length === 0 ? (
-                  <p className="m-0 text-body text-muted-foreground">
-                    No judges ran — the panel was collecting when this call arrived. It’s stored,
-                    and counts toward annotation.
-                  </p>
-                ) : (
-                  <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
-                    {detail.data.judges.map((judge) => (
-                      <JudgeVerdict key={judge.slug} judge={judge} />
-                    ))}
-                  </ul>
-                )}
-              </Section>
+                <summary className="flex cursor-pointer list-none items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)] [&::-webkit-details-marker]:hidden">
+                  <ChevronRightIcon
+                    aria-hidden
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                  />
+                  <BlockTitle
+                    icon={<ArrowDownToLineIcon className="size-4" />}
+                    title="Request"
+                    caption="What your agent sent"
+                  />
+                  {/* Collapsed, it still says something: the first line, and how much context. */}
+                  <span className="ml-auto flex min-w-0 max-w-[55%] flex-col items-end gap-[var(--gap-tight)] group-open:hidden">
+                    <Data className="max-w-full truncate text-foreground">
+                      {detail.data.artifact.split('\n')[0]}
+                    </Data>
+                    <Data>
+                      {contextCount === 0
+                        ? 'no context'
+                        : `${contextCount} context ${contextCount === 1 ? 'key' : 'keys'}`}
+                    </Data>
+                  </span>
+                </summary>
+                <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
+                  <Field label="Artifact">
+                    {/* The caller's own output, verbatim — we never generated it (ADR-0019). */}
+                    <pre className="m-0 max-h-[24rem] overflow-auto rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
+                      {detail.data.artifact}
+                    </pre>
+                  </Field>
+                  <Field label="Context">
+                    {detail.data.context === null || contextCount === 0 ? (
+                      <span className="text-ui text-muted-foreground">None sent.</span>
+                    ) : (
+                      <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
+                        {Object.entries(detail.data.context).map(([key, value]) => (
+                          <div key={key} className="contents">
+                            <dt>
+                              <Data>{key}</Data>
+                            </dt>
+                            <dd className="m-0 font-mono text-data break-words text-foreground">
+                              {value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </Field>
+                </div>
+              </details>
+
+              <section className="rounded-lg border">
+                <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
+                  <BlockTitle
+                    icon={<ArrowUpFromLineIcon className="size-4" />}
+                    title="Response"
+                    caption="What the panel returned"
+                  />
+                  {/* The DECISION leads the response — it is output, and it used to sit in the
+                      header beside the trace id as though it were a property of the call. */}
+                  <span className="ml-auto flex items-center gap-[var(--gap-inline)]">
+                    <Decision passed={detail.data.passed} complete={detail.data.complete} />
+                    <Data className="tabular-nums">
+                      <span className="text-foreground">
+                        {detail.data.score === null ? '—' : detail.data.score.toFixed(2)}
+                      </span>
+                      {' / '}
+                      {detail.data.threshold.toFixed(2)}
+                    </Data>
+                  </span>
+                </div>
+                <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
+                  <Eyebrow>
+                    {detail.data.judges.length === 0
+                      ? 'Judges'
+                      : `Judges · ${detail.data.judges.length}`}
+                  </Eyebrow>
+                  {detail.data.judges.length === 0 ? (
+                    <p className="m-0 text-body text-muted-foreground">
+                      No judges ran — the panel was collecting when this call arrived. It’s stored,
+                      and counts toward annotation.
+                    </p>
+                  ) : (
+                    <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
+                      {detail.data.judges.map((judge) => (
+                        <JudgeVerdict key={judge.slug} judge={judge} />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
 
               <Section title="Details">
                 <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-inline)] text-ui">
@@ -220,6 +272,27 @@ const Decision = ({ passed, complete }: { passed: boolean | null; complete: bool
       {complete ? null : <Mark tone="warning">partial</Mark>}
     </span>
   )
+
+/** A block's heading: its direction icon, a title, and what it means in plain words. */
+const BlockTitle = ({
+  icon,
+  title,
+  caption,
+}: {
+  icon: React.ReactNode
+  title: string
+  caption: string
+}) => (
+  <span className="flex items-start gap-[var(--gap-inline)]">
+    <span aria-hidden className="mt-0.5 text-muted-foreground">
+      {icon}
+    </span>
+    <span className="flex flex-col gap-[var(--gap-tight)]">
+      <span className="text-ui font-semibold">{title}</span>
+      <span className="text-ui text-muted-foreground">{caption}</span>
+    </span>
+  </span>
+)
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="flex flex-col gap-[var(--gap-stack)]">

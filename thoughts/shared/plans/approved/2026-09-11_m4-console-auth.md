@@ -1596,6 +1596,14 @@ one PR would have been very large for a repository meant to be read.
     then Details, and does not render `raw_response`. Tests: a judged trace returns its judge's
     verdict and rationale, a collecting one an empty list, another org's is 404, an annotator 403.
 
+    **Revised at review into IN and OUT.** The first drawer set every section at one level, so what
+    was sent and what came back read as one list — and the DECISION sat in the header beside the
+    trace id, as if it were a property of the call rather than its output. It is now two bordered
+    blocks with a direction: **Request** (what your agent sent; collapsible via native
+    `<details>`, previewing the artifact's first line and the context count when closed) and
+    **Response** (what the panel returned), which the decision now leads. Separated by borders and
+    direction, not by a new fill.
+
 ---
 
 ## Open questions for the human
