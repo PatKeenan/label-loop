@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu.tsx'
-import type { Membership } from './context.ts'
+import { isStaffRole, type Membership, type OrgRole } from './context.ts'
 import { CreatePanelDialog } from './create-panel-dialog.tsx'
 import { forgetIssuedKeys } from './issued-key.ts'
 import { Data, Mark } from './mark.tsx'
@@ -54,7 +54,7 @@ export const ConsoleShell = ({
   memberships,
   activeOrgId,
   panel,
-  isStaff,
+  role,
   children,
 }: {
   email: string
@@ -64,11 +64,12 @@ export const ConsoleShell = ({
   /** The open panel, or `null` anywhere at the organisation's level. */
   panel: { slug: string; name: string } | null
   /**
-   * Whether this account's role in the ACTIVE org gets the console at all. An annotator sees
-   * the bar and nothing else — there is nothing in the console for that role at M4, and an
-   * empty nav would read as broken rather than as not-yet.
+   * This account's role in the ACTIVE org, which decides what the frame offers. An annotator
+   * sees the bar and nothing else — there is nothing in the console for that role at M4, and
+   * an empty nav would read as broken rather than as not-yet. Every gate below MIRRORS a
+   * server guard and replaces none of them (CONVENTIONS "Keys & auth").
    */
-  isStaff: boolean
+  role: OrgRole
   children: React.ReactNode
 }) => {
   const queryClient = useQueryClient()
@@ -99,6 +100,7 @@ export const ConsoleShell = ({
     },
   })
 
+  const isStaff = isStaffRole(role)
   const showSidebar = isStaff && panel !== null
 
   return (
@@ -151,20 +153,25 @@ export const ConsoleShell = ({
                 Organisation settings: admins only, and ABSENT until M8, when Audit log or
                 Billing first ships (ADR-0059). Shown disabled with its milestone rather than
                 hidden, on the same reasoning as the inert nav sections — it keeps the console
-                honest about what is not built. Hiding or disabling it mirrors the server
-                guard and never replaces it: an engineer who types the URL must get FORBIDDEN
-                from the server, which is M8's to build and is not optional.
+                honest about what is not built. But only to an ADMIN: showing an engineer a
+                disabled item they could never use tells them nothing about the product's
+                direction. This mirrors the server guard and never replaces it — an engineer
+                who types the URL must get FORBIDDEN from the server, which is M8's to build.
               */}
-              <DropdownMenuItem
-                disabled
-                className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-inline)]"
-              >
-                Organisation settings
-                <Mark tone="neutral" className="ml-auto">
-                  M8
-                </Mark>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {role === 'admin' ? (
+                <>
+                  <DropdownMenuItem
+                    disabled
+                    className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-inline)]"
+                  >
+                    Organisation settings
+                    <Mark tone="neutral" className="ml-auto">
+                      M8
+                    </Mark>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <DropdownMenuItem
                 onSelect={() => signOut.mutate()}
                 disabled={signOut.isPending}
@@ -218,8 +225,12 @@ export const ConsoleShell = ({
           button and the panel switcher's menu item. Rendering it here rather than beside each
           trigger is what keeps it ONE dialog: two instances would be two pieces of form state
           that could disagree.
+
+          Staff only, mirroring `requireRole('admin', 'engineer')` on `POST /internal/panels`:
+          `?new` is a URL anyone can type, and a form that can only end in FORBIDDEN is not
+          one to offer.
         */}
-        <CreatePanelDialog />
+        {isStaff ? <CreatePanelDialog /> : null}
       </div>
     </div>
   )

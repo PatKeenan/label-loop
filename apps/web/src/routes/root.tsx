@@ -46,7 +46,12 @@ export const ConsoleLayout = () => {
   const queryClient = useQueryClient()
   const context = useConsoleContext()
   useRedirectWhenSignedOut(context.state === 'signed-out')
-  const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
+  // Resolved only for a role that can read panels. `GET /internal/panels` is
+  // `requireRole('admin', 'engineer')`, so for anyone else it could only answer FORBIDDEN —
+  // and that screen is never drawn for them anyway (see `isStaff` below).
+  const panel = usePanelContext(
+    context.state === 'ready' && isStaffRole(context.role) ? context.orgId : null,
+  )
 
   if (context.state === 'pending') return <Loading />
 
@@ -96,7 +101,7 @@ export const ConsoleLayout = () => {
 
   // An annotator — or a guest expert, PRODUCT.md 5.1's invited SME — gets no console at M4.
   // The shell renders with no Home link, no switcher and no sections: the frame is still
-  // theirs, and the org switcher at its foot is the way out for someone who also works in
+  // theirs, and the org switcher in the top bar is the way out for someone who also works in
   // another organisation. `isStaffRole` is an allow list, deliberately (see its comment).
   const isStaff = isStaffRole(org.role)
 
@@ -106,7 +111,7 @@ export const ConsoleLayout = () => {
       orgSlug={org.orgSlug}
       memberships={org.memberships}
       activeOrgId={org.orgId}
-      isStaff={isStaff}
+      role={org.role}
       panel={panel.state === 'ready' ? { slug: panel.slug, name: panel.name } : null}
     >
       {notAMember ? (
@@ -133,7 +138,7 @@ export const ConsoleLayout = () => {
             console for this role.
           </p>
           <p className="m-0 text-muted-foreground">
-            If you work in another organisation, switch to it at the foot of the sidebar.
+            If you work in another organisation, switch to it from the organisation menu at the top.
           </p>
         </Statement>
       ) : panel.state === 'not-found' ? (
