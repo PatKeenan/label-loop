@@ -1,46 +1,53 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { cn } from 'cn'
-import { ArrowLeftIcon } from 'lucide-react'
 import { auth } from '../../api/client.ts'
-import { Button } from '../ui/button.tsx'
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-} from '../ui/sidebar.tsx'
-import type { Membership } from './context.ts'
-import { Data } from './mark.tsx'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu.tsx'
+import { isStaffRole, type Membership, type OrgRole } from './context.ts'
+import { CreatePanelDialog } from './create-panel-dialog.tsx'
+import { forgetIssuedKeys } from './issued-key.ts'
+import { Data, Mark } from './mark.tsx'
+import { useMenuFocusReturn } from './menu-focus.ts'
 import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
 import { SectionNav } from './section-nav.tsx'
 import { useSurface } from './surface.ts'
+import { TraceDrawer } from './trace-drawer.tsx'
 
 /**
- * THE CONSOLE'S FRAME — built once here, so phase 8's screens are things that go INSIDE
- * something that already exists rather than three screens each inventing their own layout.
- * That failure is what plan decisions 13 and 14 reorganised the phases to prevent, and it
- * reappeared once already as a copy-paste (Deviation 39a).
- *
- * Rebuilt from `mockups/console-shell.html` r3, not ported from it: CLAUDE.md's Phase C rule
- * is rebuild-clean, and the mockup's HTML is disposable spec. What IS carried across is every
- * decision its comment block numbers — they are cited individually where each one lands.
+ * THE CONSOLE'S FRAME — a persistent top bar, and a sidebar that exists only inside a panel.
  *
  * ---
  *
- * **TWO LEVELS, ONE SIDEBAR** (6b decision 1, ADR-0056 as amended 2026-09-14). Home is the
- * organisation; a panel is the working context. The sidebar never swaps its contents: below
- * the panel switcher it shows the panel's sections when one is open, and nothing when you
- * are Home.
+ * **THIS SUPERSEDES ADR-0056's "two levels, one persistent sidebar"** (see ADR-0062). The 6b
+ * review chose one sidebar over a swapping one, on a reason worth restating because it is
+ * what shaped the replacement: *a swapping sidebar hides Home behind a back button, where a
+ * persistent one with a back arrow keeps Home without losing it.*
  *
- * **`data-surface="console"`** is set here, on the frame — dark + compact, the preset that
- * IS tone dark plus density compact. Everything inside resolves against it, which is what
- * makes the whole tree density-aware without a single component knowing the axis exists.
- * The annotator surface (M5) sets the other preset on its own frame; they share the palette
- * at two settings and are deliberately different experiences (PRODUCT.md 5.5).
+ * That objection was right, and it is answered here by the TOP BAR rather than by the
+ * sidebar. The bar carries the wordmark, the scope, the organisation and the account at BOTH
+ * levels, so Home is never behind anything — which a sidebar that simply vanished would not
+ * have achieved. That is why this is not the rejected design returning.
+ *
+ * **What the review could not see.** The 6b and 6c mockups drew Home with its content slot
+ * full of descriptive prose, so the rail never looked empty beside it. Rendered against a
+ * real organisation at a real width, the sidebar at Home was a wordmark, a Home row, a panel
+ * switcher, and then roughly nine hundred pixels of nothing. The stakeholder saw it in one
+ * look; no amount of reviewing the drawing would have shown it.
+ *
+ * **The rule this makes structural.** CONSOLE_FLOW §4 already said *"Home is the list"*, and
+ * that every nav item belongs to the panel named above it. A sidebar that exists only inside
+ * a panel turns that from a convention into a fact: at Home there are no panel nav items,
+ * because there is no panel nav.
+ *
+ * `data-surface="console"` is set here — dark + compact — and mirrored onto the document by
+ * `useSurface`, so portalled overlays resolve the same tokens.
  */
 export const ConsoleShell = ({
   email,
@@ -48,168 +55,190 @@ export const ConsoleShell = ({
   memberships,
   activeOrgId,
   panel,
-  isStaff,
+  role,
   children,
 }: {
   email: string
   orgSlug: string
   memberships: readonly Membership[]
   activeOrgId: string
-  /** The open panel, or `null` at Home. */
+  /** The open panel, or `null` anywhere at the organisation's level. */
   panel: { slug: string; name: string } | null
   /**
-   * Whether this account's role in the ACTIVE org gets the console at all. An annotator sees
-   * the frame with no Home link, no switcher and no sections — there is nothing in the
-   * console for that role at M4, and the alternative (an empty nav) would read as broken
-   * rather than as not-yet.
+   * This account's role in the ACTIVE org, which decides what the frame offers. An annotator
+   * sees the bar and nothing else — there is nothing in the console for that role at M4, and
+   * an empty nav would read as broken rather than as not-yet. Every gate below MIRRORS a
+   * server guard and replaces none of them (CONVENTIONS "Keys & auth").
    */
-  isStaff: boolean
+  role: OrgRole
   children: React.ReactNode
 }) => {
   const queryClient = useQueryClient()
-  // Mirrors the preset below onto `<html>`, so portalled overlays resolve the same tokens.
-  // Without it every menu, dialog and toast renders LIGHT on the dark console — see the hook.
+  const navigate = useNavigate()
+  // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
+  // body text to 17px and read as everything simply getting bigger rather than as anything
+  // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
+  // compact density's SPACING was opened in tokens.css instead and its type left alone.
   useSurface('console')
+  const { triggerProps, contentProps } = useMenuFocusReturn()
 
   const signOut = useMutation({
     mutationFn: async () => {
       await auth.signOut()
     },
     onSuccess: async () => {
+      // The one-time key plaintext lives outside the query cache, so nothing below reaches
+      // it. A credential minted as one account must not survive into the next.
+      forgetIssuedKeys()
       // Everything in the cache was read as this user, so none of it may be shown again.
-      //
-      // `invalidateQueries` rather than `clear`, and that is a correction rather than a
-      // preference: `clear` empties the cache WITHOUT notifying the observers watching it,
-      // so the components carry on rendering the signed-out user's rows until something
-      // unrelated happens to re-render them. Invalidating refetches what is on screen —
-      // `me` now answers "nobody", which is what puts the login form back.
-      await queryClient.invalidateQueries()
-      // Then drop what is NOT on screen. Invalidation only marks those stale, which means
-      // the previous user's rows would still be in memory and rendered for a frame the
-      // next time one of those views mounts.
-      queryClient.removeQueries({ type: 'inactive' })
+      // `clear` BEFORE navigating, and it is the order that matters: `/login`'s `beforeLoad`
+      // asks who is signed in, and a cache still holding this user would answer "you are"
+      // and bounce straight back. `clear` notifies no observer, so this screen does not
+      // re-render as signed out in the meantime — which would send it to `/login` with THIS
+      // page as the redirect, when signing out is a request to leave, not to come back.
+      queryClient.clear()
+      await navigate({ to: '/login', replace: true })
     },
   })
 
-  const homeLinkRow =
-    'flex min-h-[var(--row-min)] items-center gap-[var(--gap-inline)] rounded-md ' +
-    'px-[var(--pad-field-x)]'
+  const isStaff = isStaffRole(role)
+  const showSidebar = isStaff && panel !== null
 
   return (
-    /*
-      `collapsible="none"` is the whole reason this uses shadcn's Sidebar rather than a
-      plain grid: the container, the rail width and the sidebar theming come from the
-      library, and its offcanvas machinery — the mobile Sheet, the keyboard shortcut, the
-      cookie that remembers a collapsed state — does not. The console is a desktop surface
-      (CONSOLE_FLOW: mobile is deliberately not drawn) with no collapse affordance in the
-      approved 6b screen, and a cookie remembering view state would sit oddly beside
-      ADR-0047's "both contexts live in the URL, not in storage".
-
-      `--sidebar-width` is the component's OWN default, 16rem, verified against the copy
-      actually installed rather than against memory of shadcn — one of the three values
-      Deviation 36 said would arrive with the components. The approved rail was drawn to
-      that number deliberately, so nothing has to be overridden here.
-    */
-    <SidebarProvider
+    <div
       data-surface="console"
-      className="h-screen min-h-0 overflow-hidden bg-background text-foreground"
+      className="grid h-screen min-h-0 grid-rows-[auto_1fr] overflow-hidden bg-background text-foreground"
     >
-      <Sidebar
-        collapsible="none"
-        aria-label="Console"
-        className={cn(
-          'min-h-0 border-r px-[var(--space-3)] py-[var(--pad-panel-y)]',
-          '[&>*]:min-h-0',
-        )}
-      >
-        <SidebarHeader className="p-0">
-          {/* The wordmark links Home as well (6b decision 2). */}
-          <Link
-            to="/"
-            search={{ org: orgSlug }}
-            className="px-[var(--pad-field-x)] font-semibold tracking-[var(--tracking-snug)]"
-          >
-            LabelLoop
-          </Link>
-        </SidebarHeader>
+      {/*
+        THE TOP BAR — present at every level, which is the whole point. It is what makes a
+        sidebar that comes and goes safe: whatever screen you are on, the way out of it and
+        the organisation you are in are in the same place.
+      */}
+      {/*
+        `--pad-bar-*`, a token added with this bar: a bar's height follows its controls, where
+        a panel's padding makes it enormous. It replaced a hard-coded `--space-2` that ignored
+        the density axis entirely and stayed cramped whatever the rest of the console did.
+      */}
+      <header className="flex items-center gap-[var(--gap-inline)] border-b border-border-strong bg-sidebar px-[var(--pad-bar-x)] py-[var(--pad-bar-y)]">
+        <Link
+          to="/"
+          search={{ org: orgSlug }}
+          className="font-semibold tracking-[var(--tracking-snug)]"
+        >
+          LabelLoop
+        </Link>
 
-        <SidebarContent className="gap-[var(--gap-stack)] overflow-y-auto pt-[var(--gap-stack)]">
-          {isStaff ? (
+        {/* The scope as a trail rather than a heading: at Home it is the organisation alone. */}
+        <span className="flex min-w-0 items-center gap-[var(--gap-tight)]">
+          <Data>{orgSlug}</Data>
+          {panel === null ? null : (
             <>
-              {/*
-              THE HOME LINK (6b decision 2). From inside a panel it carries a back arrow, so
-              opening a panel reads as moving forward and leaving it as moving back. At Home
-              it reads "Home" and is marked current.
-            */}
-              {panel === null ? (
-                <span
-                  aria-current="page"
-                  className={cn(
-                    homeLinkRow,
-                    'bg-muted font-semibold shadow-[inset_var(--border-thick)_0_0_var(--color-text)]',
-                  )}
-                >
-                  Home
-                </span>
-              ) : (
-                <Link
-                  to="/"
-                  search={{ org: orgSlug }}
-                  className={cn(homeLinkRow, 'hover:bg-secondary')}
-                >
-                  <ArrowLeftIcon aria-hidden className="size-3.5 text-muted-foreground" />
-                  Home
-                </Link>
-              )}
-
-              {/*
-                `--gap-stack`, not `--gap-tight`. The switcher answers "which panel" and the nav
-                answers "what within it" — two questions, so they get a real gap. The approved
-                mockup used 4px here, but its switcher is a `details` element with no focus ring;
-                ours is a button carrying the approved 4px `--shadow-focus`, so at 4px the ring and
-                the first nav row touched exactly.
-              */}
-              <div className="flex flex-col gap-[var(--gap-stack)]">
-                <PanelSwitcher
-                  orgId={activeOrgId}
-                  orgSlug={orgSlug}
-                  activePanelSlug={panel?.slug ?? null}
-                />
-                {panel === null ? null : (
-                  <SectionNav panelSlug={panel.slug} panelName={panel.name} orgSlug={orgSlug} />
-                )}
-              </div>
+              <span className="text-foreground-faint">/</span>
+              <Data className="truncate text-foreground">{panel.slug}</Data>
             </>
-          ) : null}
-        </SidebarContent>
+          )}
+        </span>
+
+        <div className="ml-auto flex items-center gap-[var(--gap-inline)]">
+          <OrgSwitcher memberships={memberships} activeOrgId={activeOrgId} />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              {...triggerProps}
+              className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-tight)] rounded-md border bg-secondary px-[var(--pad-field-x)] hover:border-border-strong"
+            >
+              <Data className="max-w-[16rem] truncate text-foreground">{email}</Data>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent {...contentProps} align="end">
+              {/*
+                Organisation settings: admins only, and ABSENT until M8, when Audit log or
+                Billing first ships (ADR-0059). Shown disabled with its milestone rather than
+                hidden, on the same reasoning as the inert nav sections — it keeps the console
+                honest about what is not built. But only to an ADMIN: showing an engineer a
+                disabled item they could never use tells them nothing about the product's
+                direction. This mirrors the server guard and never replaces it — an engineer
+                who types the URL must get FORBIDDEN from the server, which is M8's to build.
+              */}
+              {role === 'admin' ? (
+                <>
+                  <DropdownMenuItem
+                    disabled
+                    className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-inline)]"
+                  >
+                    Organisation settings
+                    <Mark tone="neutral" className="ml-auto">
+                      M8
+                    </Mark>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
+              <DropdownMenuItem
+                onSelect={() => signOut.mutate()}
+                disabled={signOut.isPending}
+                className="min-h-[var(--row-min)]"
+              >
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      <div
+        className={cn(
+          'grid min-h-0 overflow-hidden',
+          showSidebar ? 'grid-cols-[var(--sidebar-width)_1fr]' : 'grid-cols-1',
+        )}
+        // shadcn's Sidebar component defaults this to 16rem and the approved rail was drawn to
+        // that number (Deviation 36). Stated here because this frame is a plain grid: the
+        // console is a desktop surface with no collapse, and the provider's offcanvas
+        // machinery would be scaffolding for behaviour nothing has asked for.
+        style={{ '--sidebar-width': '16rem' } as React.CSSProperties}
+      >
+        {showSidebar && panel !== null ? (
+          <aside
+            aria-label={panel.name}
+            className="flex min-h-0 flex-col gap-[var(--gap-stack)] overflow-y-auto border-r bg-sidebar px-[var(--space-3)] py-[var(--pad-panel-y)] text-sidebar-foreground"
+          >
+            {/*
+              The switcher stays IN the sidebar rather than moving to the bar, because it is
+              panel context and the sidebar is now exactly that. Jumping between panels
+              without going Home still works; choosing one from nothing is Home's job, which
+              is what "Home is the list" means.
+            */}
+            <PanelSwitcher orgId={activeOrgId} orgSlug={orgSlug} activePanelSlug={panel.slug} />
+            <SectionNav panelSlug={panel.slug} panelName={panel.name} orgSlug={orgSlug} />
+          </aside>
+        ) : null}
 
         {/*
-          THE FOOT: identity, organisation, sign out.
-
-          Organisation settings are ABSENT, not disabled — admins only, and not until M8,
-          when Audit log or Billing first ships (ADR-0059, CONSOLE_FLOW R4). Hiding it
-          mirrors the server guard and never replaces it: an engineer who types the URL must
-          get FORBIDDEN from the server, which is M8's to build and is not optional.
+          `--gap-section` BETWEEN the stage's sections — the page head, the gate, the snippet —
+          not `--gap-stack`, which is the spacing for items WITHIN one. That token existed for
+          exactly this distance and was going unused while every section sat a stack-gap apart.
         */}
-        <SidebarFooter className="mt-auto gap-[var(--gap-inline)] border-t p-0 pt-[var(--gap-stack)]">
-          <div className="px-[var(--pad-field-x)]">
-            <Data className="block truncate text-foreground">{email}</Data>
-          </div>
-          <OrgSwitcher memberships={memberships} activeOrgId={activeOrgId} />
-          <Button
-            variant="outline"
-            className="w-full"
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            Sign out
-          </Button>
-        </SidebarFooter>
-      </Sidebar>
+        <main className="flex min-h-0 flex-col gap-[var(--gap-section)] overflow-y-auto px-[var(--space-8)] py-[var(--gap-section)]">
+          {children}
+        </main>
 
-      <SidebarInset className="min-h-0 gap-[var(--gap-stack)] overflow-y-auto px-[var(--space-8)] py-[var(--gap-section)]">
-        {children}
-      </SidebarInset>
-    </SidebarProvider>
+        {/*
+          One dialog, mounted once, opened by `?new` from either of its two triggers — Home's
+          button and the panel switcher's menu item. Rendering it here rather than beside each
+          trigger is what keeps it ONE dialog: two instances would be two pieces of form state
+          that could disagree.
+
+          Staff only, mirroring `requireRole('admin', 'engineer')` on `POST /internal/panels`:
+          `?new` is a URL anyone can type, and a form that can only end in FORBIDDEN is not
+          one to offer.
+        */}
+        {isStaff ? <CreatePanelDialog /> : null}
+        {/*
+          The trace drawer, opened by `?trace=` from any trace table row — mounted once here
+          for the same reason as the dialog, and staff-only for the same reason: its read is
+          `requireRole('admin', 'engineer')` on the server (Deviation 75).
+        */}
+        {isStaff ? <TraceDrawer /> : null}
+      </div>
+    </div>
   )
 }

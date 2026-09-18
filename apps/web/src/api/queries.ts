@@ -1,5 +1,5 @@
 import { ACTIVE_ORG_HEADER } from '@labelloop/contracts'
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { apiErrorFrom } from '../errors/api-error.ts'
 import { api } from './client.ts'
 
@@ -54,6 +54,21 @@ export const meQuery = queryOptions({
   staleTime: 30_000,
 })
 
+/**
+ * Which sign-in methods the API accepts — the login screen's doors. Public and org-less: it
+ * is asked before anyone is signed in. Effectively static for a running API, so it is never
+ * re-asked within a page's life.
+ */
+export const signInMethodsQuery = queryOptions({
+  queryKey: ['sign-in-methods'],
+  queryFn: async () => {
+    const response = await api.internal['sign-in-methods'].$get()
+    if (!response.ok) throw await apiErrorFrom(response)
+    return (await response.json()).data
+  },
+  staleTime: Number.POSITIVE_INFINITY,
+})
+
 /** Every panel in the active org — the panel switcher's contents, and Home's list. */
 export const panelsQuery = (orgId: string) =>
   queryOptions({
@@ -66,19 +81,101 @@ export const panelsQuery = (orgId: string) =>
   })
 
 /**
- * The trace list.
- *
- * **Org-wide, not panel-scoped, and that is still true at phase 7.** `GET /internal/traces`
- * takes no panel filter; CONSOLE_FLOW §4 gives phase 8 the job of scoping it, on the
- * reasoning that the API is already shaped the easy way round. The screen says so rather
- * than showing an org's rows under a panel's heading without comment.
+ * ONE panel — its Overview and its Judges section, which are two views of the same object
+ * and so are one read. Addressed by SLUG, because that is what the URL carries.
  */
-export const tracesQuery = (orgId: string) =>
+export const panelQuery = (orgId: string, slug: string) =>
   queryOptions({
-    queryKey: ['traces', orgId],
+    queryKey: ['panel', orgId, slug],
     queryFn: async () => {
-      const response = await api.internal.traces.$get({ query: {} }, asOrg(orgId))
+      const response = await api.internal.panels[':slug'].$get({ param: { slug } }, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+  })
+
+/**
+ * Every key in the active org.
+ *
+ * **Org-wide, and the Keys screen filters by panel.** `GET /internal/keys` is not
+ * panel-scoped, and CONSOLE_FLOW §4 is explicit that the API is shaped the easy way round on
+ * purpose: scoping it later is a narrowing, where widening a panel-scoped read would not be.
+ * Filtering in the client is correct HERE and not for traces — a key list is bounded by how
+ * many credentials an org has issued, where a trace list is unbounded and paginated, so
+ * filtering a page of traces would silently drop rows.
+ */
+export const keysQuery = (orgId: string) =>
+  queryOptions({
+    queryKey: ['keys', orgId],
+    queryFn: async () => {
+      const response = await api.internal.keys.$get(undefined, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data.keys
+    },
+  })
+
+/**
+ * ONE panel's trace list — the Traces section of the panel open in the URL.
+ *
+ * Scoped by the SERVER, on `panel_id` (M4 phase 8), never filtered here: the list is
+ * paginated and unbounded, so filtering a page of an org's traces in the browser would
+ * silently drop rows — the reason `keysQuery` above can filter client-side and this cannot.
+ * The panel is in the query key for the same reason the org is: two panels give the same URL
+ * shape two different answers.
+ */
+export const tracesQuery = (orgId: string, panelId: string, limit?: number) =>
+  queryOptions({
+    // `limit` in the key: the Overview's five and the Traces section's fifty are different
+    // answers, and sharing one entry would show one screen the other's page.
+    queryKey: ['traces', orgId, panelId, limit ?? 'default'],
+    queryFn: async () => {
+      const response = await api.internal.traces.$get(
+        { query: { panel_id: panelId, ...(limit === undefined ? {} : { limit: String(limit) }) } },
+        asOrg(orgId),
+      )
       if (!response.ok) throw await apiErrorFrom(response)
       return (await response.json()).data.traces
     },
+  })
+
+/**
+ * The Traces section's list, a page at a time, newest first.
+ *
+ * KEYSET pages: each page hands back an opaque `next_cursor` meaning "older than my last row",
+ * and the next request sends it as `before`. Offsets would drift — traces arrive at the top
+ * continuously, so "skip 50" names a different 50 every time a call lands. The Overview's five
+ * recent traces stay on `tracesQuery`; they never page.
+ */
+export const tracePagesQuery = (orgId: string, panelId: string) =>
+  infiniteQueryOptions({
+    queryKey: ['traces', orgId, panelId, 'pages'],
+    queryFn: async ({ pageParam }) => {
+      const response = await api.internal.traces.$get(
+        { query: { panel_id: panelId, ...(pageParam === null ? {} : { before: pageParam }) } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+  })
+
+/**
+ * ONE trace, whole — the drawer's read (Deviation 75). Staff-only on the server; the console
+ * only ever asks from a staff role's screens.
+ */
+export const traceDetailQuery = (orgId: string, traceId: string) =>
+  queryOptions({
+    queryKey: ['trace', orgId, traceId],
+    queryFn: async () => {
+      const response = await api.internal.traces[':id'].$get(
+        { param: { id: traceId } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    // A trace never changes after it is written, except `recorded_at` being stamped once.
+    staleTime: 60_000,
   })

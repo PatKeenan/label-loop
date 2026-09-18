@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
 import { meQuery, panelsQuery } from '../../api/queries.ts'
-import { ApiError } from '../../errors/api-error.ts'
 
 /**
  * WHICH ORG AND WHICH PANEL THIS VIEW IS ABOUT.
@@ -31,13 +30,53 @@ import { ApiError } from '../../errors/api-error.ts'
  */
 
 /** What the root route accepts in the query string. */
-export type ConsoleSearch = { org?: string }
+export type ConsoleSearch = {
+  org?: string | undefined
+  /**
+   * The create-panel dialog, open.
+   *
+   * In the URL rather than in component state because it has TWO triggers — Home's button and
+   * the panel switcher's menu item, which live in different trees — and because it then costs
+   * nothing to get right: the back button closes it, a reload keeps it, and the link is
+   * shareable. It is the same reasoning ADR-0047 gives for the org and the panel, applied to
+   * the one piece of view state that has more than one way in.
+   */
+  new?: true | undefined
+  /**
+   * The trace open in the drawer (Deviation 75), on the Traces section or the Overview. In the
+   * URL for the same reasons as `new`: back closes it, reload keeps it, and a link to one trace
+   * is shareable — which is most of the point of being able to look at one.
+   */
+  trace?: string | undefined
+}
 
-export const validateConsoleSearch = ({ org }: Record<string, unknown>): ConsoleSearch =>
+/**
+ * **Every key is returned, `undefined` when absent — never omitted.** TanStack Router MERGES a
+ * validator's result over the raw parsed query string (`{ ...raw, ...validated }`), so a key
+ * this function leaves out keeps whatever the URL said. The first version spread conditionally,
+ * which read as "drop it" and did nothing: `?org=` reached `useConsoleContext` as `''` and drew
+ * the not-a-member state the comment below exists to prevent. Found in phase 8, when the login
+ * route's redirect check turned out to be a no-op for the same reason.
+ */
+export const validateConsoleSearch = ({
+  org,
+  new: isNew,
+  trace,
+}: Record<string, unknown>): ConsoleSearch => ({
+  // A trace id or nothing — anything else would only produce a not-found drawer.
+  trace: typeof trace === 'string' && trace.startsWith('tr_') ? trace : undefined,
   // An empty `?org=` is treated as absent rather than as a slug nothing matches, so a client
   // that builds the URL from an unset value lands on the default org instead of on a
   // not-found state that blames the person for a bug in a link.
-  typeof org === 'string' && org !== '' ? { org } : {}
+  org: typeof org === 'string' && org !== '' ? org : undefined,
+  // Present in any truthy spelling — `?new`, `?new=1`, `?new=true` — because a hand-typed URL
+  // should do the obvious thing. (The router's parser turns `?new=true` into a boolean and
+  // `?new=1` into a number, so the checks cover both forms.)
+  new:
+    isNew === true || isNew === 'true' || isNew === 1 || isNew === '1' || isNew === ''
+      ? true
+      : undefined,
+})
 
 /**
  * The resolved context, as a discriminated union so a caller cannot read `orgId` without
@@ -88,8 +127,8 @@ export type ConsoleContext =
   | { state: 'pending' }
   | { state: 'signed-out' }
   | { state: 'failed'; error: unknown }
-  /** Signed in, but a member of no org at all — CONSOLE_FLOW Q4. */
-  | { state: 'no-org' }
+  /** Signed in, but a member of no org at all — where one is created (ADR-0063). */
+  | { state: 'no-org'; email: string }
   /**
    * The URL named an org slug that is not one of this account's memberships.
    *
@@ -115,21 +154,15 @@ export const useConsoleContext = (): ConsoleContext => {
   const me = useQuery(meQuery)
 
   if (me.isPending) return { state: 'pending' }
-  // A member of no org is refused by `sessionAuth` itself, before any handler runs, so it
-  // arrives here as a FORBIDDEN rather than as an empty membership list.
-  if (me.error !== null) {
-    // `sessionAuth` refuses an account that belongs to no org before any handler runs
-    // (`FORBIDDEN` / NOT_A_MEMBER), so "member of nothing" arrives as a failure rather than
-    // as an empty membership list. It is a STATE the shell draws, not an error — see
-    // CONSOLE_FLOW Q4, accepted for M4 with no way forward because none exists yet.
-    const isNoOrg = me.error instanceof ApiError && me.error.code === 'FORBIDDEN'
-    return isNoOrg ? { state: 'no-org' } : { state: 'failed', error: me.error }
-  }
+  if (me.error !== null) return { state: 'failed', error: me.error }
   if (me.data === null) return { state: 'signed-out' }
 
+  // A member of NO organisation arrives as data — an empty list — not as a refusal (ADR-0063).
+  // Until then `/me` answered FORBIDDEN and this branched on the error code, which only worked
+  // because `/me` had no other reason to refuse; it is the state that offers org creation.
   const { memberships, active_org_id, email } = me.data
   const fallback = memberships.find((m) => m.org_id === active_org_id) ?? memberships[0]
-  if (fallback === undefined) return { state: 'no-org' }
+  if (fallback === undefined) return { state: 'no-org', email }
 
   const requested = search.org
   const active =

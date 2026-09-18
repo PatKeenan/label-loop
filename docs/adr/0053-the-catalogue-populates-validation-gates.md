@@ -17,4 +17,4 @@ The model picker is populated from the provider's catalogue but gated exclusivel
 
 Two things the picker must therefore not claim: it cannot gate on `data_collection`, which no catalogue field exposes (ADR-0023); and it must not warn "this model always reasons" from `reasoning.mandatory`, which would be false for `gemini-3.5-flash-lite` — mandatory, and 0 reasoning tokens at `minimal` across three runs. Evidence: `thoughts/shared/research/2026-08-30_model-tier-measurements.md`.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

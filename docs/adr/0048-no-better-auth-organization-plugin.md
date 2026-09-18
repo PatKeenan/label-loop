@@ -41,4 +41,4 @@ server-side and the column it writes does not exist — and it would fail quietl
 loudly. The switcher sets client state and the fetch wrapper sends `X-LabelLoop-Org`; it never
 calls into better-auth for anything org-shaped.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

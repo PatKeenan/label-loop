@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronUpIcon } from 'lucide-react'
+import { ChevronDownIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,8 @@ import { Data, Mark } from './mark.tsx'
 import { useMenuFocusReturn } from './menu-focus.ts'
 
 /**
- * The organisation, at the FOOT of the sidebar (6b decision 5, ADR-0056 as amended).
+ * The organisation, in the TOP BAR (ADR-0062 — it was at the foot of the sidebar under 6b
+ * decision 5, and moved when the sidebar stopped existing outside a panel).
  *
  * **Plain text for one membership, a menu for several.** That is not a styling shortcut: the
  * common case is a person who belongs to one org and will never change it, and a control
@@ -52,21 +53,23 @@ export const OrgSwitcher = ({
       <DropdownMenuTrigger
         {...triggerProps}
         className={
-          'flex min-h-[var(--row-min)] w-full items-center gap-[var(--gap-inline)] rounded-md ' +
+          'flex min-h-[var(--row-min)] max-w-[20rem] items-center gap-[var(--gap-inline)] rounded-md ' +
           'border bg-secondary px-[var(--pad-field-x)] py-[var(--pad-field-y)] text-left ' +
           'hover:border-border-strong data-[state=open]:border-border-strong data-[state=open]:bg-muted'
         }
       >
         <Mark tone="neutral">{active.role}</Mark>
         <span className="min-w-0 flex-1 truncate">{active.org_name}</span>
-        <ChevronUpIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
-      {/* Opens UPWARD, because it lives at the foot of the rail. */}
+      {/* Opens DOWN from the bar, aligned to its right edge like the account menu beside it.
+          (It opened upward while it lived at the foot of the rail, and kept doing so after
+          ADR-0062 moved it — working only because Radix flips a menu that collides.) */}
       <DropdownMenuContent
         {...contentProps}
-        side="top"
-        align="start"
-        className="w-(--radix-dropdown-menu-trigger-width)"
+        side="bottom"
+        align="end"
+        className="min-w-(--radix-dropdown-menu-trigger-width)"
       >
         {memberships.map((membership) => (
           <DropdownMenuItem

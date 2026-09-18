@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../app-env.ts'
+import { accountAuth, resolveActiveOrg } from '../../middleware/session.ts'
 
 /**
  * `GET /internal/me` — who the session belongs to, which org it is currently looking at,
@@ -13,7 +14,7 @@ import type { AppEnv } from '../../app-env.ts'
  *
  * `memberships` is what the org switcher renders (ADR-0047). It carries the org's NAME as
  * well as its id, because a switcher listing `org_01J…` is not a switcher — and because
- * `sessionAuth` has already paid for that join, so the alternative is a second round trip
+ * `accountAuth` has already paid for that join, so the alternative is a second round trip
  * for data this response is holding.
  *
  * **`active_org_id` is named for what it is, and it is not a duplicate of the membership
@@ -26,14 +27,35 @@ import type { AppEnv } from '../../app-env.ts'
  * next. With one membership the two look redundant; with two they are the whole answer.
  */
 export const createMeRoutes = () =>
-  new Hono<AppEnv>().get('/me', (c) => {
-    const { userId, email, orgId, role, memberships } = c.var.session
+  new Hono<AppEnv>().use('/me', accountAuth()).get('/me', (c) => {
+    const { userId, email, memberships } = c.var.account
+
+    // A MEMBER OF NOTHING IS AN ANSWER, not an error (ADR-0063). This route used to sit behind
+    // `sessionAuth` and refuse them with FORBIDDEN, which left the console guessing what a 403
+    // from its bootstrap read meant. It is the state where the console offers to create an
+    // organisation, so it is data: no active org, no role, and an empty list.
+    if (memberships.length === 0) {
+      return c.json({
+        data: {
+          user_id: userId,
+          email,
+          active_org_id: null,
+          role: null,
+          memberships: [],
+        },
+        request_id: c.var.requestId,
+      })
+    }
+
+    // Otherwise exactly what `sessionAuth` would resolve — including NOT_FOUND for an org
+    // header this account cannot see (ADR-0057).
+    const active = resolveActiveOrg(c, memberships)
     return c.json({
       data: {
         user_id: userId,
         email,
-        active_org_id: orgId,
-        role,
+        active_org_id: active.orgId as string | null,
+        role: active.role as (typeof active)['role'] | null,
         memberships: memberships.map((membership) => ({
           org_id: membership.orgId,
           org_name: membership.orgName,

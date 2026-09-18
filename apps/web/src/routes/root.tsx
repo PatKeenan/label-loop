@@ -1,12 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet } from '@tanstack/react-router'
+import { Link, Outlet, useRouter } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { ConsoleShell } from '../components/shell/console-shell.tsx'
 import { isStaffRole, useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Statement } from '../components/shell/statement.tsx'
 import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Toaster } from '../components/ui/sonner.tsx'
-import { LoginPage } from './login.tsx'
+import { CreateOrgPage } from './create-org.tsx'
 
 /**
  * The root route's component: the toaster, and whatever `/login` or the console layout
@@ -45,31 +46,30 @@ export const RootLayout = () => (
 export const ConsoleLayout = () => {
   const queryClient = useQueryClient()
   const context = useConsoleContext()
-  const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
+  useRedirectWhenSignedOut(context.state === 'signed-out')
+  // Resolved only for a role that can read panels. `GET /internal/panels` is
+  // `requireRole('admin', 'engineer')`, so for anyone else it could only answer FORBIDDEN —
+  // and that screen is never drawn for them anyway (see `isStaff` below).
+  const panel = usePanelContext(
+    context.state === 'ready' && isStaffRole(context.role) ? context.orgId : null,
+  )
 
   if (context.state === 'pending') return <Loading />
 
-  // Signed out: the form, not a redirect. The guard is on the SERVER — `sessionAuth` on
-  // `/internal/*` — and this is only what the browser does about it. Real
-  // redirect-after-401 is phase 8's, where the router context earns itself.
-  if (context.state === 'signed-out') return <LoginPage />
+  // Signed out WHILE HERE — the session ended under an open screen, and a 401 from some read
+  // told the bootstrap query so (`api/query-client.ts`). Arriving signed out never reaches
+  // this: the console route's `beforeLoad` redirects first. Both go through that one
+  // `beforeLoad` — see `useRedirectWhenSignedOut` — so there is one place that builds the
+  // redirect. The guard is the SERVER's; this is what the browser does about its answer.
+  if (context.state === 'signed-out') return <Loading />
 
-  // Outside the shell entirely: there is no org to draw a console for. CONSOLE_FLOW Q4 — it
-  // offers no way forward because none exists: membership management and org creation are
-  // unscheduled, and a button to nowhere would be worse than the sentence.
+  // Outside the shell entirely: there is no org to draw a console for — so the screen is the
+  // way to make one (ADR-0063). It used to be a statement with no way forward, and it was
+  // where every genuinely new GitHub sign-in landed.
   if (context.state === 'no-org') {
     return (
       <Outside>
-        <Statement eyebrow="LabelLoop" title="This account isn’t in an organisation">
-          <p className="m-0">
-            You’re signed in, but the account hasn’t been added to any LabelLoop organisation — and
-            organisations can’t be created from here yet.
-          </p>
-          <p className="m-0 text-muted-foreground">
-            If you were expecting access, the person who administers your organisation needs to add
-            this account.
-          </p>
-        </Statement>
+        <CreateOrgPage email={context.email} />
       </Outside>
     )
   }
@@ -93,7 +93,7 @@ export const ConsoleLayout = () => {
 
   // An annotator — or a guest expert, PRODUCT.md 5.1's invited SME — gets no console at M4.
   // The shell renders with no Home link, no switcher and no sections: the frame is still
-  // theirs, and the org switcher at its foot is the way out for someone who also works in
+  // theirs, and the org switcher in the top bar is the way out for someone who also works in
   // another organisation. `isStaffRole` is an allow list, deliberately (see its comment).
   const isStaff = isStaffRole(org.role)
 
@@ -103,7 +103,7 @@ export const ConsoleLayout = () => {
       orgSlug={org.orgSlug}
       memberships={org.memberships}
       activeOrgId={org.orgId}
-      isStaff={isStaff}
+      role={org.role}
       panel={panel.state === 'ready' ? { slug: panel.slug, name: panel.name } : null}
     >
       {notAMember ? (
@@ -130,7 +130,7 @@ export const ConsoleLayout = () => {
             console for this role.
           </p>
           <p className="m-0 text-muted-foreground">
-            If you work in another organisation, switch to it at the foot of the sidebar.
+            If you work in another organisation, switch to it from the organisation menu at the top.
           </p>
         </Statement>
       ) : panel.state === 'not-found' ? (
@@ -171,6 +171,23 @@ export const ConsoleLayout = () => {
   )
 }
 
+/**
+ * When the session ends under an open screen, re-run the route's `beforeLoad`, which finds
+ * nobody signed in and redirects to `/login` with this page as the way back.
+ *
+ * NOT a `<Navigate>`, which was the first draft and hung the tab. `Navigate` navigates again
+ * whenever its props object changes, and a `search={{ redirect: location.href }}` is a new
+ * object on every render — while each navigation re-renders this layout. `router.invalidate()`
+ * in an effect keyed on a boolean runs once per sign-out, and reuses the redirect the route
+ * already builds instead of building a second one here.
+ */
+const useRedirectWhenSignedOut = (signedOut: boolean) => {
+  const router = useRouter()
+  useEffect(() => {
+    if (signedOut) void router.invalidate()
+  }, [signedOut, router])
+}
+
 /** The console's loading state, at the one moment there is no shell to put it in. */
 const Loading = () => (
   <Outside>
@@ -184,6 +201,10 @@ const Loading = () => (
  * `data-surface="console"` so the palette is the console's even where the frame is not.
  */
 const Outside = ({ children }: { children: React.ReactNode }) => {
+  // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
+  // body text to 17px and read as everything simply getting bigger rather than as anything
+  // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
+  // compact density's SPACING was opened in tokens.css instead and its type left alone.
   useSurface('console')
   return (
     <div

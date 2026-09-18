@@ -6,7 +6,7 @@ and still holds.
 
 ## The M4 resume — three artifacts, in this order
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`, phase 6. Each is
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md`, phase 6. Each is
 reviewed and approved before the next is drawn, because each is drawn from the one before.
 
 1. [x] **`CONSOLE_FLOW.md`** — *approved 2026-09-14.* The flow map. Every console screen

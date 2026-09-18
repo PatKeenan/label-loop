@@ -513,6 +513,9 @@
 
   --pad-panel-y: var(--space-7);
   --pad-panel-x: var(--space-8);
+  /* See the note in §5: a bar's height follows its controls, not a panel's padding. */
+  --pad-bar-y: var(--space-4);
+  --pad-bar-x: var(--space-6);
   --pad-control-y: var(--space-3);
   --pad-control-x: var(--space-5);
   --pad-field-y: var(--space-3);
@@ -554,20 +557,28 @@
 
   --measure: 80ch;
 
-  --pad-panel-y: var(--space-4);
-  --pad-panel-x: var(--space-4);
+  /* Revised 2026-09-17. TYPE IS UNCHANGED and that is the point: the first attempt at
+     "make the console breathe" switched it to the comfortable density, which grew 13px body
+     text to 17px and read as everything simply getting bigger. Dense product UI keeps small
+     type and spends its room on SPACE — so these numbers moved and the six above did not. */
+  --pad-panel-y: var(--space-5);
+  --pad-panel-x: var(--space-6);
+  /* A bar is furniture, not a panel: its height follows its controls, and a panel's padding
+     makes it enormous. Added with the top bar ADR-0062 introduced. */
+  --pad-bar-y: var(--space-3);
+  --pad-bar-x: var(--space-5);
   --pad-control-y: var(--space-2);
   --pad-control-x: var(--space-3);
   --pad-field-y: var(--space-2);
-  --pad-field-x: var(--space-2);
-  --pad-cell-y: 6px;
-  --pad-cell-x: var(--space-2);
+  --pad-field-x: var(--space-3);
+  --pad-cell-y: var(--space-2);
+  --pad-cell-x: var(--space-3);
   --pad-mark-y: 2px;
   --pad-mark-x: 6px;
 
-  --row-min: 30px;
-  --gap-stack: var(--space-3);
-  --gap-section: var(--space-6);
+  --row-min: 32px;
+  --gap-stack: var(--space-4);
+  --gap-section: var(--space-8);
   --gap-inline: var(--space-2);
   --gap-tight: var(--space-1);
 

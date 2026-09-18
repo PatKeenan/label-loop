@@ -1,4 +1,4 @@
-import { type ErrorCode, errorEnvelopeSchema } from '@labelloop/contracts'
+import { type ErrorCode, type ErrorIssue, errorEnvelopeSchema } from '@labelloop/contracts'
 import { type ErrorTreatment, errorTreatment } from './error-map.ts'
 
 /**
@@ -16,13 +16,23 @@ export class ApiError extends Error {
   readonly treatment: ErrorTreatment
   /** Quote it to support. Absent only when the failure never reached the API. */
   readonly requestId: string | undefined
+  /**
+   * Field-level problems, each located by a dotted path (`slug`, `judges.0.model`).
+   *
+   * Carried on the error rather than re-parsed at the call site because this is what error
+   * surface 1 renders — the message BESIDE the field that caused it (CONSOLE_FLOW §6). A form
+   * that showed only `treatment.detail` would tell someone the request failed validation
+   * without saying which field, which is the version of this that is no help at all.
+   */
+  readonly issues: readonly ErrorIssue[]
 
-  constructor(code: ErrorCode, message: string, requestId?: string) {
+  constructor(code: ErrorCode, message: string, requestId?: string, issues?: ErrorIssue[]) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.treatment = errorTreatment(code)
     this.requestId = requestId
+    this.issues = issues ?? []
   }
 }
 
@@ -52,5 +62,10 @@ export const apiErrorFrom = async (response: FailedResponse): Promise<ApiError> 
   if (!parsed.success) {
     return new ApiError('INTERNAL', `The API returned ${response.status} with no error body.`)
   }
-  return new ApiError(parsed.data.error.code, parsed.data.error.message, parsed.data.request_id)
+  return new ApiError(
+    parsed.data.error.code,
+    parsed.data.error.message,
+    parsed.data.request_id,
+    parsed.data.error.issues,
+  )
 }

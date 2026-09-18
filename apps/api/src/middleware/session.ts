@@ -1,5 +1,5 @@
 import { ACTIVE_ORG_HEADER } from '@labelloop/contracts'
-import type { MiddlewareHandler } from 'hono'
+import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app-env.ts'
 import { AppError } from '../errors.ts'
 import { listMemberships, type Membership, type OrgRole } from '../repositories/org-members.ts'
@@ -36,6 +36,16 @@ import { listMemberships, type Membership, type OrgRole } from '../repositories/
  */
 export { ACTIVE_ORG_HEADER }
 
+/**
+ * What `accountAuth` establishes: a real, signed-in person and their memberships — which may
+ * be empty. Only the routes a member of nothing must reach see this shape (ADR-0063).
+ */
+export type AuthenticatedAccount = {
+  userId: string
+  email: string
+  memberships: readonly Membership[]
+}
+
 /** What an internal route may assume once this middleware has run. */
 export type AuthenticatedSession = {
   userId: string
@@ -64,9 +74,12 @@ const UNAUTHENTICATED = 'Sign in to use the console.'
 /**
  * A member of no organisation is a different answer from an unknown visitor, and it gets a
  * different code. There is no secret to keep here — the caller has already proved who they
- * are — and telling them plainly is what makes the state fixable rather than mysterious.
+ * are. Since ADR-0063 the console never shows this: it reads membership from `/me`, which
+ * answers a member of nothing with an empty list, and offers to create an organisation. This
+ * is what every OTHER route says to them, which only a direct API call now reaches.
  */
-const NOT_A_MEMBER = 'This account is not a member of any organisation. Ask an owner to invite you.'
+const NOT_A_MEMBER =
+  'This account is not a member of any organisation. Create one from the console, or ask an admin to add you.'
 
 /**
  * The refusal for a requested org that is not one of yours — and for one that does not
@@ -82,55 +95,94 @@ const NOT_A_MEMBER = 'This account is not a member of any organisation. Ask an o
  */
 const NO_SUCH_ORG = 'No organisation with that id is available to this account.'
 
+/**
+ * Who is signed in — the half of `sessionAuth` that does not need an org. Throws
+ * `UNAUTHORIZED` for no session, exactly as `sessionAuth` does.
+ */
+const authenticate = async (c: Context<AppEnv>): Promise<AuthenticatedAccount> => {
+  const { auth, db } = c.var.deps
+
+  // better-auth is handed the raw headers rather than a parsed cookie: cookie names,
+  // signing and expiry are its concern, and reimplementing any of that here would be a
+  // second, worse implementation of the thing we chose a library for.
+  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  if (session === null) {
+    throw new AppError('UNAUTHORIZED', UNAUTHENTICATED, {
+      context: { reason: 'no valid session cookie' },
+    })
+  }
+  const memberships = await listMemberships(db, session.user.id)
+  return { userId: session.user.id, email: session.user.email, memberships }
+}
+
+/**
+ * Which org this request is about, from `X-LabelLoop-Org` or the first membership. Exported
+ * for `/me`, the one route that resolves it only AFTER confirming there is anything to
+ * resolve — every other route gets it through `sessionAuth`.
+ *
+ * `NOT_FOUND` for an org that is not one of yours, and for one that does not exist (ADR-0057).
+ */
+export const resolveActiveOrg = (
+  c: Context<AppEnv>,
+  memberships: readonly Membership[],
+): Membership => {
+  const first = memberships[0]
+  if (first === undefined) {
+    throw new AppError('FORBIDDEN', NOT_A_MEMBER, {
+      context: { reason: 'authenticated, but a member of no org' },
+    })
+  }
+
+  // Trimmed, and empty treated as absent: a client that sets the header from an unset
+  // variable sends `""`, and answering NOT_FOUND to that would be a confusing way to say
+  // "you sent nothing".
+  const requested = c.req.header(ACTIVE_ORG_HEADER)?.trim()
+  const active =
+    requested === undefined || requested === ''
+      ? first
+      : memberships.find((membership) => membership.orgId === requested)
+
+  if (active === undefined) {
+    // The id is kept for the log line and the error tracker, never for the caller —
+    // `AppError.context` is not serialized into the envelope.
+    throw new AppError('NOT_FOUND', NO_SUCH_ORG, {
+      context: { reason: 'requested org is not one of this account’s memberships' },
+    })
+  }
+  return active
+}
+
+/**
+ * Identity only — for the two routes a member of NO organisation must still reach (ADR-0063).
+ *
+ * It is the first half of `sessionAuth` and nothing else: the same cookie, the same single
+ * `UNAUTHORIZED`, and no org. Guarding a route with it is a claim that the route is safe to
+ * serve with no tenant, so the list of routes behind it should stay very short.
+ */
+export const accountAuth = (): MiddlewareHandler<AppEnv> => {
+  return async (c, next) => {
+    const account = await authenticate(c)
+    c.set('account', account)
+    c.var.logger.assign({ user_id: account.userId })
+    await next()
+  }
+}
+
 export const sessionAuth = (): MiddlewareHandler<AppEnv> => {
   return async (c, next) => {
-    const { auth, db } = c.var.deps
-
-    // better-auth is handed the raw headers rather than a parsed cookie: cookie names,
-    // signing and expiry are its concern, and reimplementing any of that here would be a
-    // second, worse implementation of the thing we chose a library for.
-    const session = await auth.api.getSession({ headers: c.req.raw.headers })
-    if (session === null) {
-      throw new AppError('UNAUTHORIZED', UNAUTHENTICATED, {
-        context: { reason: 'no valid session cookie' },
-      })
-    }
-
-    const memberships = await listMemberships(db, session.user.id)
-    const first = memberships[0]
-    if (first === undefined) {
-      throw new AppError('FORBIDDEN', NOT_A_MEMBER, {
-        context: { reason: 'authenticated, but a member of no org' },
-      })
-    }
-
-    // Trimmed, and empty treated as absent: a client that sets the header from an unset
-    // variable sends `""`, and answering NOT_FOUND to that would be a confusing way to say
-    // "you sent nothing".
-    const requested = c.req.header(ACTIVE_ORG_HEADER)?.trim()
-    const active =
-      requested === undefined || requested === ''
-        ? first
-        : memberships.find((membership) => membership.orgId === requested)
-
-    if (active === undefined) {
-      // The id is kept for the log line and the error tracker, never for the caller —
-      // `AppError.context` is not serialized into the envelope.
-      throw new AppError('NOT_FOUND', NO_SUCH_ORG, {
-        context: { reason: 'requested org is not one of this account’s memberships' },
-      })
-    }
+    const { userId, email, memberships } = await authenticate(c)
+    const active = resolveActiveOrg(c, memberships)
 
     c.set('session', {
-      userId: session.user.id,
-      email: session.user.email,
+      userId,
+      email,
       orgId: active.orgId,
       role: active.role,
       memberships,
     })
     // The ids, never the email: a log stream is not an access-controlled store, and an
     // address is the one field here that identifies a person outside this system.
-    c.var.logger.assign({ user_id: session.user.id, org_id: active.orgId })
+    c.var.logger.assign({ user_id: userId, org_id: active.orgId })
     await next()
   }
 }

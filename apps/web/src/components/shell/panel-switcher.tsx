@@ -94,13 +94,12 @@ export const PanelSwitcher = ({
           ))}
           {panels.data === undefined || panels.data.length === 0 ? null : <DropdownMenuSeparator />}
           <DropdownMenuItem
-            // Phase 8 builds the screen; the entry point is shell furniture and exists now
-            // so the switcher is not re-invented when it arrives.
-            disabled
+            // Home, with the dialog open: you make a panel and land back on the list that
+            // now contains it, rather than in the panel you happened to be in before.
+            onSelect={() => void navigate({ to: '/', search: { ...search, new: true } })}
             className="flex min-h-[var(--row-min)] items-center"
           >
             <strong className="font-semibold">Create panel</strong>
-            <Data className="ml-auto">phase 8</Data>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

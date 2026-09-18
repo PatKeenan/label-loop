@@ -1,16 +1,17 @@
 ---
 date: 2026-09-11T18:40:00Z
 author: claude-code
-status: approved
+status: complete
+completed_at: 2026-09-18
 approved_at: 2026-09-11T19:02:34Z
 approver: Pat Keenan
 milestone: M4
 topic: m4-console-auth
 related_adrs: [0003, 0008, 0009, 0014, 0016, 0019, 0020, 0022, 0023, 0025, 0026, 0034, 0035, 0046]
-spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058]
+spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061, 0062, 0063]
 ---
 
-> **STATUS — 2026-09-14. Phases 1–5 are MERGED; next is phase 6.**
+> **STATUS — 2026-09-18. COMPLETE: all eight phases built and verified.**
 >
 > | phase | PR | |
 > |---|---|---|
@@ -19,8 +20,16 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 3 — keys and the audit log | #60 | merged |
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
-> | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
-> | **7 — the frame, built** | #67 | **VERIFIED by the stakeholder 2026-09-16** |
+> | 6 — the frame, as mockups | #65 | complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15 |
+> | 7 — the frame, built | #67 | verified by the stakeholder 2026-09-16 |
+> | 8a — the API half | #69 | merged |
+> | **8b — the console half** | #70 | **verified by the stakeholder 2026-09-18; merging closes M4** |
+>
+> Phase 8 grew well past its written steps during implementation — org creation (ADR-0063),
+> shared name rules, pagination and live refresh, and trace detail as a drawer and a page — all
+> recorded as Deviations 65–75. What it surfaced for the NEXT milestone is recorded too: member
+> management is unscheduled and M5 cannot demo annotation without it, and "may a developer
+> annotate" was decided in conversation (see the decision log, 2026-09-18).
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -601,11 +610,12 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - `apps/web/src/routes/traces.tsx` — extended, not replaced.
 
 ### Steps
-- [ ] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
+- [x] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
       build the real one: feature-detected rather than always rendered, and using the
-      redirect-after-401 below rather than a hard-coded `callbackURL`
-- [ ] All three screens mount inside the phase 7 shell; none invents its own layout
-- [ ] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). A panel is created
+      redirect-after-401 below rather than a hard-coded `callbackURL` (Deviation 69)
+- [x] All three screens mount inside the phase 7 shell; none invents its own layout (the shell
+      itself was rebuilt mid-phase — ADR-0062, Deviation 58)
+- [x] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). Merged as #69. A panel is created
       COLLECTING and judges are not authored in the console at all:
       - `/v1` contract: an explicit state, `passed` and `score` nullable at the decision level
       - `evaluate`: a judgeless panel is a legitimate state — write the trace, run no judges,
@@ -614,21 +624,25 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
         and tests until M6 replaces it)
       - a key is issued WITH the panel, so the console's create flow is one step and the reveal
         is the panel's Overview rather than a dismissible modal
-- [ ] **Panel Overview, live at M4**: collecting state, progress toward the 50-trace annotation
+- [x] **Panel Overview, live at M4**: collecting state, progress toward the 50-trace annotation
       gate, and the integration snippet (curl / Node / Python, key masked on screen and real on
       the clipboard). A panel opens here
-- [ ] **Judges screen, read-only and locked** (Deviations 35, 41): the current version if one
+- [x] **Judges screen, read-only and locked** (Deviations 35, 41): the current version if one
       exists, a padlock and what opens it if not. Needs a panel read endpoint, org-scoped and
       role-guarded. **No authoring UI at M4** — that is M6, beside the taxonomy
-- [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
+- [x] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [~] Wizard: panel details → judges → model picker → review — **DROPPED at the 6c review.**
       Creation is one step (name, slug, threshold); the model picker's UI moves to M6 with
       judge authoring, its API half having shipped in phase 4
-- [ ] Trace table extended with the panel and judge context now available
-- [ ] Redirect-after-401 via `beforeLoad`
-- [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
-      server guard; it never replaces it — CONVENTIONS "Keys & auth")
-- [ ] **`FORBIDDEN` needs to stop meaning two things in the console.** Found in phase 2's
+- [x] Trace table extended with the panel and judge context now available — KEY names added
+      (Deviation 63), and **scoped to the open panel** by a required `panel_id` (Deviation 66).
+      Judge context is not added; that is open question 2's to decide, with sort/filter
+- [x] Redirect-after-401 via `beforeLoad` (Deviations 67–68)
+- [x] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
+      server guard; it never replaces it — CONVENTIONS "Keys & auth") (Deviation 70)
+- [x] **`FORBIDDEN` needs to stop meaning two things in the console.** DECIDED with the
+      stakeholder (ADR-0063, Deviation 72): "member of nothing" became a SCREEN — create your
+      organisation — read from `/me` as data, and `FORBIDDEN` now means wrong role only. Found in phase 2's
       manual verification: a GitHub account with no membership lands on *"Ask an owner of
       this organisation to grant you access"*, and there is no "this organisation" — the
       account is a member of none. `error-map.ts` keys off the CODE, and the server sends
@@ -641,20 +655,25 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
       the copy.
 
 ### Automated verification
-- [ ] `bun test apps/web` passes
-- [ ] `bun run --cwd apps/web build` succeeds
-- [ ] `bun run typecheck`, `bun run lint` clean
-- [ ] `bun test` (full suite) green
+- [x] `bun test apps/web` passes
+- [x] `bun run --cwd apps/web build` succeeds
+- [x] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test` (full suite) green — 792 pass; the 2 `relations.test.ts` failures are local
+      seed-state (Deviation 64), not regressions, and CI builds a fresh database
 
 ### Manual verification
-- [ ] **The full interviewer flow, on a database with no seeded panel** — rewritten by
+- [x] **The full interviewer flow, on a database with no seeded panel** — rewritten by
       ADR-0060/0061 (Deviation 41): sign in with GitHub → create a panel in one step → copy the
       snippet → curl `POST /v1/panels/{id}/evaluate` → watch traces arrive against a COLLECTING
       panel, with the annotation gate counting up. No judges are authored, and that is the
       point. BUILD_SPINE's M4 demo line is rewritten to match.
-- [ ] An annotator account cannot reach the wizard or the keys screen, in the UI **and**
+- [x] An annotator account cannot reach the wizard or the keys screen, in the UI **and**
       by direct API call
-- [ ] The key plaintext is unrecoverable after the reveal is dismissed
+- [x] The key plaintext is unrecoverable after the reveal is dismissed
+
+  **All three verified by the stakeholder, 2026-09-18.** The flow started from a GitHub account
+  in no organisation — possible only because of ADR-0063 — and crossed the annotation gate with
+  51 real `/v1` calls against a collecting panel.
 
 ---
 
@@ -1381,6 +1400,234 @@ Recorded as they happen; decision provenance, not a changelog.
     as the first time that spacing met a focusable control. **Worth noting for phase 8**: the
     same helper belongs on any menu it adds.
 
+### Phase 8
+
+Phase 8 is landing as TWO PRs, split at the seam that already existed: the API first (#69,
+merged), the console second. The phase stays one unit here; only the review was split, because
+one PR would have been very large for a repository meant to be read.
+
+55. **Neither requirement the API half removed was under test** — no test asserted the judgeless
+    refusal in `evaluate`, and none asserted `judges: min(1)` on create. Both could be deleted with
+    the suite staying green. It is the pattern of Deviations 17, 22 and 29 again, and it suggests
+    the gap is not random: **the rules that say "no" are the ones that go untested**, because the
+    happy path is written first and a refusal only surfaces when someone hits it. The new tests
+    target exactly that — a collecting panel reaches no provider, proved by a provider that FAILS
+    the test if touched rather than by counting calls.
+
+56. **`state: 'collecting' | 'judged'`, with `passed`/`score` null — not false.** ADR-0060
+    deferred the field names to this phase. A gate told `false` blocks everything; told `true` it
+    ships everything believing it is protected. `complete` stays true, vacuously.
+
+57. **The approved snippet predated the contract this phase shipped.** 6c's starter code told
+    callers to read `data.passed`, which is null while a panel collects. Every snippet now reads
+    `state` first. Deviation 40 said the snippet was "written against the contract"; the contract
+    moved underneath it in the same phase.
+
+58. **The frame was rebuilt: a top bar and a panel-only sidebar (ADR-0062).** Superseding the 6b
+    review's decisions 1 and 2, two days after they were approved, because rendering against a real
+    org left the rail at Home about nine-tenths empty. Create panel went page → dialog in the same
+    review. **Built directly rather than mocked first**, on the stakeholder's call — recorded in the
+    ADR so it is a decision rather than a lapse.
+
+59. **The console's SPACING was opened in `tokens.css`; its TYPE was not.** The first attempt at
+    "make it breathe" switched the console to the comfortable density, which moved body text from
+    13px to 17px and read as everything simply getting bigger. The fix edited the approved file's
+    compact block (console-only — comfortable is the annotator's): gap-stack 12→16, gap-section
+    24→32, panel padding 16→20/24, cell padding 6/8→8/12, row-min 30→32, and a new `--pad-bar-*`
+    for the bar. The same pass found spacing that was wrong independently of density: panel rows
+    8px apart carrying 28px of padding inside, stage sections a stack-gap apart when
+    `--gap-section` existed for exactly that and went unused, and a bar padded by a hard-coded
+    `--space-2` that ignored the axis entirely. Edited in `mockups/` first and copied; the ADR-0046
+    diff still reports zero lines lost.
+
+60. **A correlated subquery compiled to `traces.panel_id = traces.id` and answered 0 for every
+    panel.** Drizzle renders a column inside a `sql` template UNQUALIFIED, and inside a subquery an
+    unqualified name binds to the inner table whenever it exists there. The judge count beside it was
+    correct by luck — `panel_version_judges` has no `current_version_id` for its outer reference to
+    be captured by. Found because a card read 0 beside a database holding 4332; no type or error
+    could have shown it. Both are qualified now, and a test asserting real counts was
+    mutation-checked: reverting the qualification fails it.
+
+61. **The API in Docker was four days stale.** The first create from the console returned 422 —
+    `judges: expected array` — against source where judges were optional; the image was built
+    2026-09-13. The test suite ran against source and the browser against the container, so the two
+    were testing different code. Local development now runs the API from source (`bun run --cwd
+    apps/api dev`), and this is worth knowing before trusting any browser check against compose.
+
+62. **The one-time key is memory-only, and a key issued from Keys now feeds the snippet.** The
+    plaintext exists exactly once; it is held per-tab in `issued-key.ts` — never storage, never a
+    URL — and lost on reload, which is its correct lifetime. A panel whose creation reveal is behind
+    you shows `YOUR_KEY`, and "show the last four" cannot help: `last4` is stored, the other sixty
+    characters are not recoverable from a hash. So issuing a key from Keys, the one other moment a
+    plaintext exists, now makes the Overview snippet runnable — masked on screen, real on the
+    clipboard. The first draft masked the key row and put the plaintext in the code block; masking
+    one and not the other protected nothing.
+
+63. **The trace table went nine columns → six by merging, not deleting.** Adding the panel and key
+    NAMES (a server-side join; `key_name` is null when a key is deleted, since a trace outlives its
+    credential) made every cell wrap four lines deep — the harvest's Q1, *ten columns will not fit a
+    laptop*, arriving on schedule. Score and threshold became one cell (`1.00 / 0.50`), Recorded
+    folded into Created as a `pending` mark, and nothing reflows. **Sort and filter by key were asked
+    for and are unscheduled** — the trace explorer has no milestone, and open question 2 is still the
+    place to decide it.
+
+64. **`relations.test.ts` now has TWO failures against a local database, both seed-state.** Both read
+    `[0]` from shared tables with no ordering; panels created while driving the console now sort
+    first. CI builds a fresh database and is unaffected. The queued task for the member-count test
+    should cover this one too — same file, same cause.
+
+65. **The Overview changes mode at the first trace, and the snippet moves to Keys.** Raised by
+    the stakeholder while driving the M4 flow: after one call, the page still said *"Send your
+    first call"*, which was no longer true. The switch is DATA-driven (`trace_count > 0`), not a
+    dismiss button, and happens at ONE trace rather than at the 50-trace gate — the snippet's
+    job is done once a call works (stakeholder, 2026-09-18). Its place goes to Recent traces
+    (five, the same table component as Traces, with View all), and the snippet becomes *"Call
+    this panel"* on Keys, where a key and an endpoint are what the reader is holding. The gate
+    card lost its headline, a duplicate COLLECTING mark and two paragraphs; the integrator's
+    note about `state: "collecting"` moved beside the code it concerns. The Overview re-reads
+    every 5s while collecting, so the count visibly climbs — the demo's own line.
+
+66. **`GET /internal/traces` REQUIRES `panel_id`, rather than accepting it.** Traces is a section
+    inside a panel (ADR-0062), so no screen asks for an org's traces, and an optional filter
+    keeps alive a read nothing uses and every future caller could forget to narrow. Relaxing it
+    later is cheap. Another org's panel id answers an empty list — the org filter still applies,
+    and empty is what a real panel with no traffic says too, so it confirms nothing. The
+    sibling-panel test was mutation-checked: dropping the panel condition fails two tests.
+
+67. **TanStack Router merges a validator's result OVER the raw query string**, so a key the
+    validator omits keeps its unvalidated value. The first redirect check was therefore a no-op
+    — `?redirect=//evil.example/x` survived validation and only the router's own href
+    normalisation kept the result on-origin. The same bug had sat in phase 7's
+    `validateConsoleSearch`: `?org=` drew the not-a-member state its own comment said it
+    prevented. Every validator now returns every key, `undefined` when absent; tests assert the
+    key is PRESENT, since an omitted key passes `toBeUndefined`. `safeRedirect` runs again at
+    the point of use.
+
+68. **The first signed-out redirect hung the tab.** `<Navigate>` re-navigates whenever its props
+    object changes, and `search={{ redirect: location.href }}` is new on every render while
+    each navigation re-renders the layout. Replaced with `router.invalidate()` in an effect
+    keyed on a boolean, which re-runs the route's own `beforeLoad` — one place builds the
+    redirect. Sign-out clears the cache BEFORE navigating: `/login`'s `beforeLoad` would
+    otherwise find the old session cached and bounce straight back.
+
+69. **Login asks which doors exist; it draws BOTH conditionally, not only GitHub.**
+    `GET /internal/sign-in-methods` is public, registered before the guard but kept at the head
+    of the typed chain, and reads better-auth's built options rather than recomputing them from
+    config. The plan named only the GitHub button; the password form had the mirror-image
+    problem — drawn in production, where ADR-0049 disables it.
+
+    **Also found: `bun --hot` does not pick up route changes.** The API ran from source, as
+    Deviation 61 prescribes, and still served the old trace route and 401'd the new public one
+    until restarted. Running from source is necessary, not sufficient: restart it after a
+    route change.
+
+70. **Role-adaptive meant three gaps, not a new surface.** The shell already hid the console
+    from non-staff roles. What the UI still offered past the server: the `?new` dialog mounted
+    for any role (a form that could only end in FORBIDDEN), the panel list was requested for
+    roles the server refuses, and Organisation settings (M8) showed to every role though
+    ADR-0062 calls it admin-only. The org switcher also still opened UPWARD from the top bar
+    ADR-0062 moved it to — working only because Radix flips a colliding menu. `GET
+    /internal/traces` remains unguarded by role (Deviation 32), and the UI is stricter than the
+    server there by showing an annotator nothing.
+
+71. **The empty Home and the create dialog were redesigned at review, three rounds for the
+    dialog.** Home's empty state became a centred screen that draws the loop (the decision node
+    dashed, because a new panel only collects) with one action. The dialog went from an essay
+    (three-sentence description, mono hints 4px under their inputs, 46rem) to one sentence,
+    muted sans hints, 8px within a field and 24px between, 34rem with 32px edges. A muted
+    footer band was tried and REJECTED: on a dark surface a lighter fill reads as a raised
+    slab. All dialogs' overlays now blur as well as dim. No token was changed.
+
+72. **"Member of nothing" became org creation, which is how FORBIDDEN was settled (ADR-0063).**
+    Asked what FORBIDDEN should mean, the stakeholder asked instead why a member of nothing is
+    refused at all rather than offered an organisation. Following that showed the plan's own
+    demo could not run for a new person: *"sign in with GitHub → create a panel"* dead-ended at
+    the first step for any account not already in an org, and the manual verification only ever
+    passed against the seeded `demo` org or a hand-inserted membership. So the phase grew a write
+    path it did not plan: `POST /internal/orgs` (member of nothing only; creator becomes admin;
+    `org.created` audited; one transaction), `sessionAuth` split into `accountAuth` + org
+    resolution, and `/me` answering an empty membership list with 200 instead of 403. FORBIDDEN
+    keeps one meaning — wrong role — and any FORBIDDEN re-asks `/me`. The guard against a member
+    creating a second org was mutation-checked. The old no-org screen also had no way to sign
+    out; the new one does.
+
+73. **Names and slugs got one set of rules, shared by the server and a live checklist.** Asked
+    whether anything stopped special characters, the audit found slugs already strict but names
+    accepting ANY Unicode — control characters (a newline breaks a table row, ESC rewrites a log
+    reader's terminal), bidi overrides ("Trojan Source": a key name that displays as `prod-key`
+    and is not) and zero-width characters. `@labelloop/contracts` `names.ts` now owns the rules;
+    the API validates org, panel, key and judge names with `displayNameSchema` (NFC-normalised,
+    any script and emoji allowed, ZWJ kept for emoji sequences) and slugs with `slugSchema`,
+    returning each broken rule's own label as the field issue; the console renders the SAME list
+    as a ✓/✕ checklist (stakeholder's request), shown while the field has focus or a rule is
+    broken. A test asserts the slug rules together equal the old regex exactly.
+
+    Three things surfaced doing it. **The create dialog's slug regex had drifted** — it allowed a
+    leading digit the server refused; the rules being shared is what closes that class. **A hyphen
+    could not be typed into a slug**: the field re-ran `slugify` per keystroke, stripping the
+    trailing hyphen as it was typed; hand-typed slugs are now only lowercased and de-spaced, and
+    the checklist says the rest. **The Write tool decoded `\uXXXX` escapes into literal
+    characters**, so `names.ts` briefly held a real RIGHT-TO-LEFT OVERRIDE inside a comment —
+    the attack this rule exists to refuse, in its own source. Caught by reading the diff; every
+    such character is now an escape, and a scan found no others in the touched files.
+
+    **And the first checklist made the submit button unclickable.** It collapsed when focus left
+    a valid field — so pressing Create blurred the name, the list folded, the vertically-centred
+    form shifted ~26px, and the click landed where the button had been. The stakeholder reported
+    it as "the button is always disabled"; the DOM said enabled. The checklist now stays once a
+    field has content, and nothing moves at the moment of a click.
+
+74. **Traces got keyset pagination and a live refresh — POLLING, not SSE (stakeholder,
+    2026-09-18).** The list showed the newest 50 of ~4,300 with no way further back, so "View
+    all traces" was not true. `GET /internal/traces` now takes an opaque `before` cursor and
+    returns `next_cursor`; the cursor is `(created_at, id)` with `created_at` as POSTGRES renders
+    it, because a JS `Date` truncates microseconds and a millisecond-precision cursor skips or
+    repeats rows written within one millisecond of a page boundary. One extra row decides
+    whether an older page exists — no `COUNT(*)`. A test pages through a timestamp tie and a
+    100µs gap, and was mutation-checked against both a millisecond cursor and a missing `id`
+    tie-break; a tampered cursor is a 422, never a 500.
+
+    Live refresh is TanStack Query's `refetchInterval` at a viewer-chosen Off/5/10/15s (default
+    10). Server-sent events were weighed and declined: a trace is written by whichever API
+    instance served `/v1`, so SSE would need a cross-instance fan-out, long-lived connections,
+    heartbeats and reconnection — a stack decision (STACK_DECISIONS is stakeholder-owned) for a
+    need nobody has at seconds-scale latency. Live runs ONLY while at the top: refetching an
+    infinite query re-reads every loaded page, so after **Load older** it pauses, says so, and
+    offers **Back to latest**. Measured: exactly one read per interval.
+
+75. **Trace detail was built, as a drawer (stakeholder, 2026-09-18).** Parked on 2026-09-16 with
+    three blockers; two dissolved on inspection. `GET /internal/traces/:id` is staff-only from
+    the start (`requireRole('admin', 'engineer')` on that route alone — the list's open guard,
+    Deviation 32, is untouched), which removes the annotator-exposure blocker; and harvest
+    blocker 2 (confidence shown to annotators) does not arise, because annotators get no console
+    at M4. The third — reading a customer's artifact as an audit event — is noted in the route
+    and left for M8, which owns the audit vocabulary. The drawer opens by `?trace=` from any
+    trace-table row (a real link stretched across the row, so it is keyboard-reachable without a
+    handler on `<tr>`), shows Input, then Judges — or "no judges ran" for a collecting panel —
+    then Details, and does not render `raw_response`. Tests: a judged trace returns its judge's
+    verdict and rationale, a collecting one an empty list, another org's is 404, an annotator 403.
+
+    **Revised at review into IN and OUT.** The first drawer set every section at one level, so what
+    was sent and what came back read as one list — and the DECISION sat in the header beside the
+    trace id, as if it were a property of the call rather than its output. It is now two bordered
+    blocks with a direction: **Request** (what your agent sent) and **Response** (what the panel
+    returned), which the decision now leads. Separated by borders and direction, not by a new
+    fill. A first cut made the Request block collapsible; the stakeholder meant the CONTENT —
+    the artifact and context have no length bound — so the blocks are fixed and those two are
+    clamped to 12rem with a masked fade, offering **Show all · N lines/keys** only when they
+    actually overflow (measured, so a one-line artifact has no toggle).
+
+    **And a trace got its own PAGE** — `/p/$panelSlug/traces/$traceId` — reached from an "open as
+    page" button beside the drawer's close. Asked for a full-screen drawer, the stakeholder was
+    offered, and took, a page instead: `?trace=` already links "the list, with this open"; a page
+    links the trace itself, is what full width naturally is, and has room for what a trace gains
+    at M5. Drawer and page render ONE `TraceDetailBody`, so they cannot drift. A trace id under
+    the wrong panel's URL is "not in this panel", not shown under a heading it does not belong to.
+    Its header was then tightened at review: **← All traces** above the trail, every trail
+    segment a link (on every panel page, via `panelTrail`), and the trace ID as the trail's last,
+    unlinked segment in place of a "Trace" title — `PageHead`'s `titlePlacement="trail"`. Moving
+    the other pages to the same header is parked, to be decided after living with this one.
+
 ---
 
 ## Open questions for the human
@@ -1394,7 +1641,11 @@ nothing to carry:
    plan says visible-but-inert, on the argument that it makes the app's direction legible. The
    counter-argument is that a console full of dead links reads as unfinished in a demo, which
    is the one context this project is optimised for. Decide at the 6b review.
-2. **Does the trace table get the harvest's design decisions applied** (judge and human as
+2. **ANSWERED 2026-09-18 (stakeholder), in three parts.** The table gets PAGINATION and a live
+   refresh now (Deviation 74) and a trace DRAWER now (Deviation 75); judge-vs-human columns and
+   derived agreement wait for M5, when human labels exist to put in them. Sort/filter by key
+   stays unscheduled, now behind pagination rather than in place of it.
+   Original question, kept: **Does the trace table get the harvest's design decisions applied** (judge and human as
    separate columns, agreement derived, raw payloads expanding rather than inline), or does it
    stay a plain table until M5? The harvest's `console-trace-explorer` notes are usable but
    reference the retired `cls_` vocabulary, and its Q1 — ten columns will not fit a laptop

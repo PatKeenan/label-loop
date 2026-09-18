@@ -7,7 +7,9 @@ import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
 import { createModelRoutes } from './models.ts'
+import { createOrgRoutes } from './orgs.ts'
 import { createPanelRoutes } from './panels.ts'
+import { createSignInMethodRoutes } from './sign-in-methods.ts'
 import { createTraceRoutes } from './traces.ts'
 
 /**
@@ -27,7 +29,9 @@ import { createTraceRoutes } from './traces.ts'
  *    preflight has to be answered before anything else looks at the request.
  * 2. **better-auth's own endpoints**, unguarded — signing in cannot require being signed
  *    in. They are registered BEFORE the guard, so a request to `/internal/auth/*` is
- *    answered by the handler and the session middleware below never runs for it.
+ *    answered by the handler and the session middleware below never runs for it. The one
+ *    route of ours in this position is `/sign-in-methods`, for the same reason: the login
+ *    screen asks it before there is a session to ask with.
  * 3. **The guard, then everything else.** Every route added after `sessionAuth()` is
  *    protected by construction: forgetting is not an option that exists, because there is
  *    nowhere else to add one.
@@ -68,11 +72,21 @@ export const createInternalRoutes = () => {
   // below this path, and re-deriving any of that here would be a second implementation of
   // the library we chose.
   internal.on(['GET', 'POST'], AUTH_ROUTE, (c) => c.var.deps.auth.handler(c.req.raw))
+  // Registered here, before the guard, and KEPT as the start of the typed chain below: Hono
+  // runs middleware in registration order, so a public route added after `sessionAuth()`
+  // would 401, while one added here outside the chain would be missing from `AppType`.
+  //
+  // `/me` and `/orgs` sit here too, behind `accountAuth` rather than the org guard: a member of
+  // NO organisation must be able to learn that and to create one (ADR-0063). Every route
+  // below `sessionAuth()` still refuses them.
+  const typed = internal
+    .route('/', createSignInMethodRoutes())
+    .route('/', createMeRoutes())
+    .route('/', createOrgRoutes())
   internal.use('*', sessionAuth())
 
   // Chained, because the chain IS the type `apps/web` consumes over RPC.
-  return internal
-    .route('/', createMeRoutes())
+  return typed
     .route('/', createTraceRoutes())
     .route('/', createKeyRoutes())
     .route('/', createModelRoutes())

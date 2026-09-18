@@ -10,4 +10,4 @@
 
 This is the first time the append-only grant is exercised by application code rather than by a test, and it makes M8's audit screen a read over real accumulated history rather than a demo over backfilled rows.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

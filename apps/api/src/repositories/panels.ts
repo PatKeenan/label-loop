@@ -1,7 +1,7 @@
 import type { ModelPin, ModelPinValidation } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq, sql } from 'drizzle-orm'
 import type { Executor } from './executor.ts'
 
 /**
@@ -371,6 +371,15 @@ export type PanelListItem = {
   name: string
   currentVersionId: string | null
   createdAt: Date
+  /**
+   * Enough for a list ROW to say something, which an id and a name do not.
+   *
+   * Both are correlated subqueries in the one statement rather than a second round trip per
+   * panel: the list is small, and a per-row query is how a list endpoint quietly becomes N+1
+   * the first time an org has thirty panels.
+   */
+  judgeCount: number
+  traceCount: number
 }
 
 /**
@@ -385,6 +394,30 @@ export const listPanels = async (db: Executor, orgId: string): Promise<PanelList
       name: schema.panels.name,
       currentVersionId: schema.panels.currentVersionId,
       createdAt: schema.panels.createdAt,
+      /**
+       * **Both correlated references are QUALIFIED, and that is not stylistic.**
+       *
+       * Drizzle renders a column inside a `sql` template UNQUALIFIED — `${schema.traces.panelId}`
+       * becomes `"panel_id"`, not `"traces"."panel_id"`. Inside a subquery, an unqualified name
+       * binds to the INNER table whenever it exists there, so the first version of the trace
+       * count compiled to `where "panel_id" = "id"`, which Postgres read as
+       * `traces.panel_id = traces.id` and answered 0 for every panel. No error, no warning, a
+       * plausible number.
+       *
+       * The judge count next to it was CORRECT BY LUCK on the same construction:
+       * `panel_version_judges` has no `current_version_id` column, so the outer reference had
+       * nowhere else to bind. Both are written the safe way now rather than leaving one
+       * depending on a column that does not happen to exist.
+       */
+      judgeCount: sql<number>`(
+        select count(*) from ${schema.panelVersionJudges} as pvj
+        where pvj.panel_version_id = ${schema.panels}.current_version_id
+      )`.mapWith(Number),
+      // Every trace, judged or not: it is what the annotation gate counts (ADR-0061).
+      traceCount: sql<number>`(
+        select count(*) from ${schema.traces} as tr
+        where tr.panel_id = ${schema.panels}.id
+      )`.mapWith(Number),
     })
     .from(schema.panels)
     .where(eq(schema.panels.orgId, orgId))

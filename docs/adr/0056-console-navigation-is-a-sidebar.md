@@ -1,5 +1,8 @@
 # ADR-0056: Console navigation is a persistent left sidebar
 
+> **Partly superseded by ADR-0062 (2026-09-17):** the "two levels, one persistent sidebar" frame is
+> replaced by a persistent top bar and a sidebar that exists only inside a panel. The rest stands.
+
 **Status:** Accepted · **Date:** 2026-09-11 · **Milestone:** M4
 
 ## Decision
@@ -10,7 +13,7 @@ Stakeholder decision, 2026-09-11. It re-confirms the orphaned decision from the 
 
 The shell is BUILT rather than only mocked, so the console's screens are things that go inside something that exists rather than three screens each inventing a layout. Whether inert sections are shown disabled or hidden entirely is deliberately left to the shell's own design review.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)
 
 ## Amendment — 2026-09-14, at the review of `console-shell.html` (M4 phase 6b)
 The sidebar stays persistent and left; what it carries, and in what order, is refined. It has **two levels in one sidebar — Home and a panel.** Under the wordmark, a Home link reads "← Home" from inside a panel. Below it, a panel switcher REPLACES the "Panels" section (Home is the panel list), and the section nav beneath it is always about exactly that one panel — there is no All-panels mode. The org switcher moves to the **foot**, beside identity, and is a menu only for an account in more than one org. Organisation settings (Audit log, Billing) sit at the foot for admins only and are absent until M8 (ADR-0059).

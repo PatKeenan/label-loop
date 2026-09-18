@@ -10,4 +10,4 @@ PRODUCT 5.1 requires scopes "before the management API ships", and the parking l
 
 Accepted cost, stated rather than implied: M4 is the milestone that starts minting keys in volume, so every key issued before scopes arrive needs a backfill. This runs against the precedent of `org_members.role` and `judge_versions.required`, both of which shipped early and unenforced precisely to avoid a backfill; the difference was judged acceptable and is recorded here so it is a decision rather than an oversight.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

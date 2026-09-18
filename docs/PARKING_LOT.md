@@ -104,6 +104,12 @@ Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.m
 
 ## Trace detail — one record, full page (raised 2026-09-16)
 
+> **Built at M4 as a DRAWER, 2026-09-18** (M4 plan, Deviation 75): `GET /internal/traces/:id`,
+> staff-only, and a right-side drawer from any trace row. What is still parked from the entry
+> below: **audit-on-read** (M8), **the annotator's view of one trace** (M5, where harvest
+> blocker 2 is decided), and **`raw_response`**, which the drawer does not render. The entry is
+> kept as the reasoning the build started from.
+
 Clicking a trace row to read what went in and what each judge said. Raised by the
 stakeholder while walking through the M4 phase 7 shell; recorded here because
 `mockups/CONSOLE_FLOW.md` §3 lists both this and the trace explorer as **Unscheduled**, and
@@ -148,6 +154,29 @@ not fit a laptop viewport.
 production data, and a full-page view makes it the most exposed thing in the console.
 Redaction, retention and whether reading one is itself an audit event are all unscheduled —
 M8 owns the audit log, and this would be a candidate writer.
+
+## Organisation creation is unmetered (raised 2026-09-18, ADR-0063)
+
+M4 lets any account that belongs to no organisation create one — the fix for new sign-ins
+landing on a dead end. In production that is any GitHub account, with no quota, no rate limit
+of its own, and no review. Fine for a portfolio deployment; not for a real one.
+
+**Promote with M8's billing work**, which already owns quotas: an org limit per account, and
+closing the race ADR-0063 accepts (two concurrent creates by one member of nothing both pass).
+Creating a SECOND org, invites and member management belong with Organisation settings
+(ADR-0059), not here.
+
+## The page's name as the breadcrumb's last segment, everywhere (raised 2026-09-18)
+
+The trace page's header ends its trail with the page's own name — `demo / issue-triage /
+traces / tr_01M2…`, not a link, styled as the title — instead of a trail plus a separate title
+row (M4 plan, Deviation 75). It saves a row and reads "where you are" as the end of the path.
+Every other page still uses a trail above a title (`demo / issue-triage` then **Traces**).
+
+**Decide once the trace page has been lived with** (stakeholder: "we won't decide that now").
+The switch is one prop on `PageHead` (`titlePlacement="trail"`) per page, so it can move all
+at once. Two things to weigh: Home's trail would become a single segment (`demo / Panels`),
+and a section's name in the trail loses the title's size as the page's main landmark.
 
 ## Verification debt
 

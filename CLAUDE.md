@@ -55,54 +55,48 @@ the driver: when in doubt, stop and ask rather than proceed autonomously. The
 thoughts/ directory is decision provenance for the public writeup — write accordingly.
 
 ## Current phase
-**M4 — console, auth, and the interviewer flow** (docs/BUILD_SPINE.md), from
-`thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md`. M0–M3 are complete (their
-plans are in `thoughts/shared/plans/complete/`), and two M5 polarity plans landed early. M4
-phases 1–5 — the backend half — are merged (#58–#63), phase 6's human review gate as #65, and
-**phase 7, the frame BUILT, is merged as #67 and verified**: Tailwind + shadcn/ui, the
-`tokens.css` conversion under ADR-0046, and the sidebar shell from `mockups/console-shell.html`
-r3. **Next is phase 8**, and the plan stays in `approved/` until it lands.
+**M4 is COMPLETE on its branch; M5 is being planned.** M4 — console, auth, and the interviewer
+flow — finished with phase 8's console half, **PR #70** on `feat/m4-p8-console-screens`,
+verified by the stakeholder 2026-09-18. **Merging #70 closes M4.** Its plan is in
+`thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md`, and Deviations 55–75 there are
+the record of what phase 8 became: org creation for a member of no organisation (ADR-0063),
+shared name/slug rules in `@labelloop/contracts` `names.ts`, trace pagination with live
+polling, and trace detail as a drawer and a page.
 
-**Two things phase 7 leaves behind that phase 8 has to know**, beyond the scope change spelled
-out below:
+**Next: members and annotation — the start of M5.** Decided in conversation on 2026-09-18
+(see the decision log): **a role says what you may DO; which surface you land on is a
+preference.** A developer may annotate; an annotator still cannot touch keys or panels. Two
+things M5 needs that no plan owns yet: **adding a person to an org with a role** (member
+management was "named by PRODUCT.md, scheduled by nothing"), and **the annotation loop**
+itself. Flow: `/log_decision` → `/research` → `/create_plan`, approved by the human before any
+code. better-auth's standalone `createAccessControl` (`better-auth/plugins/access`, pure, no
+tables) is the candidate for permissions; its organization plugin was declined by ADR-0048 and
+would collide with ADR-0014 and ADR-0047.
 
-- **Deviations 53–54 are phase 7's, and they constrain what phase 8 writes.** `useSurface`
-  mirrors the surface preset onto `<html>`, and without it every PORTALLED overlay — the
-  one-time key reveal, the revoke confirmation, every menu and toast — renders light on the
-  dark console, silently, because the approved tokens resolve tone by ancestry.
-  `useMenuFocusReturn` belongs on any menu phase 8 adds. Both live in `components/shell/`.
-- **`apps/web/src/styles/tokens.css` §1–§5 are VERBATIM from `mockups/tokens.css`**, and
-  `diff` between them reporting only the header and §6–§7 is the check ADR-0046 exists to make
-  possible. The file is excluded from Biome to keep that true, and `shadcn add` WRITES INTO IT
-  — diff it after every one.
+**What M4 leaves behind that M5 must know:**
 
-**Three things phase 8 deletes**, so they are not mistaken for finished work: the org-wide
-notice on the trace table, the throwaway GitHub button in `login.tsx` (Deviation 11), and the
-disabled `Create panel` / `Issue key` stubs.
+- **The frame is ADR-0062's**: a persistent top bar, a sidebar only inside a panel, Home as panel
+  cards, Create panel as a `?new` dialog. `mockups/console-shell.html` r3 no longer describes it.
+- **Spacing was opened in `tokens.css`'s compact block, type untouched** — do not "fix" spacing
+  by switching density. `apps/web/src/styles/tokens.css` §1–§5 are VERBATIM from
+  `mockups/tokens.css`; diff them after every `shadcn add`, which writes into that file.
+- **`useSurface` and `useMenuFocusReturn`** (`components/shell/`) are required on portalled
+  overlays and menus respectively, or they render light on the dark console.
+- **URL state:** `?org=`, `?new`, `?trace=`. TanStack Router merges a validator's result over the
+  raw query, so **validators must return every key**, `undefined` when absent (Deviation 67).
+- **Run the API from source** (`bun run --cwd apps/api dev`) — the compose image goes stale
+  silently — **and restart it after changing routes**: `bun --hot` does not pick them up.
+- **`GET /internal/traces` (the list) has no role guard** (Deviation 32); the trace DETAIL read is
+  staff-only. M5's annotator surface is where "may an annotator see confidence" (harvest blocker 2)
+  gets decided.
+- **Two `relations.test.ts` failures locally are seed-state, not regressions** (Deviation 64).
 
-**Phase 8's scope changed underneath it — read the plan's Deviations 32–41 before planning or
-implementing it.** Two decisions taken during phase 6's review moved the milestone:
-**ADR-0060** (a panel COLLECTS before it judges, moved from M5 into M4) and **ADR-0061**
-(judges are authored only from an eval pass). So phase 8 no longer builds a judge wizard or a
-model-picker UI — both move to M6 beside the taxonomy — and instead builds one-step panel
-creation, a panel Overview that onboards (collecting state, progress toward the 50-trace
-annotation gate, an integration snippet), a key issued WITH the panel, a locked Judges
-section, and the `/v1` contract change that makes a judgeless panel legitimate. BUILD_SPINE's
-M4 deliverables and demo moment were rewritten to match.
+**Phase A:** `annotator-session` and `console-dashboard` stay PAUSED until the M5 plan decides
+otherwise; M5's annotator surface is exactly `annotator-session`, so that plan must say whether
+Phase A resumes for it (ADR-0055 is the precedent). The six product decisions in
+`thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open. `mockups/tokens.css`
+(approved) and `tokens-preview.html` are retained; the Phase A hard rules above still apply.
 
-**Phase A's partial resume is COMPLETE** (ADR-0055). All three artifacts were reviewed and
-approved 2026-09-14/15: `mockups/CONSOLE_FLOW.md`, `mockups/console-shell.html` (r3) and
-`mockups/panel-create.html` (r3). Phase 7 and 8 build from those screens and never port their
-HTML (Phase C). `annotator-session` and `console-dashboard` stay PAUSED, and the six product
-decisions in `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open — none
-of them gated these three. `mockups/tokens.css` (approved) and `tokens-preview.html` are
-retained; the Phase A hard rules above still apply in full. See `mockups/BRIEF.md`.
-
-(This section read "backend-first: M0 is the priority, Phase A is PAUSED" until 2026-09-14,
-three milestones after it stopped being true, and was corrected before a context reset —
-because a fresh session reads this file first and treats it as overriding, and would have
-stalled or refused at phase 6. Updated again on 2026-09-15 for the same reason: phase 6 is
-done, and a session starting from the stale text would have built a wizard that two ADRs
-had just removed. Updated on 2026-09-16 when phase 7 merged — the same edit, for the third
-time, which is the argument for making it part of merging a phase rather than a thing
-someone remembers.)
+(This section has been stale four times — a fresh session reads it first and treats it as
+overriding. It is updated as part of closing a phase, not remembered afterwards: last on
+2026-09-18, when M4 phase 8 was verified.)

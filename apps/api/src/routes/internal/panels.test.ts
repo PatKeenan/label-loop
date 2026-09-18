@@ -476,3 +476,46 @@ describe('reading one panel', () => {
     expect((await getPanel(cookie, 'readable')).status).toBe(403)
   })
 })
+
+/**
+ * The panel LIST carries counts, and the first version of them was wrong in a way no type or
+ * error could reveal: Drizzle renders a column inside a `sql` template UNQUALIFIED, so the
+ * correlated trace count compiled to `where "panel_id" = "id"` — both binding to `traces` —
+ * and answered 0 for every panel. These assert real numbers against real rows.
+ */
+describe('the panel list', () => {
+  test('counts traces and judges per panel, and reports the state', async () => {
+    const cookie = await signIn(ADMIN_EMAIL)
+    const created = await postPanel(cookie, { slug: 'listed', name: 'Listed', threshold: 0.5 })
+    const { data } = (await created.json()) as {
+      data: { panel_id: string; key: { plaintext: string } | null }
+    }
+    const plaintext = data.key?.plaintext
+    if (plaintext === undefined) throw new Error('a created panel carries its key')
+
+    for (const artifact of ['one', 'two']) {
+      await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ artifact }),
+      })
+    }
+    await postPanel(cookie, panelBody('listed-judged'))
+
+    const listed = (await (
+      await app().request('http://localhost/internal/panels', { headers: { cookie } })
+    ).json()) as {
+      data: { panels: { slug: string; state: string; trace_count: number; judge_count: number }[] }
+    }
+    const collecting = listed.data.panels.find((panel) => panel.slug === 'listed')
+    const judged = listed.data.panels.find((panel) => panel.slug === 'listed-judged')
+
+    // Two, not zero: the number the unqualified subquery got wrong.
+    expect(collecting?.trace_count).toBe(2)
+    expect(collecting?.judge_count).toBe(0)
+    expect(collecting?.state).toBe('collecting')
+    // The judge count was right by luck; assert it anyway so it stays right on purpose.
+    expect(judged?.judge_count).toBe(1)
+    expect(judged?.state).toBe('judged')
+  })
+})

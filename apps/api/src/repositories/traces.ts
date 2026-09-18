@@ -1,7 +1,7 @@
 import type { VerdictStatus } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 
 /**
  * Writing the trace, which happens on 100% of evaluations because the judge call flows
@@ -108,6 +108,21 @@ export const markTraceRecorded = async (
 export type TraceListItem = {
   id: string
   panelId: string
+  /**
+   * The key's NAME, joined here rather than resolved client-side.
+   *
+   * A table of `key_01M2…` is a table nobody can scan. The alternative — the console fetching
+   * keys and joining them in the browser — is an extra round trip to rebuild a join the
+   * database already does, and it breaks the moment the list is paginated past what that
+   * endpoint returns. (The panel's name and slug were joined the same way until phase 8
+   * scoped the list to one panel, when every row would have repeated the page's heading.)
+   *
+   * `keyName` is nullable because `api_key_id` is: a trace OUTLIVES the key that made it
+   * (`on delete set null`), since losing the evaluation record to a key's removal would be
+   * the worse failure. The console renders that as a revoked-and-removed credential rather
+   * than as a blank.
+   */
+  keyName: string | null
   /** Null when the panel was COLLECTING: it convened no judges (ADR-0060). */
   passed: boolean | null
   score: number | null
@@ -116,25 +131,99 @@ export type TraceListItem = {
   /** Null until the follow-up job has run; the console shows it as "pending". */
   recordedAt: Date | null
   createdAt: Date
+  /**
+   * `created_at` as POSTGRES renders it — microseconds included — for the pagination cursor
+   * only. A JavaScript `Date` keeps milliseconds, so a cursor built from `createdAt` would sit
+   * up to 999µs away from the row it names, and traces written within the same millisecond as
+   * a page boundary would be skipped or repeated.
+   */
+  createdAtExact: string
 }
 
+/** Where the previous page ended: the `(created_at, id)` of its last row. */
+export type TraceCursor = { createdAt: string; id: string }
+
 /**
- * The console's trace list, newest first, for ONE org.
+ * The console's trace list, newest first, for ONE panel in ONE org.
  *
  * `orgId` is a required parameter rather than an optional filter, which is the whole point:
  * there is no way to call this function that reads across tenants, so the tenancy rule is
  * enforced by the signature instead of by remembering to add a `where`. The middleware that
  * resolves the org is the only thing that supplies it.
+ *
+ * `panelId` narrows WITHIN the org and never replaces it: a panel id from another org matches
+ * no row here, because both conditions apply.
  */
 export const listTraces = async (
   db: Database,
-  orgId: string,
-  limit: number,
+  {
+    orgId,
+    panelId,
+    limit,
+    before,
+  }: { orgId: string; panelId: string; limit: number; before?: TraceCursor | undefined },
 ): Promise<TraceListItem[]> =>
   db
     .select({
       id: schema.traces.id,
       panelId: schema.traces.panelId,
+      keyName: schema.apiKeys.name,
+      passed: schema.traces.passed,
+      score: schema.traces.score,
+      complete: schema.traces.complete,
+      threshold: schema.traces.threshold,
+      recordedAt: schema.traces.recordedAt,
+      createdAt: schema.traces.createdAt,
+      // QUALIFIED by hand: a column inside a `sql` template renders unqualified, and
+      // `api_keys` has a `created_at` too (the trap Deviation 60 fell into, in a subquery).
+      createdAtExact: sql<string>`"traces"."created_at"::text`,
+    })
+    .from(schema.traces)
+    // LEFT on the key, which can be null: the trace outlives the credential that made it.
+    .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
+    .where(
+      and(
+        eq(schema.traces.orgId, orgId),
+        eq(schema.traces.panelId, panelId),
+        // KEYSET, not OFFSET. Traces arrive at the top continuously, so "skip the first 50"
+        // names a different 50 every time someone sends a call — a page read twice would show
+        // duplicates, or miss rows. "Older than the last row I saw" names the same rows
+        // however many arrive meanwhile. The row comparison breaks ties on `id`, because
+        // `created_at` alone is not unique.
+        before === undefined
+          ? undefined
+          : sql`("traces"."created_at", "traces"."id") < (${before.createdAt}::timestamptz, ${before.id})`,
+      ),
+    )
+    // Matches `traces_panel_created_idx` for the leading column, so the list stays an index
+    // scan as the table grows; `id` only orders ties.
+    .orderBy(desc(schema.traces.createdAt), desc(schema.traces.id))
+    .limit(limit)
+
+/**
+ * ONE trace, whole — what went in and what each judge said — for the console's trace drawer.
+ *
+ * Unlike the list, this DOES select `artifact` and `context`: it reads one row, so the two
+ * unbounded columns cost one row's worth. It does NOT select `raw_response`, the provider's
+ * untouched payload; nothing on the drawer renders it, and it is the largest thing stored.
+ *
+ * Org-scoped by signature exactly as `listTraces` is: a trace id from another org is `null`,
+ * the same answer as one that does not exist.
+ */
+export const getTraceDetail = async (
+  db: Database,
+  { orgId, traceId }: { orgId: string; traceId: string },
+) => {
+  const rows = await db
+    .select({
+      id: schema.traces.id,
+      panelId: schema.traces.panelId,
+      panelVersionId: schema.traces.panelVersionId,
+      panelVersion: schema.panelVersions.version,
+      keyName: schema.apiKeys.name,
+      requestId: schema.traces.requestId,
+      artifact: schema.traces.artifact,
+      context: schema.traces.context,
       passed: schema.traces.passed,
       score: schema.traces.score,
       complete: schema.traces.complete,
@@ -143,7 +232,44 @@ export const listTraces = async (
       createdAt: schema.traces.createdAt,
     })
     .from(schema.traces)
-    .where(eq(schema.traces.orgId, orgId))
-    // Matches `traces_org_created_idx`, so the list stays an index scan as the table grows.
-    .orderBy(desc(schema.traces.createdAt))
-    .limit(limit)
+    .innerJoin(schema.panelVersions, eq(schema.panelVersions.id, schema.traces.panelVersionId))
+    .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
+    .where(and(eq(schema.traces.orgId, orgId), eq(schema.traces.id, traceId)))
+    .limit(1)
+  const trace = rows[0]
+  if (trace === undefined) return null
+
+  const verdicts = await db
+    .select({
+      judgeSlug: schema.judges.slug,
+      judgeName: schema.judges.name,
+      judgeVersion: schema.judgeVersions.version,
+      question: schema.judgeVersions.question,
+      polarity: schema.judgeVersions.polarity,
+      status: schema.traceVerdicts.status,
+      verdict: schema.traceVerdicts.verdict,
+      passed: schema.traceVerdicts.passed,
+      rationale: schema.traceVerdicts.rationale,
+      reasons: schema.traceVerdicts.reasons,
+      confidence: schema.traceVerdicts.confidence,
+      weight: schema.traceVerdicts.weight,
+      servedBy: schema.traceVerdicts.servedBy,
+      latencyMs: schema.traceVerdicts.latencyMs,
+      attempts: schema.traceVerdicts.attempts,
+      inputTokens: schema.traceVerdicts.inputTokens,
+      outputTokens: schema.traceVerdicts.outputTokens,
+      reasoningTokens: schema.traceVerdicts.reasoningTokens,
+      costUsd: schema.traceVerdicts.costUsd,
+      costPriced: schema.traceVerdicts.costPriced,
+    })
+    .from(schema.traceVerdicts)
+    .innerJoin(
+      schema.judgeVersions,
+      eq(schema.judgeVersions.id, schema.traceVerdicts.judgeVersionId),
+    )
+    .innerJoin(schema.judges, eq(schema.judges.id, schema.judgeVersions.judgeId))
+    .where(eq(schema.traceVerdicts.traceId, trace.id))
+    .orderBy(schema.judges.slug)
+
+  return { ...trace, verdicts }
+}

@@ -60,9 +60,13 @@ export const errorTreatment = (code: ErrorCode): ErrorTreatment => {
         recovery: 'sign-in',
       }
     case 'FORBIDDEN':
+      // ONE meaning in the console: your role in this organisation does not allow this. It
+      // also used to mean "a member of no organisation at all", and this copy was wrong for
+      // that — there was no "this organisation". Since ADR-0063 that state is read from `/me`
+      // as data and drawn as org creation, so it never reaches this map.
       return {
-        title: 'You do not have access to this',
-        detail: 'Ask an owner of this organisation to grant you access.',
+        title: 'Your role doesn’t allow this',
+        detail: 'An admin of this organisation can change your role if you need access.',
         fatal: true,
         recovery: 'contact-support',
       }

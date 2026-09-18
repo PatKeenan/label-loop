@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { Data } from './mark.tsx'
 
@@ -17,13 +18,36 @@ import { Data } from './mark.tsx'
 export const PageHead = ({
   scope,
   title,
+  titlePlacement = 'title',
+  meta,
   actions,
+  back,
   className,
   ...props
 }: {
-  /** Slugs, outermost first: `[orgSlug]` at Home, `[orgSlug, panelSlug]` in a panel. */
-  scope: readonly string[]
+  /**
+   * A way back one level, drawn ABOVE the trail — for a page deeper than a section (one trace),
+   * where the reader most likely arrived from a list and wants it back in one click. The trail
+   * below also links, for going further up.
+   */
+  back?: React.ReactNode
+  /**
+   * Slugs, outermost first: `[orgSlug]` at Home, `[orgSlug, panelSlug]` in a panel. A segment
+   * may be a LINK — the trail is where people look for "up one level", so a page deeper than a
+   * section (one trace) makes its trail the way back rather than a button across the screen.
+   */
+  scope: readonly React.ReactNode[]
+  /**
+   * The page's name. In `'title'` placement (every page today) it is its own row under the
+   * trail; in `'trail'` placement it is the trail's LAST segment — not a link, styled as the
+   * title — so "where you are" reads as the end of the path and the header loses a row. Only
+   * the trace page uses `'trail'` so far; moving every page over is a noted follow-up
+   * (docs/PARKING_LOT.md), decided once it has been lived with on one page.
+   */
   title: React.ReactNode
+  titlePlacement?: 'title' | 'trail'
+  /** Muted metadata under the header's name — the trace's timestamp, for one. */
+  meta?: React.ReactNode
   actions?: React.ReactNode
 } & Omit<React.ComponentProps<'header'>, 'title'>) => (
   <header
@@ -35,17 +59,36 @@ export const PageHead = ({
     {...props}
   >
     <div className="flex min-w-0 flex-col gap-[var(--gap-tight)]">
-      <div className="flex flex-wrap items-center gap-[var(--gap-tight)]">
+      {back === undefined ? null : <div className="mb-[var(--gap-tight)]">{back}</div>}
+      <div className="flex flex-wrap items-baseline gap-[var(--gap-tight)]">
         {scope.map((segment, index) => (
-          <Data key={segment}>
+          <Data
+            // Position is the identity: a trail is an ordered path, not a set.
+            // biome-ignore lint/suspicious/noArrayIndexKey: the trail never reorders.
+            key={index}
+            // Links in the trail read as links on hover — underline, full contrast — and stay
+            // quiet otherwise, so a trail of links does not shout over the title below it.
+            className="[&_a]:underline-offset-4 [&_a:hover]:text-foreground [&_a:hover]:underline"
+          >
             {index === 0 ? null : (
               <span className="mr-[var(--gap-tight)] text-foreground-faint">/</span>
             )}
             {segment}
           </Data>
         ))}
+        {titlePlacement === 'trail' ? (
+          // The current page, ending the path: the page's h1, so it is still the heading a
+          // screen reader lands on, and never a link — you are already here.
+          <h1 className="m-0 flex min-w-0 items-baseline gap-[var(--gap-tight)] text-title font-semibold tracking-[var(--tracking-snug)]">
+            <span className="font-mono text-data font-normal text-foreground-faint">/</span>
+            <span className="min-w-0 break-all">{title}</span>
+          </h1>
+        ) : null}
       </div>
-      <h1 className="text-title font-semibold tracking-[var(--tracking-snug)]">{title}</h1>
+      {titlePlacement === 'title' ? (
+        <h1 className="text-title font-semibold tracking-[var(--tracking-snug)]">{title}</h1>
+      ) : null}
+      {meta === undefined ? null : <div className="mt-[var(--gap-tight)]">{meta}</div>}
     </div>
     {actions === undefined ? null : (
       <div className="ml-auto flex gap-[var(--gap-inline)]">{actions}</div>
@@ -54,34 +97,23 @@ export const PageHead = ({
 )
 
 /**
- * The dashed, labelled slot standing in for a screen phase 8 builds.
- *
- * It is deliberately NOT an empty div or a "coming soon" page. The 6b mockup drew every
- * unbuilt screen this way for one reason — an inert surface that looks like product is how a
- * demo makes a promise the build has not kept — and the same reasoning applies once it is
- * real code. It says which milestone owns it, in the console, to the person reading it.
+ * The trail for any page inside a panel — `org / panel`, both LINKS: the org to Home (the panel
+ * list), the panel to its Overview. One helper so every panel page's trail behaves the same;
+ * Home's own trail stays plain, because its only segment would link to itself.
  */
-export const ContentSlot = ({
-  label,
-  children,
-  className,
-  ...props
-}: { label: string } & React.ComponentProps<'section'>) => (
-  <section
-    aria-label="Screen content slot"
-    className={cn(
-      'grid flex-1 place-content-center justify-items-center gap-[var(--gap-tight)]',
-      'min-h-[calc(var(--space-20)*4)] rounded-lg border border-dashed border-border-strong',
-      'bg-muted px-[var(--pad-panel-x)] py-[var(--pad-panel-y)] text-center',
-      className,
-    )}
-    {...props}
-  >
-    <span className="font-mono text-micro uppercase tracking-[var(--tracking-micro)] text-muted-foreground">
-      {label}
-    </span>
-    <div className="flex max-w-[var(--measure)] flex-col gap-[var(--gap-inline)] text-body text-muted-foreground">
-      {children}
-    </div>
-  </section>
-)
+export const panelTrail = (orgSlug: string, panelSlug: string): React.ReactNode[] => [
+  <Link key="org" to="/" search={{ org: orgSlug }}>
+    {orgSlug}
+  </Link>,
+  <Link key="panel" to="/p/$panelSlug" params={{ panelSlug }} search={{ org: orgSlug }}>
+    {panelSlug}
+  </Link>,
+]
+
+/**
+ * The look of the small "← label" link a deep page puts above its trail (`PageHead`'s `back`).
+ * A class, not a wrapper component: wrapping TanStack's `Link` generically loses its route
+ * typing, so the caller keeps a real, typed `Link` and borrows the style.
+ */
+export const BACK_LINK =
+  'inline-flex items-center gap-[var(--gap-tight)] text-ui text-muted-foreground hover:text-foreground'

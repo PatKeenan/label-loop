@@ -10,4 +10,4 @@
 
 Rejected: having k6 sign in and drive `/internal` directly, which couples the load harness to session auth and CORS; and deferring the question to whoever attempts v1, which would mean building the door under time pressure. The seam is nearly free while the service is being written. Producing BREAKING_POINT v1 itself remains out of M4's scope.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)
