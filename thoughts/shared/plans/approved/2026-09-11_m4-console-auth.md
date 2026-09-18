@@ -648,10 +648,11 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
       the copy.
 
 ### Automated verification
-- [ ] `bun test apps/web` passes
-- [ ] `bun run --cwd apps/web build` succeeds
-- [ ] `bun run typecheck`, `bun run lint` clean
-- [ ] `bun test` (full suite) green
+- [x] `bun test apps/web` passes
+- [x] `bun run --cwd apps/web build` succeeds
+- [x] `bun run typecheck`, `bun run lint` clean
+- [x] `bun test` (full suite) green — 792 pass; the 2 `relations.test.ts` failures are local
+      seed-state (Deviation 64), not regressions, and CI builds a fresh database
 
 ### Manual verification
 - [ ] **The full interviewer flow, on a database with no seeded panel** — rewritten by
