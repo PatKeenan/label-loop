@@ -5,7 +5,7 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import { meQuery } from './api/queries.ts'
+import { meQuery, signInMethodsQuery } from './api/queries.ts'
 import { queryClient } from './api/query-client.ts'
 import { safeRedirect } from './api/redirect.ts'
 import { validateConsoleSearch } from './components/shell/context.ts'
@@ -152,6 +152,9 @@ const loginRoute = createRoute({
     if (session !== null && session !== undefined) {
       throw redirect({ href: safeRedirect(search.redirect) ?? '/', replace: true })
     }
+    // Asked here, alongside the session, so the form does not render a loading line and then
+    // redraw with a different set of doors. `prefetch` never throws; the screen shows a failure.
+    await context.queryClient.prefetchQuery(signInMethodsQuery)
   },
   component: LoginRoute,
 })

@@ -54,6 +54,21 @@ export const meQuery = queryOptions({
   staleTime: 30_000,
 })
 
+/**
+ * Which sign-in methods the API accepts — the login screen's doors. Public and org-less: it
+ * is asked before anyone is signed in. Effectively static for a running API, so it is never
+ * re-asked within a page's life.
+ */
+export const signInMethodsQuery = queryOptions({
+  queryKey: ['sign-in-methods'],
+  queryFn: async () => {
+    const response = await api.internal['sign-in-methods'].$get()
+    if (!response.ok) throw await apiErrorFrom(response)
+    return (await response.json()).data
+  },
+  staleTime: Number.POSITIVE_INFINITY,
+})
+
 /** Every panel in the active org — the panel switcher's contents, and Home's list. */
 export const panelsQuery = (orgId: string) =>
   queryOptions({

@@ -72,7 +72,7 @@ const noopTracer = trace.getTracer('test')
 /** The same, for metrics: a real meter with a no-op implementation behind it. */
 const noopMeter = metrics.getMeter('test')
 
-const app = () =>
+const app = (authOverride?: ReturnType<typeof createAuth>) =>
   createApp({
     config,
     clock: createFixedClock(),
@@ -87,7 +87,7 @@ const app = () =>
     jobs: fakeQueue(),
     tracer: noopTracer,
     meter: noopMeter,
-    auth,
+    auth: authOverride ?? auth,
     rateLimitStore: createMemoryRateLimitStore(),
     modelProvider: createFakeProvider(),
     catalogue: fakeCatalogue(),
@@ -366,5 +366,30 @@ describe('better-auth’s own endpoints are not behind the guard', () => {
     // Rejected by better-auth on the merits, which means it was REACHED.
     expect(response.status).toBe(401)
     expect(await response.text()).not.toContain('UNAUTHORIZED')
+  })
+})
+
+describe('the login screen asks which doors exist (Deviation 11)', () => {
+  const methods = async (authOverride?: ReturnType<typeof createAuth>) => {
+    // No cookie: this is asked before anyone is signed in.
+    const response = await app(authOverride).request('http://localhost/internal/sign-in-methods')
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { data: { email_password: boolean; github: boolean } }).data
+  }
+
+  test('a clone with no GitHub credentials offers the password form only', async () => {
+    expect(await methods()).toEqual({ email_password: true, github: false })
+  })
+
+  test('production with GitHub configured offers GitHub only (ADR-0049)', async () => {
+    // Read off the auth object the HANDLER was built with, so this is the same fact that
+    // decides whether a sign-in succeeds — not a second reading of the config.
+    const production = createAuth(db, {
+      ...config,
+      NODE_ENV: 'production',
+      GITHUB_CLIENT_ID: 'test-client-id',
+      GITHUB_CLIENT_SECRET: 'test-client-secret',
+    })
+    expect(await methods(production)).toEqual({ email_password: false, github: true })
   })
 })
