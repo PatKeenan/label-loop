@@ -1,11 +1,14 @@
 ---
 date: 2026-09-18T21:00:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-18T21:30:00Z
+approver: Pat Keenan
 milestone: M5
 topic: m5-members-annotation
 related_adrs: [0003, 0014, 0019, 0036, 0037, 0047, 0048, 0051, 0055, 0057, 0059, 0060, 0061, 0063, 0064]
 research: thoughts/shared/research/2026-09-18_m5-members-annotation.md
+spawned_adrs: [0065, 0066, 0067, 0068, 0069, 0070, 0071, 0072]
 ---
 
 # M5 — members, capabilities, and the annotation loop
