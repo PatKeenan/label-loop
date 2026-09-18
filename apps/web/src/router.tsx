@@ -14,6 +14,7 @@ import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
 import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
+import { TracePage } from './routes/trace.tsx'
 import { TracesPage } from './routes/traces.tsx'
 
 /**
@@ -35,6 +36,7 @@ import { TracesPage } from './routes/traces.tsx'
  *     /p/$panelSlug            that panel's Overview
  *     /p/$panelSlug/judges     …its sections
  *     /p/$panelSlug/traces
+ *     /p/$panelSlug/traces/$traceId   one trace, as a page
  *     /p/$panelSlug/keys
  *     ?org=acme-support        on any of the above
  *
@@ -122,6 +124,16 @@ const panelTracesRoute = createRoute({
   component: TracesPage,
 })
 
+/**
+ * One trace as a page — its own, shareable address (Deviation 75). The drawer (`?trace=`) is the
+ * quick look over a list; its "open as page" button comes here.
+ */
+const panelTraceRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/p/$panelSlug/traces/$traceId',
+  component: TracePage,
+})
+
 const panelKeysRoute = createRoute({
   getParentRoute: () => consoleRoute,
   path: '/p/$panelSlug/keys',
@@ -166,6 +178,7 @@ export const router = createRouter({
       panelRoute,
       panelJudgesRoute,
       panelTracesRoute,
+      panelTraceRoute,
       panelKeysRoute,
     ]),
     loginRoute,

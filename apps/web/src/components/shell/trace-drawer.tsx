@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
-import { ArrowDownToLineIcon, ArrowUpFromLineIcon, ChevronRightIcon } from 'lucide-react'
+import {
+  ArrowDownToLineIcon,
+  ArrowUpFromLineIcon,
+  ChevronRightIcon,
+  Maximize2Icon,
+} from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { traceDetailQuery } from '../../api/queries.ts'
 import { ApiError } from '../../errors/api-error.ts'
@@ -32,15 +37,13 @@ export const TraceDrawer = () => {
   const search = useSearch({ strict: false }) as ConsoleSearch
   const navigate = useNavigate()
   const traceId = search.trace
+  const { panelSlug } = useParams({ strict: false }) as { panelSlug?: string }
   const orgId = context.state === 'ready' ? context.orgId : ''
 
   const detail = useQuery({
     ...traceDetailQuery(orgId, traceId ?? ''),
     enabled: context.state === 'ready' && traceId !== undefined,
   })
-
-  const contextCount =
-    detail.data?.context === null ? 0 : Object.keys(detail.data?.context ?? {}).length
 
   // Drops `trace` and keeps everything else, so closing returns to exactly the list underneath.
   const close = () => void navigate({ to: '.', search: { ...search, trace: undefined } })
@@ -52,6 +55,23 @@ export const TraceDrawer = () => {
         className="w-full gap-0 overflow-y-auto sm:max-w-[40rem]"
         data-surface="console"
       >
+        {/*
+          OPEN AS PAGE — beside the close button. The drawer is the quick look; the trace's own
+          page is what you send someone, and is where full width lives. `?trace=` is dropped on
+          the way, so Back from the page returns to the list rather than re-opening the drawer.
+        */}
+        {panelSlug === undefined || traceId === undefined ? null : (
+          <Link
+            to="/p/$panelSlug/traces/$traceId"
+            params={{ panelSlug, traceId }}
+            search={{ org: search.org }}
+            aria-label="Open as page"
+            title="Open as page"
+            className="absolute top-4 right-12 rounded-xs text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:outline-hidden"
+          >
+            <Maximize2Icon className="size-4" />
+          </Link>
+        )}
         <SheetHeader className="gap-[var(--gap-inline)] px-[var(--space-8)] pt-[var(--space-8)] pb-[var(--space-6)]">
           <Eyebrow>Trace</Eyebrow>
           <SheetTitle className="font-mono text-ui font-normal break-all select-all">
@@ -66,136 +86,158 @@ export const TraceDrawer = () => {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col gap-[var(--space-8)] px-[var(--space-8)] pb-[var(--space-8)]">
-          {detail.isPending ? (
-            <p className="m-0 text-muted-foreground">Loading…</p>
-          ) : detail.error !== null ? (
-            <p role="alert" className="m-0 text-body text-muted-foreground">
-              {detail.error instanceof ApiError && detail.error.code === 'NOT_FOUND'
-                ? 'This trace doesn’t exist, or isn’t in this organisation.'
-                : 'This trace couldn’t be loaded. Nothing has been changed.'}
-            </p>
-          ) : (
-            <>
-              {/*
-                IN, then OUT — two bordered blocks with a DIRECTION, because the first draft set
-                both at one level and a reader could not tell what was sent from what came back.
-                Borders and direction do the separating, not a new fill (a lighter surface on
-                dark reads as a raised slab — the lesson of the create dialog's footer band).
-              */}
-              <section className="rounded-lg border">
-                <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
-                  <BlockTitle
-                    icon={<ArrowDownToLineIcon className="size-4" />}
-                    title="Request"
-                    caption="What your agent sent"
-                  />
-                </div>
-                <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
-                  <Field label="Artifact">
-                    {/* The caller's own output, verbatim — we never generated it (ADR-0019).
-                        Clamped, because nothing bounds how long it is. */}
-                    <Clamped
-                      key={`${traceId}-artifact`}
-                      what="artifact"
-                      lines={lineCount(detail.data.artifact)}
-                    >
-                      <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
-                        {detail.data.artifact}
-                      </pre>
-                    </Clamped>
-                  </Field>
-                  <Field label="Context">
-                    {detail.data.context === null || contextCount === 0 ? (
-                      <span className="text-ui text-muted-foreground">None sent.</span>
-                    ) : (
-                      <Clamped key={`${traceId}-context`} what="context" keys={contextCount}>
-                        <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
-                          {Object.entries(detail.data.context).map(([key, value]) => (
-                            <div key={key} className="contents">
-                              <dt>
-                                <Data>{key}</Data>
-                              </dt>
-                              <dd className="m-0 font-mono text-data break-words whitespace-pre-wrap text-foreground">
-                                {value}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </Clamped>
-                    )}
-                  </Field>
-                </div>
-              </section>
-
-              <section className="rounded-lg border">
-                <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
-                  <BlockTitle
-                    icon={<ArrowUpFromLineIcon className="size-4" />}
-                    title="Response"
-                    caption="What the panel returned"
-                  />
-                  {/* The DECISION leads the response — it is output, and it used to sit in the
-                      header beside the trace id as though it were a property of the call. */}
-                  <span className="ml-auto flex items-center gap-[var(--gap-inline)]">
-                    <Decision passed={detail.data.passed} complete={detail.data.complete} />
-                    <Data className="tabular-nums">
-                      <span className="text-foreground">
-                        {detail.data.score === null ? '—' : detail.data.score.toFixed(2)}
-                      </span>
-                      {' / '}
-                      {detail.data.threshold.toFixed(2)}
-                    </Data>
-                  </span>
-                </div>
-                <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
-                  <Eyebrow>
-                    {detail.data.judges.length === 0
-                      ? 'Judges'
-                      : `Judges · ${detail.data.judges.length}`}
-                  </Eyebrow>
-                  {detail.data.judges.length === 0 ? (
-                    <p className="m-0 text-body text-muted-foreground">
-                      No judges ran — the panel was collecting when this call arrived. It’s stored,
-                      and counts toward annotation.
-                    </p>
-                  ) : (
-                    <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
-                      {detail.data.judges.map((judge) => (
-                        <JudgeVerdict key={judge.slug} judge={judge} />
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
-
-              <Section title="Details">
-                <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-inline)] text-ui">
-                  <Detail label="Key">
-                    {detail.data.key_name ?? <span className="text-foreground-faint">deleted</span>}
-                  </Detail>
-                  <Detail label="Panel version">
-                    <Data className="text-foreground">v{detail.data.panel_version}</Data>
-                  </Detail>
-                  <Detail label="Request id">
-                    <Data className="text-foreground break-all select-all">
-                      {detail.data.request_id}
-                    </Data>
-                  </Detail>
-                  <Detail label="Recorded">
-                    {detail.data.recorded_at === null ? (
-                      <Mark tone="neutral">pending</Mark>
-                    ) : (
-                      <Data>{new Date(detail.data.recorded_at).toLocaleString()}</Data>
-                    )}
-                  </Detail>
-                </dl>
-              </Section>
-            </>
-          )}
+        <div className="px-[var(--space-8)] pb-[var(--space-8)]">
+          {traceId === undefined ? null : <TraceDetailBody traceId={traceId} />}
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * THE TRACE, WHOLE — Request, Response, Details. ONE component, rendered by the drawer (the
+ * quick look over a list) and by the trace page (the trace's own address), so the two cannot
+ * drift into different accounts of the same record.
+ */
+export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
+  const context = useConsoleContext()
+  const orgId = context.state === 'ready' ? context.orgId : ''
+  const detail = useQuery({
+    ...traceDetailQuery(orgId, traceId),
+    enabled: context.state === 'ready',
+  })
+  const contextCount =
+    detail.data?.context === null ? 0 : Object.keys(detail.data?.context ?? {}).length
+
+  return (
+    <div className="flex flex-col gap-[var(--space-8)]">
+      {detail.isPending ? (
+        <p className="m-0 text-muted-foreground">Loading…</p>
+      ) : detail.error !== null ? (
+        <p role="alert" className="m-0 text-body text-muted-foreground">
+          {detail.error instanceof ApiError && detail.error.code === 'NOT_FOUND'
+            ? 'This trace doesn’t exist, or isn’t in this organisation.'
+            : 'This trace couldn’t be loaded. Nothing has been changed.'}
+        </p>
+      ) : (
+        <>
+          {/*
+          IN, then OUT — two bordered blocks with a DIRECTION, because the first draft set
+          both at one level and a reader could not tell what was sent from what came back.
+          Borders and direction do the separating, not a new fill (a lighter surface on
+          dark reads as a raised slab — the lesson of the create dialog's footer band).
+        */}
+          <section className="rounded-lg border">
+            <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
+              <BlockTitle
+                icon={<ArrowDownToLineIcon className="size-4" />}
+                title="Request"
+                caption="What your agent sent"
+              />
+            </div>
+            <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
+              <Field label="Artifact">
+                {/* The caller's own output, verbatim — we never generated it (ADR-0019).
+                  Clamped, because nothing bounds how long it is. */}
+                <Clamped
+                  key={`${traceId}-artifact`}
+                  what="artifact"
+                  lines={lineCount(detail.data.artifact)}
+                >
+                  <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
+                    {detail.data.artifact}
+                  </pre>
+                </Clamped>
+              </Field>
+              <Field label="Context">
+                {detail.data.context === null || contextCount === 0 ? (
+                  <span className="text-ui text-muted-foreground">None sent.</span>
+                ) : (
+                  <Clamped key={`${traceId}-context`} what="context" keys={contextCount}>
+                    <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
+                      {Object.entries(detail.data.context).map(([key, value]) => (
+                        <div key={key} className="contents">
+                          <dt>
+                            <Data>{key}</Data>
+                          </dt>
+                          <dd className="m-0 font-mono text-data break-words whitespace-pre-wrap text-foreground">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </Clamped>
+                )}
+              </Field>
+            </div>
+          </section>
+
+          <section className="rounded-lg border">
+            <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
+              <BlockTitle
+                icon={<ArrowUpFromLineIcon className="size-4" />}
+                title="Response"
+                caption="What the panel returned"
+              />
+              {/* The DECISION leads the response — it is output, and it used to sit in the
+                header beside the trace id as though it were a property of the call. */}
+              <span className="ml-auto flex items-center gap-[var(--gap-inline)]">
+                <Decision passed={detail.data.passed} complete={detail.data.complete} />
+                <Data className="tabular-nums">
+                  <span className="text-foreground">
+                    {detail.data.score === null ? '—' : detail.data.score.toFixed(2)}
+                  </span>
+                  {' / '}
+                  {detail.data.threshold.toFixed(2)}
+                </Data>
+              </span>
+            </div>
+            <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
+              <Eyebrow>
+                {detail.data.judges.length === 0
+                  ? 'Judges'
+                  : `Judges · ${detail.data.judges.length}`}
+              </Eyebrow>
+              {detail.data.judges.length === 0 ? (
+                <p className="m-0 text-body text-muted-foreground">
+                  No judges ran — the panel was collecting when this call arrived. It’s stored, and
+                  counts toward annotation.
+                </p>
+              ) : (
+                <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
+                  {detail.data.judges.map((judge) => (
+                    <JudgeVerdict key={judge.slug} judge={judge} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          <Section title="Details">
+            <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-inline)] text-ui">
+              <Detail label="Key">
+                {detail.data.key_name ?? <span className="text-foreground-faint">deleted</span>}
+              </Detail>
+              <Detail label="Panel version">
+                <Data className="text-foreground">v{detail.data.panel_version}</Data>
+              </Detail>
+              <Detail label="Request id">
+                <Data className="text-foreground break-all select-all">
+                  {detail.data.request_id}
+                </Data>
+              </Detail>
+              <Detail label="Recorded">
+                {detail.data.recorded_at === null ? (
+                  <Mark tone="neutral">pending</Mark>
+                ) : (
+                  <Data>{new Date(detail.data.recorded_at).toLocaleString()}</Data>
+                )}
+              </Detail>
+            </dl>
+          </Section>
+        </>
+      )}
+    </div>
   )
 }
 

@@ -1606,6 +1606,13 @@ one PR would have been very large for a repository meant to be read.
     clamped to 12rem with a masked fade, offering **Show all · N lines/keys** only when they
     actually overflow (measured, so a one-line artifact has no toggle).
 
+    **And a trace got its own PAGE** — `/p/$panelSlug/traces/$traceId` — reached from an "open as
+    page" button beside the drawer's close. Asked for a full-screen drawer, the stakeholder was
+    offered, and took, a page instead: `?trace=` already links "the list, with this open"; a page
+    links the trace itself, is what full width naturally is, and has room for what a trace gains
+    at M5. Drawer and page render ONE `TraceDetailBody`, so they cannot drift. A trace id under
+    the wrong panel's URL is "not in this panel", not shown under a heading it does not belong to.
+
 ---
 
 ## Open questions for the human
