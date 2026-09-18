@@ -219,9 +219,14 @@ describe('the active org, when the request names one', () => {
 
   test('the org scopes the ROWS, not just the reply', async () => {
     const cookie = await signIn(MULTI_ORG_EMAIL)
-    const response = await app().request('http://localhost/internal/traces', {
-      headers: { cookie, [ACTIVE_ORG_HEADER]: SECOND_ORG },
-    })
+    // Any well-formed panel id: the list is panel-scoped (M4 phase 8), and this test is about
+    // the org header being honoured by a data route, not about which rows come back.
+    const response = await app().request(
+      `http://localhost/internal/traces?panel_id=${newId('pnl_')}`,
+      {
+        headers: { cookie, [ACTIVE_ORG_HEADER]: SECOND_ORG },
+      },
+    )
     expect(response.status).toBe(200)
   })
 })

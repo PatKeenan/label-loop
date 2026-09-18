@@ -109,20 +109,19 @@ export type TraceListItem = {
   id: string
   panelId: string
   /**
-   * The names a PERSON reads, joined here rather than resolved client-side.
+   * The key's NAME, joined here rather than resolved client-side.
    *
-   * A table of `pnl_01M2…` and `key_01M2…` is a table nobody can scan. The alternative — the
-   * console fetching panels and keys and joining them in the browser — is two extra round
-   * trips to rebuild a join the database already does, and it breaks the moment the list is
-   * paginated past what those two endpoints return.
+   * A table of `key_01M2…` is a table nobody can scan. The alternative — the console fetching
+   * keys and joining them in the browser — is an extra round trip to rebuild a join the
+   * database already does, and it breaks the moment the list is paginated past what that
+   * endpoint returns. (The panel's name and slug were joined the same way until phase 8
+   * scoped the list to one panel, when every row would have repeated the page's heading.)
    *
    * `keyName` is nullable because `api_key_id` is: a trace OUTLIVES the key that made it
    * (`on delete set null`), since losing the evaluation record to a key's removal would be
    * the worse failure. The console renders that as a revoked-and-removed credential rather
    * than as a blank.
    */
-  panelName: string
-  panelSlug: string
   keyName: string | null
   /** Null when the panel was COLLECTING: it convened no judges (ADR-0060). */
   passed: boolean | null
@@ -135,24 +134,24 @@ export type TraceListItem = {
 }
 
 /**
- * The console's trace list, newest first, for ONE org.
+ * The console's trace list, newest first, for ONE panel in ONE org.
  *
  * `orgId` is a required parameter rather than an optional filter, which is the whole point:
  * there is no way to call this function that reads across tenants, so the tenancy rule is
  * enforced by the signature instead of by remembering to add a `where`. The middleware that
  * resolves the org is the only thing that supplies it.
+ *
+ * `panelId` narrows WITHIN the org and never replaces it: a panel id from another org matches
+ * no row here, because both conditions apply.
  */
 export const listTraces = async (
   db: Database,
-  orgId: string,
-  limit: number,
+  { orgId, panelId, limit }: { orgId: string; panelId: string; limit: number },
 ): Promise<TraceListItem[]> =>
   db
     .select({
       id: schema.traces.id,
       panelId: schema.traces.panelId,
-      panelName: schema.panels.name,
-      panelSlug: schema.panels.slug,
       keyName: schema.apiKeys.name,
       passed: schema.traces.passed,
       score: schema.traces.score,
@@ -162,11 +161,9 @@ export const listTraces = async (
       createdAt: schema.traces.createdAt,
     })
     .from(schema.traces)
-    // INNER on the panel — a trace cannot exist without one (`on delete cascade`). LEFT on the
-    // key, which can be null: the trace outlives the credential that made it.
-    .innerJoin(schema.panels, eq(schema.panels.id, schema.traces.panelId))
+    // LEFT on the key, which can be null: the trace outlives the credential that made it.
     .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
-    .where(eq(schema.traces.orgId, orgId))
-    // Matches `traces_org_created_idx`, so the list stays an index scan as the table grows.
+    .where(and(eq(schema.traces.orgId, orgId), eq(schema.traces.panelId, panelId)))
+    // Matches `traces_panel_created_idx`, so the list stays an index scan as the table grows.
     .orderBy(desc(schema.traces.createdAt))
     .limit(limit)

@@ -491,7 +491,7 @@ weakening the guard, and both are worse than saying what this is.
 | `GET /_demo/boom` | A synthetic `500`, showing that an unexpected error leaks nothing |
 | `POST /internal/auth/*` | better-auth's own endpoints — sign up, sign in, sign out. The console's, never a customer's |
 | `GET /internal/me` | Who the session belongs to, which org it resolved to, and their role |
-| `GET /internal/traces` | The console's trace list, scoped to the session's org. Typed by RPC inference, not by a schema |
+| `GET /internal/traces?panel_id=` | One panel's trace list, within the session's org — `panel_id` is required. Typed by RPC inference, not by a schema |
 
 Every response is enveloped and carries a `request_id`, on success and on failure alike:
 

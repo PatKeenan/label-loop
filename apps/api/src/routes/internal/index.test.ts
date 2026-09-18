@@ -46,11 +46,15 @@ const ORG = newId('org_')
 const OTHER_ORG = newId('org_')
 const PANEL = newId('pnl_')
 const OTHER_PANEL = newId('pnl_')
+/** A second panel in the SAME org, so "scoped to the panel" has something to get wrong. */
+const SIBLING_PANEL = newId('pnl_')
 const PANEL_VERSION = newId('pnv_')
 const OTHER_PANEL_VERSION = newId('pnv_')
+const SIBLING_PANEL_VERSION = newId('pnv_')
 const KEY = newId('key_')
 const TRACE = newId('tr_')
 const OTHER_TRACE = newId('tr_')
+const SIBLING_TRACE = newId('tr_')
 
 /** A real, active key for `PANEL` — the credential that must NOT open a console route. */
 const API_KEY_PLAINTEXT = `llk_test_${'d'.repeat(64)}`
@@ -98,10 +102,12 @@ const seedFixtures = async () => {
   await db.insert(schema.panels).values([
     { id: PANEL, orgId: ORG, slug: 'issue-triage', name: 'Issue triage' },
     { id: OTHER_PANEL, orgId: OTHER_ORG, slug: 'theirs', name: 'Theirs' },
+    { id: SIBLING_PANEL, orgId: ORG, slug: 'reply-gate', name: 'Reply gate' },
   ])
   await db.insert(schema.panelVersions).values([
     { id: PANEL_VERSION, panelId: PANEL, version: 1, threshold: 0.5 },
     { id: OTHER_PANEL_VERSION, panelId: OTHER_PANEL, version: 1, threshold: 0.5 },
+    { id: SIBLING_PANEL_VERSION, panelId: SIBLING_PANEL, version: 1, threshold: 0.5 },
   ])
   await db.insert(schema.apiKeys).values({
     id: KEY,
@@ -134,6 +140,18 @@ const seedFixtures = async () => {
       artifact: 'Not yours.',
       passed: false,
       score: 0,
+      complete: true,
+      threshold: 0.5,
+    },
+    {
+      id: SIBLING_TRACE,
+      orgId: ORG,
+      panelId: SIBLING_PANEL,
+      panelVersionId: SIBLING_PANEL_VERSION,
+      requestId: 'c'.repeat(32),
+      artifact: 'Yours, but another panel’s.',
+      passed: null,
+      score: null,
       complete: true,
       threshold: 0.5,
     },
@@ -226,26 +244,52 @@ describe('a signed-in member', () => {
     expect(body.request_id).toMatch(/^[0-9a-f]{32}$/)
   })
 
-  test('sees their org’s traces, and ONLY their org’s', async () => {
+  const traceIds = async (cookie: string, panelId: string) => {
+    const response = await app().request(`http://localhost/internal/traces?panel_id=${panelId}`, {
+      headers: { cookie },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { traces: { id: string }[] } }
+    return body.data.traces.map((row) => row.id)
+  }
+
+  test('sees ONE panel’s traces — not its sibling’s, and not another org’s', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const ids = await traceIds(cookie, PANEL)
+
+    expect(ids).toContain(TRACE)
+    // Same org, different panel: the row phase 7's org-wide list showed under the wrong heading.
+    expect(ids).not.toContain(SIBLING_TRACE)
+    // The row that exists, belongs to somebody else, and is one forgotten `where` away.
+    expect(ids).not.toContain(OTHER_TRACE)
+  })
+
+  test('another org’s panel id answers an empty list, not that org’s rows', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    // The panel filter narrows WITHIN the session's org and never replaces it. Empty, not
+    // NOT_FOUND, is the same answer a real panel with no traffic gets — it confirms nothing.
+    expect(await traceIds(cookie, OTHER_PANEL)).toEqual([])
+  })
+
+  test('no panel_id is a 422 — there is no org-wide trace list', async () => {
     const cookie = await signIn(MEMBER_EMAIL)
 
     const response = await app().request('http://localhost/internal/traces', {
       headers: { cookie },
     })
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { data: { traces: { id: string }[] } }
-    const ids = body.data.traces.map((row) => row.id)
-    expect(ids).toContain(TRACE)
-    // The row that exists, belongs to somebody else, and is one forgotten `where` away.
-    expect(ids).not.toContain(OTHER_TRACE)
+    expect(response.status).toBe(422)
+    const parsed = errorEnvelopeSchema.safeParse(await response.json())
+    expect(parsed.data?.error.code).toBe('VALIDATION_ERROR')
+    expect(parsed.data?.error.issues?.map((issue) => issue.path)).toContain('panel_id')
   })
 
   test('a limit outside the allowed range is a 422 in the standard envelope', async () => {
     const cookie = await signIn(MEMBER_EMAIL)
 
-    const response = await app().request('http://localhost/internal/traces?limit=0', {
-      headers: { cookie },
-    })
+    const response = await app().request(
+      `http://localhost/internal/traces?panel_id=${PANEL}&limit=0`,
+      { headers: { cookie } },
+    )
     expect(response.status).toBe(422)
     const parsed = errorEnvelopeSchema.safeParse(await response.json())
     expect(parsed.success).toBe(true)

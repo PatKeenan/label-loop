@@ -52,36 +52,3 @@ export const PageHead = ({
     )}
   </header>
 )
-
-/**
- * The dashed, labelled slot standing in for a screen phase 8 builds.
- *
- * It is deliberately NOT an empty div or a "coming soon" page. The 6b mockup drew every
- * unbuilt screen this way for one reason — an inert surface that looks like product is how a
- * demo makes a promise the build has not kept — and the same reasoning applies once it is
- * real code. It says which milestone owns it, in the console, to the person reading it.
- */
-export const ContentSlot = ({
-  label,
-  children,
-  className,
-  ...props
-}: { label: string } & React.ComponentProps<'section'>) => (
-  <section
-    aria-label="Screen content slot"
-    className={cn(
-      'grid flex-1 place-content-center justify-items-center gap-[var(--gap-tight)]',
-      'min-h-[calc(var(--space-20)*4)] rounded-lg border border-dashed border-border-strong',
-      'bg-muted px-[var(--pad-panel-x)] py-[var(--pad-panel-y)] text-center',
-      className,
-    )}
-    {...props}
-  >
-    <span className="font-mono text-micro uppercase tracking-[var(--tracking-micro)] text-muted-foreground">
-      {label}
-    </span>
-    <div className="flex max-w-[var(--measure)] flex-col gap-[var(--gap-inline)] text-body text-muted-foreground">
-      {children}
-    </div>
-  </section>
-)

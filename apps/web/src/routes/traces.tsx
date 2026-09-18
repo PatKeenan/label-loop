@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tracesQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Data, Mark } from '../components/shell/mark.tsx'
-import { ContentSlot, PageHead } from '../components/shell/page-head.tsx'
+import { PageHead } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
 
 /**
@@ -16,19 +16,11 @@ import { LoadFailed } from '../components/shell/statement.tsx'
  *
  * ---
  *
- * **THIS TABLE IS STILL ORG-WIDE, AND IT SAYS SO ON THE SCREEN.**
- *
- * `GET /internal/traces` takes no panel filter. CONSOLE_FLOW §3 and §4 give phase 8 the job of
- * scoping it, on the reasoning that the API is shaped the easy way round — it is org-wide
- * today, so phase 8 narrows it rather than widening anything. Phase 7's job was to prove the
- * token conversion and the shell on a REAL screen with real data before the panel screens
- * depend on both, and this is that screen.
- *
- * The notice is not decoration and it is not a TODO comment. An org's rows under a panel's
- * heading, with nothing saying so, is the console telling the reader something untrue —
- * which is the one thing a screen in this project may not do. It is drawn in the same dashed
- * language as an unbuilt screen so it reads as scaffolding rather than as product, and it
- * goes away in phase 8 along with the org-wide read.
+ * **Scoped to the panel open in the URL, by the server** (M4 phase 8). Through phase 7 this
+ * list was every trace in the org, with a dashed notice saying so above it — an org's rows
+ * under a panel's heading with nothing saying so is the console telling the reader something
+ * untrue. `GET /internal/traces` now requires `panel_id`, and the notice and the Panel column
+ * went with the org-wide read: every row would have repeated the page's own heading.
  */
 /**
  * The table's columns.
@@ -47,7 +39,7 @@ import { LoadFailed } from '../components/shell/statement.tsx'
  * (M5) are the work it exists to carry later.
  */
 /**
- * SIX columns, down from nine — and the reduction is the fix, not narrower type.
+ * FIVE columns, down from nine — and the reduction is the fix, not narrower type.
  *
  * Adding the panel and key NAMES took this to nine columns of unbounded text, and every cell
  * began wrapping: "Support reply gate / support-reply-gate" over four lines, rows four times
@@ -63,16 +55,14 @@ import { LoadFailed } from '../components/shell/statement.tsx'
  *   has not run — so it is a mark beside the timestamp rather than a column of near-identical
  *   times. The exact recorded time is on hover.
  *
+ * Then one deletion, when phase 8 scoped the list to a panel: the Panel column, which could
+ * only ever repeat the page's heading.
+ *
  * Everything is `whitespace-nowrap` and truncates, with the full value in a `title`: a table
  * that reflows its rows to fit long content is a table you cannot scan down.
  */
 const COLUMNS: readonly { label: string; title?: string }[] = [
   { label: 'Trace' },
-  {
-    label: 'Panel',
-    title:
-      'The panel that judged this call. Phase 8 scopes this table to one panel, at which point this column goes.',
-  },
   {
     label: 'Key',
     title:
@@ -109,8 +99,11 @@ export const TracesPage = () => {
   const context = useConsoleContext()
   const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
   const traces = useQuery({
-    ...tracesQuery(context.state === 'ready' ? context.orgId : ''),
-    enabled: context.state === 'ready',
+    ...tracesQuery(
+      context.state === 'ready' ? context.orgId : '',
+      panel.state === 'ready' ? panel.id : '',
+    ),
+    enabled: context.state === 'ready' && panel.state === 'ready',
   })
 
   if (context.state !== 'ready' || panel.state !== 'ready') return null
@@ -142,17 +135,10 @@ export const TracesPage = () => {
   return (
     <>
       {head}
-      <ContentSlot label="Not yet scoped · phase 8" className="min-h-0 flex-none">
-        <p className="m-0">
-          These are every trace in <strong>{context.orgSlug}</strong>, not only{' '}
-          <strong>{panel.slug}</strong>’s. <code>GET /internal/traces</code> takes no panel filter
-          yet; phase 8 scopes it and this notice goes with it.
-        </p>
-      </ContentSlot>
-
       {traces.data.length === 0 ? (
         <p className="text-muted-foreground">
-          No traces yet. Run an evaluation against <code>/v1</code> and reload.
+          No traces for {panel.name} yet. Run an evaluation against{' '}
+          <code>/v1/panels/{panel.id}/evaluate</code> and reload.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -179,17 +165,6 @@ export const TracesPage = () => {
                 <tr key={trace.id} className="border-b border-border-soft">
                   <Cell>
                     <Data className="text-foreground">{trace.id}</Data>
-                  </Cell>
-                  <Cell>
-                    {/* The NAME, truncated, with the slug on hover — the slug is what appears
-                        in a URL and an API call, so it stays reachable without a second line
-                        that doubles every row's height. */}
-                    <span
-                      className="block max-w-[12rem] truncate"
-                      title={`${trace.panel_name} · ${trace.panel_slug}`}
-                    >
-                      {trace.panel_name}
-                    </span>
                   </Cell>
                   <Cell>
                     {trace.key_name === null ? (

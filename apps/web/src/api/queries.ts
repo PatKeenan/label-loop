@@ -100,18 +100,22 @@ export const keysQuery = (orgId: string) =>
   })
 
 /**
- * The trace list.
+ * ONE panel's trace list — the Traces section of the panel open in the URL.
  *
- * **Org-wide, not panel-scoped, and that is still true at phase 7.** `GET /internal/traces`
- * takes no panel filter; CONSOLE_FLOW §4 gives phase 8 the job of scoping it, on the
- * reasoning that the API is already shaped the easy way round. The screen says so rather
- * than showing an org's rows under a panel's heading without comment.
+ * Scoped by the SERVER, on `panel_id` (M4 phase 8), never filtered here: the list is
+ * paginated and unbounded, so filtering a page of an org's traces in the browser would
+ * silently drop rows — the reason `keysQuery` above can filter client-side and this cannot.
+ * The panel is in the query key for the same reason the org is: two panels give the same URL
+ * shape two different answers.
  */
-export const tracesQuery = (orgId: string) =>
+export const tracesQuery = (orgId: string, panelId: string) =>
   queryOptions({
-    queryKey: ['traces', orgId],
+    queryKey: ['traces', orgId, panelId],
     queryFn: async () => {
-      const response = await api.internal.traces.$get({ query: {} }, asOrg(orgId))
+      const response = await api.internal.traces.$get(
+        { query: { panel_id: panelId } },
+        asOrg(orgId),
+      )
       if (!response.ok) throw await apiErrorFrom(response)
       return (await response.json()).data.traces
     },
