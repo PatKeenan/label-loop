@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { Data } from './mark.tsx'
 
@@ -18,9 +19,16 @@ export const PageHead = ({
   scope,
   title,
   actions,
+  back,
   className,
   ...props
 }: {
+  /**
+   * A way back one level, drawn ABOVE the trail — for a page deeper than a section (one trace),
+   * where the reader most likely arrived from a list and wants it back in one click. The trail
+   * below also links, for going further up.
+   */
+  back?: React.ReactNode
   /**
    * Slugs, outermost first: `[orgSlug]` at Home, `[orgSlug, panelSlug]` in a panel. A segment
    * may be a LINK — the trail is where people look for "up one level", so a page deeper than a
@@ -39,6 +47,7 @@ export const PageHead = ({
     {...props}
   >
     <div className="flex min-w-0 flex-col gap-[var(--gap-tight)]">
+      {back === undefined ? null : <div className="mb-[var(--gap-tight)]">{back}</div>}
       <div className="flex flex-wrap items-center gap-[var(--gap-tight)]">
         {scope.map((segment, index) => (
           <Data
@@ -63,3 +72,25 @@ export const PageHead = ({
     )}
   </header>
 )
+
+/**
+ * The trail for any page inside a panel — `org / panel`, both LINKS: the org to Home (the panel
+ * list), the panel to its Overview. One helper so every panel page's trail behaves the same;
+ * Home's own trail stays plain, because its only segment would link to itself.
+ */
+export const panelTrail = (orgSlug: string, panelSlug: string): React.ReactNode[] => [
+  <Link key="org" to="/" search={{ org: orgSlug }}>
+    {orgSlug}
+  </Link>,
+  <Link key="panel" to="/p/$panelSlug" params={{ panelSlug }} search={{ org: orgSlug }}>
+    {panelSlug}
+  </Link>,
+]
+
+/**
+ * The look of the small "← label" link a deep page puts above its trail (`PageHead`'s `back`).
+ * A class, not a wrapper component: wrapping TanStack's `Link` generically loses its route
+ * typing, so the caller keeps a real, typed `Link` and borrows the style.
+ */
+export const BACK_LINK =
+  'inline-flex items-center gap-[var(--gap-tight)] text-ui text-muted-foreground hover:text-foreground'

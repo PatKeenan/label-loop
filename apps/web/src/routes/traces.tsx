@@ -9,7 +9,7 @@ import {
   usePanelContext,
 } from '../components/shell/context.ts'
 import { Data, Mark } from '../components/shell/mark.tsx'
-import { PageHead } from '../components/shell/page-head.tsx'
+import { PageHead, panelTrail } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
 import { Button } from '../components/ui/button.tsx'
 
@@ -136,7 +136,7 @@ export const TracesPage = () => {
 
   if (context.state !== 'ready' || panel.state !== 'ready') return null
 
-  const head = <PageHead scope={[context.orgSlug, panel.slug]} title="Traces" />
+  const head = <PageHead scope={panelTrail(context.orgSlug, panel.slug)} title="Traces" />
 
   if (traces.isPending) {
     return (
@@ -176,7 +176,7 @@ export const TracesPage = () => {
   return (
     <>
       <PageHead
-        scope={[context.orgSlug, panel.slug]}
+        scope={panelTrail(context.orgSlug, panel.slug)}
         title="Traces"
         actions={
           browsingOlder ? (

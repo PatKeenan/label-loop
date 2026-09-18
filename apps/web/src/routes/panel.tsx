@@ -6,7 +6,7 @@ import { useConsoleContext, usePanelContext } from '../components/shell/context.
 import { Gate } from '../components/shell/gate.tsx'
 import { issuedKeyFor } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
-import { PageHead } from '../components/shell/page-head.tsx'
+import { PageHead, panelTrail } from '../components/shell/page-head.tsx'
 import { Snippet } from '../components/shell/snippet.tsx'
 import { Statement } from '../components/shell/statement.tsx'
 import { TraceTable } from './traces.tsx'
@@ -57,7 +57,7 @@ export const PanelOverviewPage = () => {
   if (resolved === null) return null
   const { orgSlug, panel } = resolved
 
-  const head = <PageHead scope={[orgSlug, panel.slug]} title="Overview" />
+  const head = <PageHead scope={panelTrail(orgSlug, panel.slug)} title="Overview" />
   if (read.isPending) {
     return (
       <>
@@ -83,7 +83,7 @@ export const PanelOverviewPage = () => {
   return (
     <>
       <PageHead
-        scope={[orgSlug, panel.slug]}
+        scope={panelTrail(orgSlug, panel.slug)}
         title="Overview"
         actions={<Mark tone={collecting ? 'neutral' : 'success'}>{data.state}</Mark>}
       />
@@ -179,7 +179,7 @@ export const PanelJudgesPage = () => {
 
   return (
     <>
-      <PageHead scope={[orgSlug, panel.slug]} title="Judges" />
+      <PageHead scope={panelTrail(orgSlug, panel.slug)} title="Judges" />
 
       <section className="flex max-w-[var(--measure)] flex-col gap-[var(--gap-stack)] rounded-lg border bg-card px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">
         <div className="flex items-center gap-[var(--gap-inline)]">

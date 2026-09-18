@@ -8,7 +8,7 @@ import { keysQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { issuedKeyFor, rememberIssuedKey } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
-import { PageHead } from '../components/shell/page-head.tsx'
+import { PageHead, panelTrail } from '../components/shell/page-head.tsx'
 import { meetsRules, RuleChecklist } from '../components/shell/rule-checklist.tsx'
 import { Snippet } from '../components/shell/snippet.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
@@ -118,7 +118,7 @@ export const PanelKeysPage = () => {
 
   const head = (
     <PageHead
-      scope={[context.orgSlug, panel.slug]}
+      scope={panelTrail(context.orgSlug, panel.slug)}
       title="Keys"
       actions={
         <form

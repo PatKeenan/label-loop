@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
+import { ArrowLeftIcon } from 'lucide-react'
 import { traceDetailQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Data } from '../components/shell/mark.tsx'
-import { PageHead } from '../components/shell/page-head.tsx'
+import { BACK_LINK, PageHead, panelTrail } from '../components/shell/page-head.tsx'
 import { Statement } from '../components/shell/statement.tsx'
 import { TraceDetailBody } from '../components/shell/trace-drawer.tsx'
 
@@ -35,22 +36,24 @@ export const TracePage = () => {
   return (
     <>
       {/*
-        The TRAIL is the way back, every segment a link — not an "All traces" button at the far
-        right, where the first version put it and where nobody looks for "up one level".
+        The way back is where people look for it: "← All traces" directly above the trail (one
+        click back to the list most readers came from), and the trail itself, every segment a
+        link, for going further up. The first version put "All traces" at the far right.
       */}
       <PageHead
-        scope={[
-          <Link key="org" to="/" search={{ org: context.orgSlug }}>
-            {context.orgSlug}
-          </Link>,
+        back={
           <Link
-            key="panel"
-            to="/p/$panelSlug"
+            to="/p/$panelSlug/traces"
             params={{ panelSlug: panel.slug }}
             search={{ org: context.orgSlug }}
+            className={BACK_LINK}
           >
-            {panel.slug}
-          </Link>,
+            <ArrowLeftIcon aria-hidden className="size-4" />
+            All traces
+          </Link>
+        }
+        scope={[
+          ...panelTrail(context.orgSlug, panel.slug),
           <Link
             key="traces"
             to="/p/$panelSlug/traces"
