@@ -150,11 +150,11 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 - `mockups/BRIEF.md` — the screen's status and review outcome.
 
 ### Steps
-- [ ] r5 drawn, with its decisions and open questions in the header comment, as the harvest style
+- [x] r5 drawn, with its decisions and open questions in the header comment, as the harvest style
 - [ ] **Reviewed and approved by the stakeholder** before phase 5 starts
 
 ### Automated verification
-- [ ] `bun run lint` (the mockup is outside Biome; this proves nothing about it — Deviation 33 of
+- [x] `bun run lint` (the mockup is outside Biome; this proves nothing about it — Deviation 33 of
       the M4 plan — the review is the gate)
 
 ### Manual verification

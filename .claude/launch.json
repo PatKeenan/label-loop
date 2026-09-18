@@ -4,14 +4,36 @@
     {
       "name": "console",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "--cwd", "apps/web", "dev"],
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "apps/web",
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "api",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "--cwd", "apps/api", "dev"],
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "apps/api",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "mockups",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5500",
+        "--directory",
+        "mockups"
+      ],
+      "port": 5500
     }
   ]
 }
