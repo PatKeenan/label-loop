@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { cn } from 'cn'
+import { ArrowRightIcon, BotIcon, InboxIcon, ScaleIcon } from 'lucide-react'
 import { panelsQuery } from '../api/queries.ts'
 import { useConsoleContext } from '../components/shell/context.ts'
+import { ANNOTATION_FLOOR } from '../components/shell/gate.tsx'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
@@ -27,17 +30,23 @@ export const HomePage = () => {
 
   if (context.state !== 'ready') return null
 
+  const createLink = (label: string) => (
+    <Button asChild>
+      <Link to="/" search={{ org: orgSlug, new: true }}>
+        {label}
+      </Link>
+    </Button>
+  )
+
+  // The head's Create panel action is withheld while the list is EMPTY: the empty state
+  // carries that action itself, and two identical primary buttons on one screen make the
+  // reader wonder whether they do different things.
+  const isEmpty = panels.data?.length === 0
   const head = (
     <PageHead
       scope={[orgSlug]}
       title="Panels"
-      actions={
-        <Button asChild>
-          <Link to="/" search={{ org: orgSlug, new: true }}>
-            Create panel
-          </Link>
-        </Button>
-      }
+      {...(isEmpty ? {} : { actions: createLink('Create panel') })}
     />
   )
 
@@ -58,31 +67,11 @@ export const HomePage = () => {
     )
   }
 
-  // The empty state is where M4's demo starts, so it is a real screen rather than a blank page
-  // with a sentence on it: it says what a panel is FOR before asking someone to make one.
   if (panels.data.length === 0) {
     return (
       <>
         {head}
-        <section className="flex max-w-[var(--measure)] flex-col gap-[var(--gap-stack)] rounded-lg border border-dashed border-border-strong bg-muted px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">
-          <Eyebrow>No panels yet</Eyebrow>
-          <h2 className="m-0 text-title font-semibold tracking-[var(--tracking-snug)]">
-            A panel is where your agent’s output gets judged
-          </h2>
-          <p className="m-0 text-body text-muted-foreground">
-            You send it what your agent produced; it captures every call and, once you have judges,
-            returns a decision your code can gate on. A new panel starts <strong>collecting</strong>{' '}
-            — it stores traffic and judges nothing, because judges are written from what an expert
-            finds in real traces rather than guessed up front.
-          </p>
-          <div>
-            <Button asChild>
-              <Link to="/" search={{ org: orgSlug, new: true }}>
-                Create your first panel
-              </Link>
-            </Button>
-          </div>
-        </section>
+        <EmptyState action={createLink('Create panel')} />
       </>
     )
   }
@@ -179,4 +168,112 @@ const Fact = ({ value, label }: { value: number; label: string }) => (
   <Data>
     <span className="text-foreground tabular-nums">{value}</span> {label}
   </Data>
+)
+
+/**
+ * THE EMPTY STATE — where M4's demo starts, so it is a screen rather than a sentence.
+ *
+ * It fills the stage and centres in it. The first version was a card pinned top-left at
+ * reading width, which on a real window left three-quarters of the screen empty beside a
+ * paragraph — it read as a notice about the page rather than as the page.
+ *
+ * Three parts, each answering one question someone arriving here has:
+ *
+ * - **What is a panel?** Drawn, not described: the loop it sits in. The DECISION node is
+ *   dashed and faded, because that is honestly where a new panel is — it collects, and judges
+ *   nothing, until judges come from an eval pass (ADR-0060, ADR-0061). Drawing a decision
+ *   coming out of a fresh panel would promise something the next screen does not do.
+ * - **What do I do?** One primary action. The page head's copy of it is withheld while empty.
+ * - **What happens after?** Three steps, so creating a panel is not a leap into the unknown:
+ *   the key and snippet arrive with it, and the annotation gate is the next milestone.
+ */
+const EmptyState = ({ action }: { action: React.ReactNode }) => (
+  <section
+    aria-labelledby="empty-title"
+    className="grid flex-1 place-items-center rounded-lg border border-dashed border-border-strong px-[var(--pad-panel-x)] py-[var(--space-16)]"
+  >
+    <div className="flex max-w-[36rem] flex-col items-center gap-[var(--gap-section)] text-center">
+      <LoopDiagram />
+
+      <div className="flex flex-col items-center gap-[var(--gap-stack)]">
+        <h2
+          id="empty-title"
+          className="m-0 text-display font-semibold tracking-[var(--tracking-snug)]"
+        >
+          Create your first panel
+        </h2>
+        <p className="m-0 text-body text-muted-foreground">
+          A panel is where your agent’s output gets judged. Send it what your agent produced and it
+          captures every call — then, once judges exist, answers with a decision your code can gate
+          on.
+        </p>
+        {action}
+      </div>
+
+      <ol className="grid w-full list-none grid-cols-1 gap-[var(--gap-stack)] border-t p-0 pt-[var(--gap-section)] text-left sm:grid-cols-3">
+        <Step n={1} title="Name it">
+          A name, a slug and a pass threshold. It comes with an API key.
+        </Step>
+        <Step n={2} title="Send traffic">
+          One <code>POST</code> from your agent. The snippet is on the panel’s page.
+        </Step>
+        <Step n={3} title="Review">
+          At {ANNOTATION_FLOOR} traces an expert can start reviewing. Judges are written from that.
+        </Step>
+      </ol>
+    </div>
+  </section>
+)
+
+/**
+ * The loop a panel sits in: agent → panel → decision. Achromatic on purpose — nothing here is
+ * a finding, so rule 4 of the approved tokens gives it no colour — and the one node that is
+ * not true yet is drawn dashed rather than left out.
+ */
+const LoopDiagram = () => (
+  <div aria-hidden="true" className="flex items-center gap-[var(--gap-inline)]">
+    <Node icon={<BotIcon className="size-5" />} label="Your agent" />
+    <ArrowRightIcon className="size-4 shrink-0 text-foreground-faint" />
+    <Node icon={<InboxIcon className="size-5" />} label="Panel" emphasised />
+    <ArrowRightIcon className="size-4 shrink-0 text-foreground-faint" />
+    <Node icon={<ScaleIcon className="size-5" />} label="Decision" pending />
+  </div>
+)
+
+const Node = ({
+  icon,
+  label,
+  emphasised = false,
+  pending = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  emphasised?: boolean
+  pending?: boolean
+}) => (
+  <div className="flex w-[var(--space-20)] flex-col items-center gap-[var(--gap-tight)]">
+    <span
+      className={cn(
+        'grid size-[var(--space-12)] place-items-center rounded-lg border',
+        emphasised && 'border-border-strong bg-card text-foreground',
+        pending && 'border-dashed text-foreground-faint',
+        !emphasised && !pending && 'bg-muted text-muted-foreground',
+      )}
+    >
+      {icon}
+    </span>
+    <Eyebrow className={cn('whitespace-nowrap', pending && 'text-foreground-faint')}>
+      {label}
+    </Eyebrow>
+  </div>
+)
+
+const Step = ({ n, title, children }: { n: number; title: string; children: React.ReactNode }) => (
+  <li className="flex flex-col gap-[var(--gap-tight)]">
+    <span className="flex items-center gap-[var(--gap-tight)]">
+      <Data className="tabular-nums text-foreground-faint">{String(n).padStart(2, '0')}</Data>
+      <strong className="text-ui font-semibold">{title}</strong>
+    </span>
+    <span className="text-ui text-muted-foreground">{children}</span>
+  </li>
 )
