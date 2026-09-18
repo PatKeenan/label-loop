@@ -1,12 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet } from '@tanstack/react-router'
+import { Link, Outlet, useRouter } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { ConsoleShell } from '../components/shell/console-shell.tsx'
 import { isStaffRole, useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Statement } from '../components/shell/statement.tsx'
 import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Toaster } from '../components/ui/sonner.tsx'
-import { LoginPage } from './login.tsx'
 
 /**
  * The root route's component: the toaster, and whatever `/login` or the console layout
@@ -45,14 +45,17 @@ export const RootLayout = () => (
 export const ConsoleLayout = () => {
   const queryClient = useQueryClient()
   const context = useConsoleContext()
+  useRedirectWhenSignedOut(context.state === 'signed-out')
   const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
 
   if (context.state === 'pending') return <Loading />
 
-  // Signed out: the form, not a redirect. The guard is on the SERVER — `sessionAuth` on
-  // `/internal/*` — and this is only what the browser does about it. Real
-  // redirect-after-401 is phase 8's, where the router context earns itself.
-  if (context.state === 'signed-out') return <LoginPage />
+  // Signed out WHILE HERE — the session ended under an open screen, and a 401 from some read
+  // told the bootstrap query so (`api/query-client.ts`). Arriving signed out never reaches
+  // this: the console route's `beforeLoad` redirects first. Both go through that one
+  // `beforeLoad` — see `useRedirectWhenSignedOut` — so there is one place that builds the
+  // redirect. The guard is the SERVER's; this is what the browser does about its answer.
+  if (context.state === 'signed-out') return <Loading />
 
   // Outside the shell entirely: there is no org to draw a console for. CONSOLE_FLOW Q4 — it
   // offers no way forward because none exists: membership management and org creation are
@@ -169,6 +172,23 @@ export const ConsoleLayout = () => {
       )}
     </ConsoleShell>
   )
+}
+
+/**
+ * When the session ends under an open screen, re-run the route's `beforeLoad`, which finds
+ * nobody signed in and redirects to `/login` with this page as the way back.
+ *
+ * NOT a `<Navigate>`, which was the first draft and hung the tab. `Navigate` navigates again
+ * whenever its props object changes, and a `search={{ redirect: location.href }}` is a new
+ * object on every render — while each navigation re-renders this layout. `router.invalidate()`
+ * in an effect keyed on a boolean runs once per sign-out, and reuses the redirect the route
+ * already builds instead of building a second one here.
+ */
+const useRedirectWhenSignedOut = (signedOut: boolean) => {
+  const router = useRouter()
+  useEffect(() => {
+    if (signedOut) void router.invalidate()
+  }, [signedOut, router])
 }
 
 /** The console's loading state, at the one moment there is no shell to put it in. */

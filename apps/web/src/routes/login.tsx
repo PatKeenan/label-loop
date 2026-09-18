@@ -1,36 +1,24 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Navigate } from '@tanstack/react-router'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useState } from 'react'
 import { auth } from '../api/client.ts'
 import { meQuery } from '../api/queries.ts'
+import { safeRedirect } from '../api/redirect.ts'
 import { Eyebrow } from '../components/shell/mark.tsx'
 import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Input } from '../components/ui/input.tsx'
 
 /**
- * What the `/login` ROUTE renders, as opposed to the form itself.
- *
- * The two are separate because the form has two callers with opposite needs. `ConsoleLayout`
- * renders `LoginPage` inline as its signed-out branch and must NOT redirect — the whole
- * point there is to show the form where the console would be. Arriving at `/login` with a
- * live session is the other case entirely: there is nothing to sign in to, and showing the
- * form invites someone to type credentials that will not be checked.
- *
- * A component-level `<Navigate>` rather than the router's `beforeLoad` + `redirect()`,
- * because the session lives in a TanStack Query cache that the router has no context for.
- * Wiring the query client into router context to serve one redirect would be more machinery
- * than the redirect is worth; when phase 8 adds real redirect-after-401 the context will
- * earn itself, and this becomes a `beforeLoad`.
+ * The `/login` route. Whether to be here at all is decided before this renders — the route's
+ * `beforeLoad` sends a signed-in visitor on to their target — so this only reads where
+ * "afterwards" is, already validated as a path on this origin (`api/redirect.ts`).
  */
 export const LoginRoute = () => {
-  const me = useQuery(meQuery)
-
-  // Not `me.data == null` — that conflates "still asking" with "nobody". Rendering the
-  // form during the first fetch would flash it at a signed-in user on every hard reload.
-  if (me.isPending) return <Frame>Loading…</Frame>
-  if (me.data != null) return <Navigate to="/" replace />
-  return <LoginPage />
+  const { redirect } = useSearch({ from: '/login' })
+  // Validated by the route already; checked again here, at the point of use, because the
+  // router's search merging once made that validation silently a no-op.
+  return <LoginPage redirectTo={safeRedirect(redirect) ?? '/'} />
 }
 
 /**
@@ -62,8 +50,9 @@ export const LoginRoute = () => {
  * Phase 8 finishes it rather than deleting it: what made it a throwaway was that it stood in
  * for a designed screen, and this is now that screen.
  */
-export const LoginPage = () => {
+export const LoginPage = ({ redirectTo }: { redirectTo: string }) => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
@@ -71,9 +60,11 @@ export const LoginPage = () => {
     mutationFn: async () => {
       const { error } = await auth.signIn.social({
         provider: 'github',
-        // Where GitHub sends the browser after the API's callback has set the cookie.
-        // Hard-coded: "back where you were" is redirect-after-401, which is phase 8's.
-        callbackURL: window.location.origin,
+        // Where GitHub sends the browser after the API's callback has set the cookie: the
+        // page that sent you here. Absolute, because the API's callback does the redirecting
+        // and does not know the console's origin; better-auth checks it against its trusted
+        // origins before following it.
+        callbackURL: `${window.location.origin}${redirectTo}`,
       })
       if (error) throw new Error(error.message ?? 'GitHub sign-in failed.')
     },
@@ -86,9 +77,17 @@ export const LoginPage = () => {
       // one becomes an exception TanStack Query can put in `signIn.error`.
       if (error) throw new Error(error.message ?? 'Sign-in failed.')
     },
-    // The session cookie is now set, so the question `meQuery` answered a moment ago
-    // ("nobody") has a different answer. Invalidating is what re-runs it.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: meQuery.queryKey }),
+    onSuccess: async () => {
+      // Nothing read before this sign-in may be shown after it: it may have been read as a
+      // DIFFERENT account, the one whose session just expired. `clear` is safe here, where it
+      // is not on sign-out, because nothing on this screen is observing the cache.
+      queryClient.clear()
+      // The session cookie is now set, so the question `meQuery` answered a moment ago
+      // ("nobody") has a different answer — asked now, so the console route's `beforeLoad`
+      // finds it answered rather than redirecting back here on the stale one.
+      await queryClient.fetchQuery(meQuery)
+      await navigate({ href: redirectTo, replace: true })
+    },
   })
 
   return (

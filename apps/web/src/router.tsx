@@ -1,4 +1,13 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import type { QueryClient } from '@tanstack/react-query'
+import {
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  redirect,
+} from '@tanstack/react-router'
+import { meQuery } from './api/queries.ts'
+import { queryClient } from './api/query-client.ts'
+import { safeRedirect } from './api/redirect.ts'
 import { validateConsoleSearch } from './components/shell/context.ts'
 import { HomePage } from './routes/home.tsx'
 import { PanelKeysPage } from './routes/keys.tsx'
@@ -34,7 +43,27 @@ import { TracesPage } from './routes/traces.tsx'
  * because it re-scopes whatever screen you are on rather than naming a different one.
  */
 
-const rootRoute = createRootRoute({
+/**
+ * **THE ROUTER'S CONTEXT IS THE QUERY CLIENT**, so a `beforeLoad` can ask who is signed in
+ * before a screen renders — which is what lets "signed out" be a REDIRECT with somewhere to
+ * come back to, rather than a login form drawn in place of whatever you asked for. Phase 7
+ * declined the context because one redirect did not earn it; redirect-after-401 does.
+ */
+type RouterContext = { queryClient: QueryClient }
+
+/**
+ * Who is signed in, as a `beforeLoad` needs to know it: the session, `null` for nobody, or
+ * `undefined` when the question itself failed.
+ *
+ * A FAILED read is not "signed out". It is a member of no org (`FORBIDDEN`, which the layout
+ * draws as its own state) or an API that did not answer — and redirecting either to a login
+ * form would ask someone who IS signed in to sign in again. So a failure decides nothing
+ * here, and the layout, which reads the same cached query, draws what it is.
+ */
+const sessionOf = (context: RouterContext) =>
+  context.queryClient.ensureQueryData(meQuery).catch(() => undefined)
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   validateSearch: validateConsoleSearch,
 })
@@ -50,6 +79,20 @@ const rootRoute = createRootRoute({
 const consoleRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'console',
+  /**
+   * REDIRECT-AFTER-401. Signed out, every console route sends you to `/login` carrying the
+   * page you asked for, and signing in brings you back to it — `?org=` and all, because
+   * `location.href` is the path WITH its search.
+   *
+   * The guard is still the SERVER's (`sessionAuth` on `/internal/*`); this is only what the
+   * browser does about its answer. A session that ends while a screen is open arrives by the
+   * other door — a 401 from any read, handled in `api/query-client.ts` — and ends here too.
+   */
+  beforeLoad: async ({ context, location }) => {
+    if ((await sessionOf(context)) === null) {
+      throw redirect({ to: '/login', search: { redirect: location.href } })
+    }
+  },
   component: ConsoleLayout,
 })
 
@@ -86,15 +129,30 @@ const panelKeysRoute = createRoute({
 })
 
 /**
- * A route of its own as well as the signed-out branch of the console layout, so that "sign
- * in" is a place you can be sent to, which phase 8's real redirect-after-401 will need.
+ * Where "signed out" sends you. `?redirect=` is where to go afterwards, validated as a path
+ * on this origin by `safeRedirect` — anything else is dropped, and absent means Home.
  *
- * `LoginRoute`, not `LoginPage`: the route bounces an already-signed-in visitor to Home,
- * while the bare form stays reusable as the layout's signed-out branch.
+ * Arriving here already signed in goes straight to that target: there is nothing to sign in
+ * to, and showing the form would invite someone to type credentials nothing will check.
  */
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  // The key is RETURNED as `undefined`, not omitted: the router merges this over the raw query
+  // string, so an omitted key keeps the unvalidated value — which made the first version of
+  // this check a no-op (see `validateConsoleSearch`). `safeRedirect` runs again where the value
+  // is used, so neither place alone is what keeps it safe.
+  validateSearch: ({
+    redirect: target,
+  }: Record<string, unknown>): { redirect?: string | undefined } => ({
+    redirect: safeRedirect(target),
+  }),
+  beforeLoad: async ({ context, search }) => {
+    const session = await sessionOf(context)
+    if (session !== null && session !== undefined) {
+      throw redirect({ href: safeRedirect(search.redirect) ?? '/', replace: true })
+    }
+  },
   component: LoginRoute,
 })
 
@@ -109,6 +167,7 @@ export const router = createRouter({
     ]),
     loginRoute,
   ]),
+  context: { queryClient },
 })
 
 declare module '@tanstack/react-router' {

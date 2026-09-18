@@ -32,7 +32,7 @@ import { ApiError } from '../../errors/api-error.ts'
 
 /** What the root route accepts in the query string. */
 export type ConsoleSearch = {
-  org?: string
+  org?: string | undefined
   /**
    * The create-panel dialog, open.
    *
@@ -42,9 +42,17 @@ export type ConsoleSearch = {
    * shareable. It is the same reasoning ADR-0047 gives for the org and the panel, applied to
    * the one piece of view state that has more than one way in.
    */
-  new?: true
+  new?: true | undefined
 }
 
+/**
+ * **Every key is returned, `undefined` when absent — never omitted.** TanStack Router MERGES a
+ * validator's result over the raw parsed query string (`{ ...raw, ...validated }`), so a key
+ * this function leaves out keeps whatever the URL said. The first version spread conditionally,
+ * which read as "drop it" and did nothing: `?org=` reached `useConsoleContext` as `''` and drew
+ * the not-a-member state the comment below exists to prevent. Found in phase 8, when the login
+ * route's redirect check turned out to be a no-op for the same reason.
+ */
 export const validateConsoleSearch = ({
   org,
   new: isNew,
@@ -52,12 +60,14 @@ export const validateConsoleSearch = ({
   // An empty `?org=` is treated as absent rather than as a slug nothing matches, so a client
   // that builds the URL from an unset value lands on the default org instead of on a
   // not-found state that blames the person for a bug in a link.
-  ...(typeof org === 'string' && org !== '' ? { org } : {}),
+  org: typeof org === 'string' && org !== '' ? org : undefined,
   // Present in any truthy spelling — `?new`, `?new=1`, `?new=true` — because a hand-typed URL
-  // should do the obvious thing, and absent otherwise so it never appears as `?new=false`.
-  ...(isNew === true || isNew === 'true' || isNew === '1' || isNew === ''
-    ? { new: true as const }
-    : {}),
+  // should do the obvious thing. (The router's parser turns `?new=true` into a boolean and
+  // `?new=1` into a number, so the checks cover both forms.)
+  new:
+    isNew === true || isNew === 'true' || isNew === 1 || isNew === '1' || isNew === ''
+      ? true
+      : undefined,
 })
 
 /**

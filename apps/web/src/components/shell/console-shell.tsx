@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { auth } from '../../api/client.ts'
 import {
@@ -72,6 +72,7 @@ export const ConsoleShell = ({
   children: React.ReactNode
 }) => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
   // body text to 17px and read as everything simply getting bigger rather than as anything
   // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
@@ -84,14 +85,17 @@ export const ConsoleShell = ({
       await auth.signOut()
     },
     onSuccess: async () => {
-      // Everything in the cache was read as this user, so none of it may be shown again.
-      // `invalidateQueries` rather than `clear`: clearing does not notify the observers
-      // watching it, so components carry on rendering the signed-out user's rows.
-      await queryClient.invalidateQueries()
-      queryClient.removeQueries({ type: 'inactive' })
-      // The one-time key plaintext lives outside the query cache, so invalidation does not
-      // reach it. A credential minted as one account must not survive into the next.
+      // The one-time key plaintext lives outside the query cache, so nothing below reaches
+      // it. A credential minted as one account must not survive into the next.
       forgetIssuedKeys()
+      // Everything in the cache was read as this user, so none of it may be shown again.
+      // `clear` BEFORE navigating, and it is the order that matters: `/login`'s `beforeLoad`
+      // asks who is signed in, and a cache still holding this user would answer "you are"
+      // and bounce straight back. `clear` notifies no observer, so this screen does not
+      // re-render as signed out in the meantime — which would send it to `/login` with THIS
+      // page as the redirect, when signing out is a request to leave, not to come back.
+      queryClient.clear()
+      await navigate({ to: '/login', replace: true })
     },
   })
 
