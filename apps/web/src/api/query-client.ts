@@ -19,15 +19,25 @@ import { meQuery } from './queries.ts'
  * redirect. Without this, an expired session showed each section's own load-failed state
  * with a Reload button that could only ever fail again.
  */
-const onUnauthorized = (error: unknown) => {
-  if (error instanceof ApiError && error.code === 'UNAUTHORIZED') {
+const onAuthError = (error: unknown) => {
+  if (!(error instanceof ApiError)) return
+  if (error.code === 'UNAUTHORIZED') {
     queryClient.setQueryData(meQuery.queryKey, null)
+    return
+  }
+  // A FORBIDDEN means the console's picture of WHO THIS IS has gone stale — a role changed, or
+  // a membership was removed, while the tab was open, because the console never asks for what
+  // the role it holds cannot have. So re-ask `/me`, and the shell redraws for who you now are:
+  // the annotator's frame, or org creation if nothing is left (ADR-0063). Only `/me` refetches;
+  // the refused read is not retried, so this cannot loop.
+  if (error.code === 'FORBIDDEN') {
+    void queryClient.invalidateQueries({ queryKey: meQuery.queryKey })
   }
 }
 
 export const queryClient: QueryClient = new QueryClient({
-  queryCache: new QueryCache({ onError: onUnauthorized }),
-  mutationCache: new MutationCache({ onError: onUnauthorized }),
+  queryCache: new QueryCache({ onError: onAuthError }),
+  mutationCache: new MutationCache({ onError: onAuthError }),
   defaultOptions: {
     queries: {
       // Whether a retry can possibly help is not a guess the client gets to make — it is

@@ -59,6 +59,10 @@ const NEVER_EXISTED = newId('org_')
 const MULTI_ORG_EMAIL = `multi-${FIRST_ORG}@labelloop.test`.toLowerCase()
 const ONE_ORG_EMAIL = `single-${FIRST_ORG}@labelloop.test`.toLowerCase()
 const NO_ORG_EMAIL = `nobody-${FIRST_ORG}@labelloop.test`.toLowerCase()
+/** Starts as a member of nothing and creates an org (ADR-0063). */
+const FOUNDER_EMAIL = `founder-${FIRST_ORG}@labelloop.test`.toLowerCase()
+/** Globally unique, so derived from this run's ids. */
+const FOUNDED_SLUG = `founded-${FIRST_ORG.slice(-10).toLowerCase()}`
 const PASSWORD = 'localdev-password'
 
 let db: Database
@@ -89,10 +93,11 @@ const app = () =>
   })
 
 const ORG_IDS = [FIRST_ORG, SECOND_ORG, STRANGERS_ORG]
-const EMAILS = [MULTI_ORG_EMAIL, ONE_ORG_EMAIL, NO_ORG_EMAIL]
+const EMAILS = [MULTI_ORG_EMAIL, ONE_ORG_EMAIL, NO_ORG_EMAIL, FOUNDER_EMAIL]
 
 const dropFixtures = async () => {
   for (const org of ORG_IDS) await db.delete(schema.orgs).where(eq(schema.orgs.id, org))
+  await db.delete(schema.orgs).where(eq(schema.orgs.slug, FOUNDED_SLUG))
   for (const email of EMAILS) await db.delete(schema.user).where(eq(schema.user.email, email))
 }
 
@@ -285,12 +290,26 @@ describe('the answers that did not change', () => {
     expect(data.memberships).toHaveLength(1)
   })
 
-  test('a member of nothing is still a 403 — there is no secret left to keep', async () => {
+  test('/me answers a member of nothing with DATA, not a 403 (ADR-0063)', async () => {
     const cookie = await signIn(NO_ORG_EMAIL)
     const { response, body } = await me(cookie)
 
+    // The state the console offers org creation from — so it must be readable, not refused.
+    expect(response.status).toBe(200)
+    const data = (body as { data: Record<string, unknown> }).data
+    expect(data.memberships).toEqual([])
+    expect(data.active_org_id).toBeNull()
+    expect(data.role).toBeNull()
+  })
+
+  test('…while every tenant route still refuses them with a 403', async () => {
+    const cookie = await signIn(NO_ORG_EMAIL)
+    const response = await app().request(
+      `http://localhost/internal/traces?panel_id=${newId('pnl_')}`,
+      { headers: { cookie } },
+    )
     expect(response.status).toBe(403)
-    expect(errorEnvelopeSchema.safeParse(body).data?.error.code).toBe('FORBIDDEN')
+    expect(errorEnvelopeSchema.safeParse(await response.json()).data?.error.code).toBe('FORBIDDEN')
   })
 
   test('no cookie is still a 401, and the header buys nothing', async () => {
@@ -300,5 +319,66 @@ describe('the answers that did not change', () => {
     expect(response.status).toBe(401)
     const parsed = errorEnvelopeSchema.safeParse(await response.json())
     expect(parsed.data?.error.code).toBe('UNAUTHORIZED')
+  })
+})
+
+describe('a member of nothing creates an organisation (ADR-0063)', () => {
+  const createOrg = (cookie: string | undefined, body: unknown) =>
+    app().request('http://localhost/internal/orgs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(cookie === undefined ? {} : { cookie }) },
+      body: JSON.stringify(body),
+    })
+
+  test('no session is a 401 — accountAuth still authenticates', async () => {
+    const response = await createOrg(undefined, { slug: 'anything', name: 'Anything' })
+    expect(response.status).toBe(401)
+  })
+
+  test('a bad slug is a 422 located at the field', async () => {
+    const cookie = await signIn(FOUNDER_EMAIL)
+    const response = await createOrg(cookie, { slug: 'Not A Slug', name: 'Acme' })
+    expect(response.status).toBe(422)
+    const parsed = errorEnvelopeSchema.safeParse(await response.json())
+    expect(parsed.data?.error.issues?.map((issue) => issue.path)).toContain('slug')
+  })
+
+  test('creates the org, makes the creator its ADMIN, and records it — all three', async () => {
+    const cookie = await signIn(FOUNDER_EMAIL)
+    const response = await createOrg(cookie, { slug: FOUNDED_SLUG, name: 'Founded' })
+    expect(response.status).toBe(201)
+    const created = (await response.json()) as { data: { org_id: string; role: string } }
+    expect(created.data.role).toBe('admin')
+
+    // /me now sees it, with the role the creator was given.
+    const { body } = await me(cookie)
+    const data = (body as Me).data
+    expect(data.active_org_id).toBe(created.data.org_id)
+    expect(data.role).toBe('admin')
+
+    const audit = await db
+      .select({ action: schema.auditEvents.action, actorId: schema.auditEvents.actorId })
+      .from(schema.auditEvents)
+      .where(eq(schema.auditEvents.subjectId, created.data.org_id))
+    expect(audit).toEqual([{ action: 'org.created', actorId: await userId(FOUNDER_EMAIL) }])
+  })
+
+  test('…and a member of anything cannot create a second one at M4', async () => {
+    // Runs after the test above, so the founder now belongs to one org.
+    const cookie = await signIn(FOUNDER_EMAIL)
+    const response = await createOrg(cookie, { slug: `${FOUNDED_SLUG}-two`, name: 'Another' })
+    expect(response.status).toBe(403)
+    expect(errorEnvelopeSchema.safeParse(await response.json()).data?.error.code).toBe('FORBIDDEN')
+  })
+
+  test('a taken slug is a 422 on `slug`, not a 500', async () => {
+    // A different member of nothing, asking for the slug the founder just took.
+    const cookie = await signIn(NO_ORG_EMAIL)
+    const response = await createOrg(cookie, { slug: FOUNDED_SLUG, name: 'Clash' })
+    expect(response.status).toBe(422)
+    const parsed = errorEnvelopeSchema.safeParse(await response.json())
+    expect(parsed.data?.error.issues).toEqual([
+      { path: 'slug', message: 'That slug is taken — choose another.' },
+    ])
   })
 })

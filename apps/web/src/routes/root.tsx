@@ -7,6 +7,7 @@ import { Statement } from '../components/shell/statement.tsx'
 import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Toaster } from '../components/ui/sonner.tsx'
+import { CreateOrgPage } from './create-org.tsx'
 
 /**
  * The root route's component: the toaster, and whatever `/login` or the console layout
@@ -62,22 +63,13 @@ export const ConsoleLayout = () => {
   // redirect. The guard is the SERVER's; this is what the browser does about its answer.
   if (context.state === 'signed-out') return <Loading />
 
-  // Outside the shell entirely: there is no org to draw a console for. CONSOLE_FLOW Q4 — it
-  // offers no way forward because none exists: membership management and org creation are
-  // unscheduled, and a button to nowhere would be worse than the sentence.
+  // Outside the shell entirely: there is no org to draw a console for — so the screen is the
+  // way to make one (ADR-0063). It used to be a statement with no way forward, and it was
+  // where every genuinely new GitHub sign-in landed.
   if (context.state === 'no-org') {
     return (
       <Outside>
-        <Statement eyebrow="LabelLoop" title="This account isn’t in an organisation">
-          <p className="m-0">
-            You’re signed in, but the account hasn’t been added to any LabelLoop organisation — and
-            organisations can’t be created from here yet.
-          </p>
-          <p className="m-0 text-muted-foreground">
-            If you were expecting access, the person who administers your organisation needs to add
-            this account.
-          </p>
-        </Statement>
+        <CreateOrgPage email={context.email} />
       </Outside>
     )
   }

@@ -152,7 +152,7 @@ export const createPanelRoutes = () =>
           )
         }
         throw validationError('That panel slug is already in use in this organisation.', [
-          { path: 'slug', message: 'already in use in this organisation' },
+          { path: 'slug', message: 'That slug is taken in this organisation — choose another.' },
         ])
       }
 

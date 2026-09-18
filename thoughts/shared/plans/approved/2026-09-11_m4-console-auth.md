@@ -633,7 +633,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [x] Redirect-after-401 via `beforeLoad` (Deviations 67–68)
 - [x] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
       server guard; it never replaces it — CONVENTIONS "Keys & auth") (Deviation 70)
-- [ ] **`FORBIDDEN` needs to stop meaning two things in the console.** Found in phase 2's
+- [x] **`FORBIDDEN` needs to stop meaning two things in the console.** DECIDED with the
+      stakeholder (ADR-0063, Deviation 72): "member of nothing" became a SCREEN — create your
+      organisation — read from `/me` as data, and `FORBIDDEN` now means wrong role only. Found in phase 2's
       manual verification: a GitHub account with no membership lands on *"Ask an owner of
       this organisation to grant you access"*, and there is no "this organisation" — the
       account is a member of none. `error-map.ts` keys off the CODE, and the server sends
@@ -1523,6 +1525,19 @@ one PR would have been very large for a repository meant to be read.
     muted sans hints, 8px within a field and 24px between, 34rem with 32px edges. A muted
     footer band was tried and REJECTED: on a dark surface a lighter fill reads as a raised
     slab. All dialogs' overlays now blur as well as dim. No token was changed.
+
+72. **"Member of nothing" became org creation, which is how FORBIDDEN was settled (ADR-0063).**
+    Asked what FORBIDDEN should mean, the stakeholder asked instead why a member of nothing is
+    refused at all rather than offered an organisation. Following that showed the plan's own
+    demo could not run for a new person: *"sign in with GitHub → create a panel"* dead-ended at
+    the first step for any account not already in an org, and the manual verification only ever
+    passed against the seeded `demo` org or a hand-inserted membership. So the phase grew a write
+    path it did not plan: `POST /internal/orgs` (member of nothing only; creator becomes admin;
+    `org.created` audited; one transaction), `sessionAuth` split into `accountAuth` + org
+    resolution, and `/me` answering an empty membership list with 200 instead of 403. FORBIDDEN
+    keeps one meaning — wrong role — and any FORBIDDEN re-asks `/me`. The guard against a member
+    creating a second org was mutation-checked. The old no-org screen also had no way to sign
+    out; the new one does.
 
 ---
 

@@ -7,6 +7,7 @@ import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
 import { createModelRoutes } from './models.ts'
+import { createOrgRoutes } from './orgs.ts'
 import { createPanelRoutes } from './panels.ts'
 import { createSignInMethodRoutes } from './sign-in-methods.ts'
 import { createTraceRoutes } from './traces.ts'
@@ -74,12 +75,18 @@ export const createInternalRoutes = () => {
   // Registered here, before the guard, and KEPT as the start of the typed chain below: Hono
   // runs middleware in registration order, so a public route added after `sessionAuth()`
   // would 401, while one added here outside the chain would be missing from `AppType`.
-  const typed = internal.route('/', createSignInMethodRoutes())
+  //
+  // `/me` and `/orgs` sit here too, behind `accountAuth` rather than the org guard: a member of
+  // NO organisation must be able to learn that and to create one (ADR-0063). Every route
+  // below `sessionAuth()` still refuses them.
+  const typed = internal
+    .route('/', createSignInMethodRoutes())
+    .route('/', createMeRoutes())
+    .route('/', createOrgRoutes())
   internal.use('*', sessionAuth())
 
   // Chained, because the chain IS the type `apps/web` consumes over RPC.
   return typed
-    .route('/', createMeRoutes())
     .route('/', createTraceRoutes())
     .route('/', createKeyRoutes())
     .route('/', createModelRoutes())

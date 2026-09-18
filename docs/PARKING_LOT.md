@@ -149,6 +149,17 @@ production data, and a full-page view makes it the most exposed thing in the con
 Redaction, retention and whether reading one is itself an audit event are all unscheduled —
 M8 owns the audit log, and this would be a candidate writer.
 
+## Organisation creation is unmetered (raised 2026-09-18, ADR-0063)
+
+M4 lets any account that belongs to no organisation create one — the fix for new sign-ins
+landing on a dead end. In production that is any GitHub account, with no quota, no rate limit
+of its own, and no review. Fine for a portfolio deployment; not for a real one.
+
+**Promote with M8's billing work**, which already owns quotas: an org limit per account, and
+closing the race ADR-0063 accepts (two concurrent creates by one member of nothing both pass).
+Creating a SECOND org, invites and member management belong with Organisation settings
+(ADR-0059), not here.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps

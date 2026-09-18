@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
 import { meQuery, panelsQuery } from '../../api/queries.ts'
-import { ApiError } from '../../errors/api-error.ts'
 
 /**
  * WHICH ORG AND WHICH PANEL THIS VIEW IS ABOUT.
@@ -119,8 +118,8 @@ export type ConsoleContext =
   | { state: 'pending' }
   | { state: 'signed-out' }
   | { state: 'failed'; error: unknown }
-  /** Signed in, but a member of no org at all — CONSOLE_FLOW Q4. */
-  | { state: 'no-org' }
+  /** Signed in, but a member of no org at all — where one is created (ADR-0063). */
+  | { state: 'no-org'; email: string }
   /**
    * The URL named an org slug that is not one of this account's memberships.
    *
@@ -146,21 +145,15 @@ export const useConsoleContext = (): ConsoleContext => {
   const me = useQuery(meQuery)
 
   if (me.isPending) return { state: 'pending' }
-  // A member of no org is refused by `sessionAuth` itself, before any handler runs, so it
-  // arrives here as a FORBIDDEN rather than as an empty membership list.
-  if (me.error !== null) {
-    // `sessionAuth` refuses an account that belongs to no org before any handler runs
-    // (`FORBIDDEN` / NOT_A_MEMBER), so "member of nothing" arrives as a failure rather than
-    // as an empty membership list. It is a STATE the shell draws, not an error — see
-    // CONSOLE_FLOW Q4, accepted for M4 with no way forward because none exists yet.
-    const isNoOrg = me.error instanceof ApiError && me.error.code === 'FORBIDDEN'
-    return isNoOrg ? { state: 'no-org' } : { state: 'failed', error: me.error }
-  }
+  if (me.error !== null) return { state: 'failed', error: me.error }
   if (me.data === null) return { state: 'signed-out' }
 
+  // A member of NO organisation arrives as data — an empty list — not as a refusal (ADR-0063).
+  // Until then `/me` answered FORBIDDEN and this branched on the error code, which only worked
+  // because `/me` had no other reason to refuse; it is the state that offers org creation.
   const { memberships, active_org_id, email } = me.data
   const fallback = memberships.find((m) => m.org_id === active_org_id) ?? memberships[0]
-  if (fallback === undefined) return { state: 'no-org' }
+  if (fallback === undefined) return { state: 'no-org', email }
 
   const requested = search.org
   const active =

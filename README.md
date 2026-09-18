@@ -490,7 +490,9 @@ weakening the guard, and both are worse than saying what this is.
 | `GET /_demo/rate-limited` | A synthetic `429` with `Retry-After`, for inspecting the error envelope |
 | `GET /_demo/boom` | A synthetic `500`, showing that an unexpected error leaks nothing |
 | `POST /internal/auth/*` | better-auth's own endpoints — sign up, sign in, sign out. The console's, never a customer's |
-| `GET /internal/me` | Who the session belongs to, which org it resolved to, and their role |
+| `GET /internal/me` | Who the session belongs to, which org it resolved to, and their role — or an empty membership list for a member of no org (ADR-0063) |
+| `POST /internal/orgs` | A member of no org creates one and becomes its admin (ADR-0063) |
+| `GET /internal/sign-in-methods` | Public: which sign-in methods this API accepts, so the login screen draws only those |
 | `GET /internal/traces?panel_id=` | One panel's trace list, within the session's org — `panel_id` is required. Typed by RPC inference, not by a schema |
 
 Every response is enveloped and carries a `request_id`, on success and on failure alike:

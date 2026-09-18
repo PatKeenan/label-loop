@@ -7,7 +7,7 @@ import type { JobQueue } from './jobs/index.ts'
 import type { Catalogue } from './llm/catalogue.ts'
 import type { ModelGateway, ModelProvider } from './llm/index.ts'
 import type { AuthenticatedKey } from './middleware/api-key-auth.ts'
-import type { AuthenticatedSession } from './middleware/session.ts'
+import type { AuthenticatedAccount, AuthenticatedSession } from './middleware/session.ts'
 import type { Clock } from './ports/clock.ts'
 import type { ErrorReporter } from './ports/error-reporter.ts'
 import type { RateLimitStore } from './ports/rate-limit-store.ts'
@@ -123,5 +123,11 @@ export type AppEnv = {
      * better-auth's own, since signing in cannot require being signed in.
      */
     session: AuthenticatedSession
+    /**
+     * Who is signed in, and every org they belong to — possibly NONE. Set by `accountAuth`,
+     * which guards only the two routes a member of nothing must reach: `/me`, which is how the
+     * console learns it, and `POST /orgs`, which is how they stop being one (ADR-0063).
+     */
+    account: AuthenticatedAccount
   }
 }

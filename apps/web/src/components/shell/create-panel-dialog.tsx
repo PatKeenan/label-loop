@@ -186,7 +186,11 @@ export const CreatePanelDialog = () => {
                 id="name"
                 value={name}
                 placeholder="Triage routing gate"
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  // An error answers the value that was SUBMITTED; once it changes, the error is stale.
+                  create.reset()
+                  setName(event.target.value)
+                }}
                 required
                 autoFocus
               />
@@ -210,6 +214,7 @@ export const CreatePanelDialog = () => {
                     id="slug"
                     value={effectiveSlug}
                     onChange={(event) => {
+                      create.reset()
                       setSlugEdited(true)
                       setSlug(slugify(event.target.value))
                     }}
