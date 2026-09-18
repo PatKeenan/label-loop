@@ -21,8 +21,12 @@ export const PageHead = ({
   className,
   ...props
 }: {
-  /** Slugs, outermost first: `[orgSlug]` at Home, `[orgSlug, panelSlug]` in a panel. */
-  scope: readonly string[]
+  /**
+   * Slugs, outermost first: `[orgSlug]` at Home, `[orgSlug, panelSlug]` in a panel. A segment
+   * may be a LINK — the trail is where people look for "up one level", so a page deeper than a
+   * section (one trace) makes its trail the way back rather than a button across the screen.
+   */
+  scope: readonly React.ReactNode[]
   title: React.ReactNode
   actions?: React.ReactNode
 } & Omit<React.ComponentProps<'header'>, 'title'>) => (
@@ -37,7 +41,14 @@ export const PageHead = ({
     <div className="flex min-w-0 flex-col gap-[var(--gap-tight)]">
       <div className="flex flex-wrap items-center gap-[var(--gap-tight)]">
         {scope.map((segment, index) => (
-          <Data key={segment}>
+          <Data
+            // Position is the identity: a trail is an ordered path, not a set.
+            // biome-ignore lint/suspicious/noArrayIndexKey: the trail never reorders.
+            key={index}
+            // Links in the trail read as links on hover — underline, full contrast — and stay
+            // quiet otherwise, so a trail of links does not shout over the title below it.
+            className="[&_a]:underline-offset-4 [&_a:hover]:text-foreground [&_a:hover]:underline"
+          >
             {index === 0 ? null : (
               <span className="mr-[var(--gap-tight)] text-foreground-faint">/</span>
             )}
