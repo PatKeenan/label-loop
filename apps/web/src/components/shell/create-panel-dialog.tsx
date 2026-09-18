@@ -15,7 +15,7 @@ import {
 import { Input } from '../ui/input.tsx'
 import { useConsoleContext } from './context.ts'
 import { rememberIssuedKey } from './issued-key.ts'
-import { Eyebrow } from './mark.tsx'
+import { Data, Eyebrow } from './mark.tsx'
 
 /**
  * CREATING A PANEL IS ONE STEP, AND IT IS A DIALOG (6c decision 1, ADR-0061; ADR-0062).
@@ -142,86 +142,95 @@ export const CreatePanelDialog = () => {
         close()
       }}
     >
-      <DialogContent>
+      {/*
+        30rem, not the dialog default. Three short fields at 46rem made every input a long
+        empty bar and every hint a line you had to travel across — a lot of form around very
+        little asking.
+      */}
+      <DialogContent className="sm:max-w-[30rem]">
         <DialogHeader>
           <Eyebrow>{orgSlug}</Eyebrow>
           <DialogTitle>Create panel</DialogTitle>
+          {/*
+            ONE sentence. It was three — collecting, judges later, key issued — and the dialog
+            read as an essay with a form attached. What collecting MEANS is said on the panel's
+            own Overview, the moment it is true; here it only needs to not surprise anyone.
+          */}
           <DialogDescription>
-            A new panel starts <strong>collecting</strong>: it accepts calls, stores every trace and
-            convenes no judges. Judges come later, from what an expert finds in this traffic — there
-            is nothing to configure about them yet. <strong>A key is issued with it</strong>, so you
-            can send your first call straight away.
+            Starts collecting straight away, with an API key ready to use.
           </DialogDescription>
         </DialogHeader>
 
         <form
-          // `--gap-stack` between FIELDS, where the label/input/hint inside one field is
-          // `--gap-tight`. A field group has to be visibly one thing before the space between
-          // groups can mean anything, and at one shared gap they all read as six loose rows.
-          className="flex flex-col gap-[var(--gap-stack)]"
+          // `--space-6` BETWEEN fields and `--gap-inline` WITHIN one. The first version put
+          // label, input and hint 4px apart and fields 16px apart: groups that are barely
+          // groups, separated by gaps that read as accidental. A field has to be visibly one
+          // thing before the space between fields can mean anything.
+          className="flex flex-col gap-[var(--space-6)]"
           onSubmit={(event) => {
             event.preventDefault()
             create.mutate()
           }}
         >
-          <Field
-            id="name"
-            label="Name"
-            hint="What a person calls it. “Triage routing gate”."
-            error={issues.name}
-          >
+          <Field id="name" label="Name" error={issues.name}>
             <Input
               id="name"
               value={name}
+              placeholder="Triage routing gate"
               onChange={(event) => setName(event.target.value)}
               required
               autoFocus
             />
           </Field>
 
-          <Field
-            id="slug"
-            label="Slug"
-            hint="Lowercase, hyphenated. It appears in the URL and in every API call, and it cannot be changed."
-            error={issues.slug}
-          >
-            <Input
-              id="slug"
-              value={effectiveSlug}
-              onChange={(event) => {
-                setSlugEdited(true)
-                setSlug(slugify(event.target.value))
-              }}
-              required
-            />
-          </Field>
-
-          <Field
-            id="threshold"
-            label="Threshold"
-            hint="The score a panel must reach to pass, from 0 to 1. It does nothing while the panel is collecting, and it is here because it describes the panel rather than any judge."
-            error={issues.threshold}
-          >
-            <Input
-              id="threshold"
-              type="number"
-              min={0}
-              max={1}
-              step={0.05}
-              value={threshold}
-              onChange={(event) => setThreshold(event.target.value)}
-              required
-            />
-          </Field>
-
           {/*
-            A section's worth of space above the actions, and a rule.
-
-            It read as part of the last field's hint otherwise — buttons sitting one field-gap
-            under a paragraph of grey monospace, with a stray "a key is issued with it" beside
-            them that belonged with the explanation at the top and has been moved there.
+            Slug and threshold share a row: both are short, and neither needs the width. The
+            slug carries its `/p/` prefix so it reads as the URL it becomes, which says what a
+            slug is without a sentence explaining it.
           */}
-          <DialogFooter className="mt-[var(--gap-stack)] border-t pt-[var(--gap-stack)]">
+          <div className="grid grid-cols-[1fr_7rem] items-start gap-[var(--gap-stack)]">
+            <Field id="slug" label="Slug" hint="Can’t be changed later." error={issues.slug}>
+              <div // The wrapper wears the input's own border, fill and focus ring (from `ui/input.tsx`),
+                // so the prefix sits INSIDE the field rather than beside it.
+                className="flex min-w-0 items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
+              >
+                <Data className="select-none pl-[var(--pad-field-x)] text-foreground-faint">
+                  /p/
+                </Data>
+                <Input
+                  id="slug"
+                  value={effectiveSlug}
+                  onChange={(event) => {
+                    setSlugEdited(true)
+                    setSlug(slugify(event.target.value))
+                  }}
+                  className="border-0 bg-transparent pl-[var(--space-1)] font-mono shadow-none focus-visible:ring-0 dark:bg-transparent"
+                  required
+                />
+              </div>
+            </Field>
+
+            <Field
+              id="threshold"
+              label="Threshold"
+              hint="Pass mark, 0–1."
+              error={issues.threshold}
+            >
+              <Input
+                id="threshold"
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={threshold}
+                onChange={(event) => setThreshold(event.target.value)}
+                className="font-mono tabular-nums"
+                required
+              />
+            </Field>
+          </div>
+
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
@@ -256,23 +265,27 @@ const Field = ({
 }: {
   id: string
   label: string
-  hint: string
+  hint?: string
   error?: string | undefined
   children: React.ReactNode
 }) => (
-  <div className="flex flex-col gap-[var(--gap-tight)]">
-    <label htmlFor={id} className="text-ui">
+  <div className="flex min-w-0 flex-col gap-[var(--gap-inline)]">
+    <label htmlFor={id} className="text-ui font-medium">
       {label}
     </label>
     {children}
-    {/* ERROR SURFACE 1 (CONSOLE_FLOW §6): beside the field that caused it. */}
-    {error === undefined ? (
-      <Eyebrow className="normal-case tracking-normal">{hint}</Eyebrow>
-    ) : (
+    {/*
+      ERROR SURFACE 1 (CONSOLE_FLOW §6): beside the field that caused it. A hint is plain
+      muted text, not the mono eyebrow it used to borrow — mono is for data, and a sentence
+      set in it reads as heavy and as something to parse rather than a note.
+    */}
+    {error !== undefined ? (
       <span role="alert" className="text-ui text-fail">
         {error}
       </span>
-    )}
+    ) : hint !== undefined ? (
+      <span className="text-ui text-muted-foreground">{hint}</span>
+    ) : null}
   </div>
 )
 
