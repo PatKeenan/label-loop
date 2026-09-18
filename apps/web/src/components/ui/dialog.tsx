@@ -33,7 +33,11 @@ function DialogOverlay({
       className={cn(
         // See tokens.css §6 `--color-overlay`: shadcn ships this as `bg-black/50`,
         // a literal dark value, which tokens.css rule 3 forbids outright.
-        'fixed inset-0 z-50 bg-overlay data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+        //
+        // `backdrop-blur-sm` because dimming alone left the page's text legible behind a
+        // dialog — the create-panel review found an empty state's copy competing with the
+        // form above it. A blur says "behind" without adding a colour the palette lacks.
+        'fixed inset-0 z-50 bg-overlay backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
         className,
       )}
       {...props}

@@ -143,14 +143,23 @@ export const CreatePanelDialog = () => {
       }}
     >
       {/*
-        30rem, not the dialog default. Three short fields at 46rem made every input a long
-        empty bar and every hint a line you had to travel across — a lot of form around very
-        little asking.
+        THREE BANDS — header, fields, actions — each with its own room, rather than one padded
+        box with everything stacked inside it.
+
+        Twice revised at review. The first draft was an essay (three sentences of description,
+        a sentence of mono hint under every field). The second cut the words but kept the
+        dialog's panel padding — 20–24px, the right number for a card on a page and a cramped
+        one for a modal the whole screen defers to — at 30rem, which read as narrow and
+        suffocating against the wide stage behind it. So: 34rem, 32px at the edges, a header
+        that has space of its own, and the actions in a footer band that closes the form off
+        instead of trailing after its last hint.
       */}
-      <DialogContent className="sm:max-w-[30rem]">
-        <DialogHeader>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[34rem]">
+        <DialogHeader className="gap-[var(--gap-inline)] px-[var(--space-8)] pt-[var(--space-8)] pb-[var(--space-6)]">
           <Eyebrow>{orgSlug}</Eyebrow>
-          <DialogTitle>Create panel</DialogTitle>
+          <DialogTitle className="text-title font-semibold leading-[var(--leading-title)] tracking-[var(--tracking-snug)]">
+            Create panel
+          </DialogTitle>
           {/*
             ONE sentence. It was three — collecting, judges later, key issued — and the dialog
             read as an essay with a form attached. What collecting MEANS is said on the panel's
@@ -162,75 +171,89 @@ export const CreatePanelDialog = () => {
         </DialogHeader>
 
         <form
-          // `--space-6` BETWEEN fields and `--gap-inline` WITHIN one. The first version put
-          // label, input and hint 4px apart and fields 16px apart: groups that are barely
-          // groups, separated by gaps that read as accidental. A field has to be visibly one
-          // thing before the space between fields can mean anything.
-          className="flex flex-col gap-[var(--space-6)]"
           onSubmit={(event) => {
             event.preventDefault()
             create.mutate()
           }}
         >
-          <Field id="name" label="Name" error={issues.name}>
-            <Input
-              id="name"
-              value={name}
-              placeholder="Triage routing gate"
-              onChange={(event) => setName(event.target.value)}
-              required
-              autoFocus
-            />
-          </Field>
-
           {/*
+            `--space-6` BETWEEN fields and `--gap-inline` WITHIN one. The first version put
+            label, input and hint 4px apart and fields 16px apart: groups that were barely
+            groups, separated by gaps that read as accidental.
+          */}
+          <div className="flex flex-col gap-[var(--space-6)] px-[var(--space-8)] pb-[var(--space-8)]">
+            <Field id="name" label="Name" error={issues.name}>
+              <Input
+                id="name"
+                value={name}
+                placeholder="Triage routing gate"
+                onChange={(event) => setName(event.target.value)}
+                required
+                autoFocus
+              />
+            </Field>
+
+            {/*
             Slug and threshold share a row: both are short, and neither needs the width. The
             slug carries its `/p/` prefix so it reads as the URL it becomes, which says what a
             slug is without a sentence explaining it.
           */}
-          <div className="grid grid-cols-[1fr_7rem] items-start gap-[var(--gap-stack)]">
-            <Field id="slug" label="Slug" hint="Can’t be changed later." error={issues.slug}>
-              <div // The wrapper wears the input's own border, fill and focus ring (from `ui/input.tsx`),
-                // so the prefix sits INSIDE the field rather than beside it.
-                className="flex min-w-0 items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
+            <div className="grid grid-cols-[1fr_7rem] items-start gap-[var(--gap-stack)]">
+              <Field id="slug" label="Slug" hint="Can’t be changed later." error={issues.slug}>
+                <div // The wrapper wears the input's own border, fill and focus ring (from `ui/input.tsx`),
+                  // so the prefix sits INSIDE the field rather than beside it.
+                  className="flex h-9 min-w-0 items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
+                >
+                  <Data className="select-none pl-[var(--pad-field-x)] text-foreground-faint">
+                    /p/
+                  </Data>
+                  <Input
+                    id="slug"
+                    value={effectiveSlug}
+                    onChange={(event) => {
+                      setSlugEdited(true)
+                      setSlug(slugify(event.target.value))
+                    }}
+                    className="h-full border-0 bg-transparent pl-[var(--space-1)] font-mono shadow-none focus-visible:ring-0 dark:bg-transparent"
+                    required
+                  />
+                </div>
+              </Field>
+
+              <Field
+                id="threshold"
+                label="Threshold"
+                hint="Pass mark, 0–1."
+                error={issues.threshold}
               >
-                <Data className="select-none pl-[var(--pad-field-x)] text-foreground-faint">
-                  /p/
-                </Data>
                 <Input
-                  id="slug"
-                  value={effectiveSlug}
-                  onChange={(event) => {
-                    setSlugEdited(true)
-                    setSlug(slugify(event.target.value))
-                  }}
-                  className="border-0 bg-transparent pl-[var(--space-1)] font-mono shadow-none focus-visible:ring-0 dark:bg-transparent"
+                  id="threshold"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={threshold}
+                  onChange={(event) => setThreshold(event.target.value)}
+                  className="font-mono tabular-nums"
                   required
                 />
-              </div>
-            </Field>
+              </Field>
+            </div>
 
-            <Field
-              id="threshold"
-              label="Threshold"
-              hint="Pass mark, 0–1."
-              error={issues.threshold}
-            >
-              <Input
-                id="threshold"
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={threshold}
-                onChange={(event) => setThreshold(event.target.value)}
-                className="font-mono tabular-nums"
-                required
-              />
-            </Field>
+            {/*
+          Field-level issues render beside their field above; anything the server reported
+          without a path would otherwise vanish, so it lands here.
+        */}
+            {create.error !== null && Object.keys(issues).length === 0 ? (
+              <p role="alert" className="m-0 text-ui text-fail">
+                {create.error instanceof ApiError
+                  ? create.error.treatment.detail
+                  : 'The panel could not be created.'}
+              </p>
+            ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t bg-muted px-[var(--space-8)] py-[var(--space-5)]">
             <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
@@ -238,18 +261,6 @@ export const CreatePanelDialog = () => {
               {create.isPending ? 'Creating…' : 'Create panel'}
             </Button>
           </DialogFooter>
-
-          {/*
-          Field-level issues render beside their field above; anything the server reported
-          without a path would otherwise vanish, so it lands here.
-        */}
-          {create.error !== null && Object.keys(issues).length === 0 ? (
-            <p role="alert" className="m-0 text-ui text-fail">
-              {create.error instanceof ApiError
-                ? create.error.treatment.detail
-                : 'The panel could not be created.'}
-            </p>
-          ) : null}
         </form>
       </DialogContent>
     </Dialog>
