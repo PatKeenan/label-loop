@@ -61,7 +61,16 @@ plans are in `thoughts/shared/plans/complete/`), and two M5 polarity plans lande
 phases 1–5 — the backend half — are merged (#58–#63), phase 6's human review gate as #65, and
 **phase 7, the frame BUILT, is merged as #67 and verified**: Tailwind + shadcn/ui, the
 `tokens.css` conversion under ADR-0046, and the sidebar shell from `mockups/console-shell.html`
-r3. **Next is phase 8**, and the plan stays in `approved/` until it lands.
+r3. **Phase 8 is IN PROGRESS as two PRs**: the API half merged as #69; the console half is
+**draft PR #70 on `feat/m4-p8-console-screens`** — continue there, and read Deviations 55–64 and
+the unchecked phase 8 steps first. The plan stays in `approved/` until phase 8 lands.
+
+**The frame changed mid-phase (ADR-0062):** a persistent top bar plus a sidebar that exists
+ONLY inside a panel; Home is a grid of panel cards; Create panel is a dialog opened by `?new`.
+`mockups/console-shell.html` r3 no longer describes the built shell. The console's spacing was
+opened in `tokens.css`'s compact block with type untouched — do not "fix" spacing by switching
+density, which was tried and rejected. **Run the API from source** (`bun run --cwd apps/api
+dev`) when checking the console in a browser: the compose image goes stale silently.
 
 **Two things phase 7 leaves behind that phase 8 has to know**, beyond the scope change spelled
 out below:
