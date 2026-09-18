@@ -1,7 +1,13 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useSearch } from '@tanstack/react-router'
+import { cn } from 'cn'
 import { useState } from 'react'
 import { tracePagesQuery, type tracesQuery } from '../api/queries.ts'
-import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
+import {
+  type ConsoleSearch,
+  useConsoleContext,
+  usePanelContext,
+} from '../components/shell/context.ts'
 import { Data, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
@@ -259,84 +265,102 @@ export type TraceRow = Awaited<
  * The trace table, shared by the Traces section and the Overview's Recent traces — one
  * rendering, so the five rows on the Overview are the same five rows at the top of Traces.
  */
-export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full border-collapse text-data">
-      <thead>
-        <tr className="border-b border-border-strong text-left">
-          {COLUMNS.map(({ label, title }) => (
-            <th
-              key={label}
-              // A column whose meaning is not obvious from its name says so on hover
-              // rather than relying on the reader to already know. `title` is the
-              // plainest thing that works on a table head; if more than one column
-              // needs a richer explanation, that is phase 8's to design.
-              {...(title === undefined ? {} : { title })}
-              className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
-            >
-              {label}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {traces.map((trace) => (
-          <tr key={trace.id} className="border-b border-border-soft">
-            <Cell>
-              <Data className="text-foreground">{trace.id}</Data>
-            </Cell>
-            <Cell>
-              {trace.key_name === null ? (
-                <Data className="text-foreground-faint">deleted</Data>
-              ) : (
-                <Data className="block max-w-[10rem] truncate" title={trace.key_name}>
-                  {trace.key_name}
-                </Data>
+export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => {
+  const search = useSearch({ strict: false }) as ConsoleSearch
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-data">
+        <thead>
+          <tr className="border-b border-border-strong text-left">
+            {COLUMNS.map(({ label, title }) => (
+              <th
+                key={label}
+                // A column whose meaning is not obvious from its name says so on hover
+                // rather than relying on the reader to already know. `title` is the
+                // plainest thing that works on a table head; if more than one column
+                // needs a richer explanation, that is phase 8's to design.
+                {...(title === undefined ? {} : { title })}
+                className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {traces.map((trace) => (
+            // The ROW opens the drawer, through a real link in its first cell stretched across the
+            // row (`after:absolute after:inset-0`) — so it is keyboard-reachable and announced as
+            // a link, with no click handler on a table row. The open row stays highlighted.
+            <tr
+              key={trace.id}
+              className={cn(
+                'relative border-b border-border-soft hover:bg-muted',
+                search.trace === trace.id && 'bg-muted',
               )}
-            </Cell>
-            <Cell>
-              {/*
+            >
+              <Cell>
+                <Link
+                  to="."
+                  search={{ ...search, trace: trace.id }}
+                  className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                >
+                  <Data className="text-foreground">{trace.id}</Data>
+                </Link>
+              </Cell>
+              <Cell>
+                {trace.key_name === null ? (
+                  <Data className="text-foreground-faint">deleted</Data>
+                ) : (
+                  <Data className="block max-w-[10rem] truncate" title={trace.key_name}>
+                    {trace.key_name}
+                  </Data>
+                )}
+              </Cell>
+              <Cell>
+                {/*
                 The verdict is the one place on this row that earns colour — rule 4 of the
                 approved tokens: ids and numbers stay achromatic, and colour appears only
                 where it IS the finding. A NULL verdict is a COLLECTING panel, not a
                 failure: nothing was judged, so there is nothing to pass or fail.
               */}
-              <span className="flex items-center gap-[var(--gap-tight)]">
-                {trace.passed === null ? (
-                  <Mark tone="neutral">collecting</Mark>
-                ) : (
-                  <Mark tone={trace.passed ? 'success' : 'fail'}>
-                    {trace.passed ? 'pass' : 'fail'}
-                  </Mark>
-                )}
-                {/* `complete: false` means a scoring judge did not run, so the score
+                <span className="flex items-center gap-[var(--gap-tight)]">
+                  {trace.passed === null ? (
+                    <Mark tone="neutral">collecting</Mark>
+                  ) : (
+                    <Mark tone={trace.passed ? 'success' : 'fail'}>
+                      {trace.passed ? 'pass' : 'fail'}
+                    </Mark>
+                  )}
+                  {/* `complete: false` means a scoring judge did not run, so the score
                     beside it is real but partial — which the verdict alone cannot say. */}
-                {trace.passed !== null && !trace.complete ? (
-                  <Mark tone="warning">partial</Mark>
-                ) : null}
-              </span>
-            </Cell>
-            <Cell>
-              <Data className="tabular-nums">
-                <span className="text-foreground">
-                  {trace.score === null ? '—' : trace.score.toFixed(2)}
+                  {trace.passed !== null && !trace.complete ? (
+                    <Mark tone="warning">partial</Mark>
+                  ) : null}
                 </span>
-                {' / '}
-                {trace.threshold.toFixed(2)}
-              </Data>
-            </Cell>
-            <Cell>
-              <span className="flex items-center gap-[var(--gap-tight)]">
-                <Data title={trace.created_at}>{shortTime(trace.created_at)}</Data>
-                {trace.recorded_at === null ? <Mark tone="neutral">pending</Mark> : null}
-              </span>
-            </Cell>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-)
+              </Cell>
+              <Cell>
+                <Data className="tabular-nums">
+                  <span className="text-foreground">
+                    {trace.score === null ? '—' : trace.score.toFixed(2)}
+                  </span>
+                  {' / '}
+                  {trace.threshold.toFixed(2)}
+                </Data>
+              </Cell>
+              <Cell>
+                <span className="flex items-center gap-[var(--gap-tight)]">
+                  <Data title={trace.created_at}>{shortTime(trace.created_at)}</Data>
+                  {trace.recorded_at === null ? <Mark tone="neutral">pending</Mark> : null}
+                </span>
+              </Cell>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 const Cell = ({ children }: { children: React.ReactNode }) => (
   <td className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] align-middle whitespace-nowrap">

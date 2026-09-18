@@ -2,7 +2,13 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { listTraces, type TraceCursor, type TraceListItem } from '../../repositories/traces.ts'
+import { requireRole } from '../../middleware/require-role.ts'
+import {
+  getTraceDetail,
+  listTraces,
+  type TraceCursor,
+  type TraceListItem,
+} from '../../repositories/traces.ts'
 
 /**
  * `GET /internal/traces` — the console's trace list, and the read half of the loop P4
@@ -65,71 +71,140 @@ const decodeCursor = (value: string): TraceCursor | undefined => {
 }
 
 export const createTraceRoutes = () =>
-  new Hono<AppEnv>().get('/traces', async (c) => {
-    const query = listQuerySchema.safeParse({
-      panel_id: c.req.query('panel_id'),
-      ...(c.req.query('before') === undefined ? {} : { before: c.req.query('before') }),
-      // `undefined` rather than the raw value when absent, so the schema's default applies
-      // instead of Zod being asked to coerce a missing string.
-      ...(c.req.query('limit') === undefined ? {} : { limit: c.req.query('limit') }),
-    })
-    if (!query.success) {
-      // Thrown, never built here: one handler owns serialization (CONVENTIONS.md).
-      throw new AppError('VALIDATION_ERROR', 'The query string failed validation.', {
-        issues: query.error.issues.map((issue) => ({
-          path: issue.path.map(String).join('.'),
-          message: issue.message,
-        })),
+  new Hono<AppEnv>()
+    .get('/traces', async (c) => {
+      const query = listQuerySchema.safeParse({
+        panel_id: c.req.query('panel_id'),
+        ...(c.req.query('before') === undefined ? {} : { before: c.req.query('before') }),
+        // `undefined` rather than the raw value when absent, so the schema's default applies
+        // instead of Zod being asked to coerce a missing string.
+        ...(c.req.query('limit') === undefined ? {} : { limit: c.req.query('limit') }),
       })
-    }
+      if (!query.success) {
+        // Thrown, never built here: one handler owns serialization (CONVENTIONS.md).
+        throw new AppError('VALIDATION_ERROR', 'The query string failed validation.', {
+          issues: query.error.issues.map((issue) => ({
+            path: issue.path.map(String).join('.'),
+            message: issue.message,
+          })),
+        })
+      }
 
-    // The org comes from the session, never from the request. A `?org_id=` parameter is how
-    // a console grows a tenancy bug.
-    //
-    // The panel DOES come from the request, and is safe to: the org filter still applies, so
-    // another org's panel id answers an empty list — the same answer as a real panel with no
-    // traffic yet, which is what keeps it from confirming that panel exists (ADR-0057).
-    const before = query.data.before === undefined ? undefined : decodeCursor(query.data.before)
-    if (query.data.before !== undefined && before === undefined) {
-      throw new AppError('VALIDATION_ERROR', 'The query string failed validation.', {
-        issues: [{ path: 'before', message: 'is not a cursor this API issued' }],
+      // The org comes from the session, never from the request. A `?org_id=` parameter is how
+      // a console grows a tenancy bug.
+      //
+      // The panel DOES come from the request, and is safe to: the org filter still applies, so
+      // another org's panel id answers an empty list — the same answer as a real panel with no
+      // traffic yet, which is what keeps it from confirming that panel exists (ADR-0057).
+      const before = query.data.before === undefined ? undefined : decodeCursor(query.data.before)
+      if (query.data.before !== undefined && before === undefined) {
+        throw new AppError('VALIDATION_ERROR', 'The query string failed validation.', {
+          issues: [{ path: 'before', message: 'is not a cursor this API issued' }],
+        })
+      }
+
+      // ONE extra row, to learn whether an older page exists without a COUNT(*) over the panel —
+      // which would be the one part of this read that grows with the table.
+      const rows = await listTraces(c.var.deps.db, {
+        orgId: c.var.session.orgId,
+        panelId: query.data.panel_id,
+        limit: query.data.limit + 1,
+        before,
       })
-    }
+      const traces = rows.slice(0, query.data.limit)
+      const last = traces.at(-1)
+      const nextCursor =
+        rows.length > query.data.limit && last !== undefined ? encodeCursor(last) : null
 
-    // ONE extra row, to learn whether an older page exists without a COUNT(*) over the panel —
-    // which would be the one part of this read that grows with the table.
-    const rows = await listTraces(c.var.deps.db, {
-      orgId: c.var.session.orgId,
-      panelId: query.data.panel_id,
-      limit: query.data.limit + 1,
-      before,
+      return c.json({
+        data: {
+          traces: traces.map((trace) => ({
+            id: trace.id,
+            panel_id: trace.panelId,
+            // Null when the key has been deleted outright. A revoked key still has its row and
+            // therefore still has its name — this is the harder case, where the credential is
+            // gone and the trace it authorised remains.
+            key_name: trace.keyName,
+            // Null for a trace captured while the panel was COLLECTING: it convened no
+            // judges, so there is no verdict and no score (ADR-0060).
+            passed: trace.passed,
+            score: trace.score,
+            complete: trace.complete,
+            threshold: trace.threshold,
+            recorded_at: trace.recordedAt?.toISOString() ?? null,
+            created_at: trace.createdAt.toISOString(),
+          })),
+          // Hand this back as `before` for the next-older page; null when there is none.
+          next_cursor: nextCursor,
+        },
+        request_id: c.var.requestId,
+      })
     })
-    const traces = rows.slice(0, query.data.limit)
-    const last = traces.at(-1)
-    const nextCursor =
-      rows.length > query.data.limit && last !== undefined ? encodeCursor(last) : null
+    /**
+     * ONE trace, whole: what the caller's agent sent, and what each judge said about it — the
+     * console's trace drawer (Deviation 75).
+     *
+     * **Staff only**, unlike the list (Deviation 32 left the list's guard open). This read carries
+     * the customer's own production data in `artifact`, and each judge's rationale and confidence;
+     * whether an annotator may see confidence before annotating is harvest blocker 2, still open,
+     * and M5's annotator surface is where that is answered. Here the answer is simply: not yet.
+     *
+     * A trace in another org is NOT_FOUND, never FORBIDDEN (ADR-0057).
+     *
+     * **Not audited**, and that is a known gap rather than an oversight: reading a customer's
+     * artifact is a candidate audit event, and M8 owns the audit log's vocabulary and viewer.
+     */
+    .get('/traces/:id', requireRole('admin', 'engineer'), async (c) => {
+      const trace = await getTraceDetail(c.var.deps.db, {
+        orgId: c.var.session.orgId,
+        traceId: c.req.param('id'),
+      })
+      if (trace === null) {
+        throw new AppError('NOT_FOUND', 'No trace with that id is available to this account.')
+      }
 
-    return c.json({
-      data: {
-        traces: traces.map((trace) => ({
+      return c.json({
+        data: {
           id: trace.id,
           panel_id: trace.panelId,
-          // Null when the key has been deleted outright. A revoked key still has its row and
-          // therefore still has its name — this is the harder case, where the credential is
-          // gone and the trace it authorised remains.
+          panel_version_id: trace.panelVersionId,
+          panel_version: trace.panelVersion,
           key_name: trace.keyName,
-          // Null for a trace captured while the panel was COLLECTING: it convened no
-          // judges, so there is no verdict and no score (ADR-0060).
+          // The W3C id of the HTTP execution, so a person can find this call's spans (ADR-0010).
+          request_id: trace.requestId,
+          artifact: trace.artifact,
+          context: trace.context,
+          // Null while COLLECTING (ADR-0060) — and then `judges` is empty, because none ran.
           passed: trace.passed,
           score: trace.score,
           complete: trace.complete,
           threshold: trace.threshold,
           recorded_at: trace.recordedAt?.toISOString() ?? null,
           created_at: trace.createdAt.toISOString(),
-        })),
-        // Hand this back as `before` for the next-older page; null when there is none.
-        next_cursor: nextCursor,
-      },
-      request_id: c.var.requestId,
+          judges: trace.verdicts.map((verdict) => ({
+            slug: verdict.judgeSlug,
+            name: verdict.judgeName,
+            version: verdict.judgeVersion,
+            question: verdict.question,
+            polarity: verdict.polarity,
+            status: verdict.status,
+            verdict: verdict.verdict,
+            passed: verdict.passed,
+            rationale: verdict.rationale,
+            reasons: verdict.reasons,
+            confidence: verdict.confidence,
+            weight: verdict.weight,
+            served_by: verdict.servedBy,
+            latency_ms: verdict.latencyMs,
+            attempts: verdict.attempts,
+            input_tokens: verdict.inputTokens,
+            output_tokens: verdict.outputTokens,
+            reasoning_tokens: verdict.reasoningTokens,
+            // A decimal STRING (ADR-0027) — never parsed into a float on the way out.
+            cost_usd: verdict.costUsd,
+            cost_priced: verdict.costPriced,
+          })),
+        },
+        request_id: c.var.requestId,
+      })
     })
-  })

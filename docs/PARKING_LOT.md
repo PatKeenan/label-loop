@@ -104,6 +104,12 @@ Full context: `thoughts/shared/research/2026-08-23_cross-thread-reconciliation.m
 
 ## Trace detail — one record, full page (raised 2026-09-16)
 
+> **Built at M4 as a DRAWER, 2026-09-18** (M4 plan, Deviation 75): `GET /internal/traces/:id`,
+> staff-only, and a right-side drawer from any trace row. What is still parked from the entry
+> below: **audit-on-read** (M8), **the annotator's view of one trace** (M5, where harvest
+> blocker 2 is decided), and **`raw_response`**, which the drawer does not render. The entry is
+> kept as the reasoning the build started from.
+
 Clicking a trace row to read what went in and what each judge said. Raised by the
 stakeholder while walking through the M4 phase 7 shell; recorded here because
 `mockups/CONSOLE_FLOW.md` §3 lists both this and the trace explorer as **Unscheduled**, and

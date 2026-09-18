@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { errorEnvelopeSchema, newId } from '@labelloop/contracts'
+import { DEFAULT_FAKE_PIN, errorEnvelopeSchema, newId } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
 import { metrics, trace } from '@opentelemetry/api'
 import { eq, sql } from 'drizzle-orm'
@@ -8,9 +8,11 @@ import { createRecordingErrorReporter } from '../../adapters/noop-error-reporter
 import { createApp } from '../../app.ts'
 import { createAuth } from '../../auth.ts'
 import { loadConfig } from '../../config.ts'
+import { FAKE_MODEL } from '../../llm/fake-provider.ts'
 import { createFakeProvider, createModelGateway } from '../../llm/index.ts'
 import { sha256Hex } from '../../middleware/api-key-auth.ts'
 import { createMemoryRateLimitStore } from '../../rate-limit/memory-store.ts'
+import { insertJudge, insertJudgeVersion } from '../../repositories/panels.ts'
 import { fakeCatalogue } from '../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
 
@@ -56,6 +58,10 @@ const TRACE = newId('tr_')
 const OTHER_TRACE = newId('tr_')
 const SIBLING_TRACE = newId('tr_')
 /** A panel whose traces sit on the edges a pagination cursor can get wrong. */
+/** A judge whose verdict hangs off TRACE, so the detail read's judge join has a row. */
+const JUDGE = newId('jud_')
+const JUDGE_VERSION = newId('jdv_')
+const ANNOTATOR_EMAIL = `annotator-${ORG}@labelloop.test`.toLowerCase()
 const PAGED_PANEL = newId('pnl_')
 const PAGED_PANEL_VERSION = newId('pnv_')
 
@@ -181,6 +187,48 @@ const PAGED_ORDER = [...PAGED_TRACES]
   .sort((a, b) => (a.at === b.at ? (a.id < b.id ? 1 : -1) : a.at < b.at ? 1 : -1))
   .map((row) => row.id)
 
+const seedVerdict = async () => {
+  await insertJudge(db, {
+    id: JUDGE,
+    panelId: PANEL,
+    slug: 'is-missing-repro',
+    name: 'Missing repro',
+    createdBy: null,
+  })
+  await insertJudgeVersion(db, {
+    id: JUDGE_VERSION,
+    judgeId: JUDGE,
+    version: 1,
+    polarity: 'fails',
+    weight: 1,
+    required: false,
+    question: 'Does this issue lack reproduction steps?',
+    model: FAKE_MODEL,
+    modelPin: DEFAULT_FAKE_PIN,
+    modelPinValidation: {
+      validated_at: new Date(0).toISOString(),
+      available_endpoints: 0,
+      served_by: FAKE_MODEL,
+    },
+    createdBy: null,
+  })
+  await db.insert(schema.traceVerdicts).values({
+    traceId: TRACE,
+    judgeVersionId: JUDGE_VERSION,
+    status: 'evaluated',
+    verdict: false,
+    passed: true,
+    rationale: 'The report names the browser and the exact click.',
+    reasons: [],
+    confidence: 0.92,
+    weight: 1,
+    servedBy: FAKE_MODEL,
+    latencyMs: 12,
+    attempts: 1,
+    costPriced: false,
+  })
+}
+
 const seedPagedTraces = async () => {
   for (const [index, row] of PAGED_TRACES.entries()) {
     await db.insert(schema.traces).values({
@@ -205,7 +253,7 @@ const dropFixtures = async () => {
     await db.delete(schema.traces).where(eq(schema.traces.orgId, org))
     await db.delete(schema.orgs).where(eq(schema.orgs.id, org))
   }
-  for (const email of [MEMBER_EMAIL, OUTSIDER_EMAIL]) {
+  for (const email of [MEMBER_EMAIL, OUTSIDER_EMAIL, ANNOTATOR_EMAIL]) {
     await db.delete(schema.user).where(eq(schema.user.email, email))
   }
 }
@@ -238,17 +286,14 @@ const signIn = async (email: string): Promise<string> => {
 }
 
 /** Membership is ours, not better-auth's (ADR-0014), so it is a separate insert. */
-const grantMembership = async (email: string) => {
+const grantMembership = async (email: string, role: 'admin' | 'annotator' = 'admin') => {
   const rows = await db
     .select({ id: schema.user.id })
     .from(schema.user)
     .where(eq(schema.user.email, email))
   const userId = rows[0]?.id
   if (userId === undefined) throw new Error(`no user for ${email}`)
-  await db
-    .insert(schema.orgMembers)
-    .values({ orgId: ORG, userId, role: 'admin' })
-    .onConflictDoNothing()
+  await db.insert(schema.orgMembers).values({ orgId: ORG, userId, role }).onConflictDoNothing()
 }
 
 beforeAll(async () => {
@@ -256,6 +301,7 @@ beforeAll(async () => {
   auth = createAuth(db, config)
   await dropFixtures()
   await seedFixtures()
+  await seedVerdict()
   await seedPagedTraces()
 
   // Two accounts, identical but for one row in `org_members` — which is the whole
@@ -263,6 +309,8 @@ beforeAll(async () => {
   await signUp(MEMBER_EMAIL)
   await grantMembership(MEMBER_EMAIL)
   await signUp(OUTSIDER_EMAIL)
+  await signUp(ANNOTATOR_EMAIL)
+  await grantMembership(ANNOTATOR_EMAIL, 'annotator')
 })
 
 afterAll(async () => {
@@ -477,5 +525,69 @@ describe('the login screen asks which doors exist (Deviation 11)', () => {
       GITHUB_CLIENT_SECRET: 'test-client-secret',
     })
     expect(await methods(production)).toEqual({ email_password: false, github: true })
+  })
+})
+
+/** Just the fields these tests read — the real shape is the RPC type the console consumes. */
+type Detail = {
+  data: {
+    artifact: string
+    key_name: string | null
+    panel_version: number
+    passed: boolean | null
+    judges: unknown[]
+  }
+  error: { code: string }
+}
+
+describe('one trace, whole — the console’s trace drawer (Deviation 75)', () => {
+  const detail = async (cookie: string, id: string) => {
+    const response = await app().request(`http://localhost/internal/traces/${id}`, {
+      headers: { cookie },
+    })
+    return { status: response.status, body: (await response.json()) as Detail }
+  }
+
+  test('returns what went in and what each judge said', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, TRACE)
+    expect(status).toBe(200)
+    expect(body.data.artifact).toBe('Login button does nothing on Safari 17.')
+    expect(body.data.key_name).toBe('Console test')
+    expect(body.data.panel_version).toBe(1)
+    expect(body.data.judges).toEqual([
+      expect.objectContaining({
+        slug: 'is-missing-repro',
+        question: 'Does this issue lack reproduction steps?',
+        polarity: 'fails',
+        status: 'evaluated',
+        verdict: false,
+        passed: true,
+        rationale: 'The report names the browser and the exact click.',
+        confidence: expect.closeTo(0.92, 5),
+      }),
+    ])
+  })
+
+  test('a COLLECTING trace has no judges — none ran — and says so with an empty list', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, SIBLING_TRACE)
+    expect(status).toBe(200)
+    expect(body.data.passed).toBeNull()
+    expect(body.data.judges).toEqual([])
+  })
+
+  test('another org’s trace is NOT_FOUND, never FORBIDDEN (ADR-0057)', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, OTHER_TRACE)
+    expect(status).toBe(404)
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
+  test('an annotator is refused — the drawer carries rationale and confidence', async () => {
+    const cookie = await signIn(ANNOTATOR_EMAIL)
+    const { status, body } = await detail(cookie, TRACE)
+    expect(status).toBe(403)
+    expect(body.error.code).toBe('FORBIDDEN')
   })
 })

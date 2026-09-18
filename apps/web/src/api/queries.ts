@@ -160,3 +160,22 @@ export const tracePagesQuery = (orgId: string, panelId: string) =>
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
   })
+
+/**
+ * ONE trace, whole — the drawer's read (Deviation 75). Staff-only on the server; the console
+ * only ever asks from a staff role's screens.
+ */
+export const traceDetailQuery = (orgId: string, traceId: string) =>
+  queryOptions({
+    queryKey: ['trace', orgId, traceId],
+    queryFn: async () => {
+      const response = await api.internal.traces[':id'].$get(
+        { param: { id: traceId } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    // A trace never changes after it is written, except `recorded_at` being stamped once.
+    staleTime: 60_000,
+  })

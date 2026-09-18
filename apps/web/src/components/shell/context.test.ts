@@ -8,7 +8,11 @@ import { validateConsoleSearch } from './context.ts'
  */
 describe('validateConsoleSearch', () => {
   test('a real org slug is kept', () => {
-    expect(validateConsoleSearch({ org: 'acme' })).toEqual({ org: 'acme', new: undefined })
+    expect(validateConsoleSearch({ org: 'acme' })).toEqual({
+      org: 'acme',
+      new: undefined,
+      trace: undefined,
+    })
   })
 
   test('an empty or non-string org is returned as undefined, not left out', () => {
@@ -27,6 +31,15 @@ describe('validateConsoleSearch', () => {
       const search = validateConsoleSearch({ new: isNew })
       expect(Object.hasOwn(search, 'new')).toBe(true)
       expect(search.new).toBeUndefined()
+    }
+  })
+
+  test('a trace id opens the drawer; anything else is returned as undefined', () => {
+    expect(validateConsoleSearch({ trace: 'tr_01ABC' }).trace).toBe('tr_01ABC')
+    for (const trace of ['', 'pnl_01ABC', 42]) {
+      const search = validateConsoleSearch({ trace })
+      expect(Object.hasOwn(search, 'trace')).toBe(true)
+      expect(search.trace).toBeUndefined()
     }
   })
 })

@@ -199,3 +199,77 @@ export const listTraces = async (
     // scan as the table grows; `id` only orders ties.
     .orderBy(desc(schema.traces.createdAt), desc(schema.traces.id))
     .limit(limit)
+
+/**
+ * ONE trace, whole — what went in and what each judge said — for the console's trace drawer.
+ *
+ * Unlike the list, this DOES select `artifact` and `context`: it reads one row, so the two
+ * unbounded columns cost one row's worth. It does NOT select `raw_response`, the provider's
+ * untouched payload; nothing on the drawer renders it, and it is the largest thing stored.
+ *
+ * Org-scoped by signature exactly as `listTraces` is: a trace id from another org is `null`,
+ * the same answer as one that does not exist.
+ */
+export const getTraceDetail = async (
+  db: Database,
+  { orgId, traceId }: { orgId: string; traceId: string },
+) => {
+  const rows = await db
+    .select({
+      id: schema.traces.id,
+      panelId: schema.traces.panelId,
+      panelVersionId: schema.traces.panelVersionId,
+      panelVersion: schema.panelVersions.version,
+      keyName: schema.apiKeys.name,
+      requestId: schema.traces.requestId,
+      artifact: schema.traces.artifact,
+      context: schema.traces.context,
+      passed: schema.traces.passed,
+      score: schema.traces.score,
+      complete: schema.traces.complete,
+      threshold: schema.traces.threshold,
+      recordedAt: schema.traces.recordedAt,
+      createdAt: schema.traces.createdAt,
+    })
+    .from(schema.traces)
+    .innerJoin(schema.panelVersions, eq(schema.panelVersions.id, schema.traces.panelVersionId))
+    .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
+    .where(and(eq(schema.traces.orgId, orgId), eq(schema.traces.id, traceId)))
+    .limit(1)
+  const trace = rows[0]
+  if (trace === undefined) return null
+
+  const verdicts = await db
+    .select({
+      judgeSlug: schema.judges.slug,
+      judgeName: schema.judges.name,
+      judgeVersion: schema.judgeVersions.version,
+      question: schema.judgeVersions.question,
+      polarity: schema.judgeVersions.polarity,
+      status: schema.traceVerdicts.status,
+      verdict: schema.traceVerdicts.verdict,
+      passed: schema.traceVerdicts.passed,
+      rationale: schema.traceVerdicts.rationale,
+      reasons: schema.traceVerdicts.reasons,
+      confidence: schema.traceVerdicts.confidence,
+      weight: schema.traceVerdicts.weight,
+      servedBy: schema.traceVerdicts.servedBy,
+      latencyMs: schema.traceVerdicts.latencyMs,
+      attempts: schema.traceVerdicts.attempts,
+      inputTokens: schema.traceVerdicts.inputTokens,
+      outputTokens: schema.traceVerdicts.outputTokens,
+      reasoningTokens: schema.traceVerdicts.reasoningTokens,
+      costUsd: schema.traceVerdicts.costUsd,
+      costPriced: schema.traceVerdicts.costPriced,
+    })
+    .from(schema.traceVerdicts)
+    .innerJoin(
+      schema.judgeVersions,
+      eq(schema.judgeVersions.id, schema.traceVerdicts.judgeVersionId),
+    )
+    .innerJoin(schema.judges, eq(schema.judges.id, schema.judgeVersions.judgeId))
+    .where(eq(schema.traceVerdicts.traceId, trace.id))
+    .orderBy(schema.judges.slug)
+
+  return { ...trace, verdicts }
+}

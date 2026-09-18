@@ -18,6 +18,7 @@ import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
 import { SectionNav } from './section-nav.tsx'
 import { useSurface } from './surface.ts'
+import { TraceDrawer } from './trace-drawer.tsx'
 
 /**
  * THE CONSOLE'S FRAME — a persistent top bar, and a sidebar that exists only inside a panel.
@@ -231,6 +232,12 @@ export const ConsoleShell = ({
           one to offer.
         */}
         {isStaff ? <CreatePanelDialog /> : null}
+        {/*
+          The trace drawer, opened by `?trace=` from any trace table row — mounted once here
+          for the same reason as the dialog, and staff-only for the same reason: its read is
+          `requireRole('admin', 'engineer')` on the server (Deviation 75).
+        */}
+        {isStaff ? <TraceDrawer /> : null}
       </div>
     </div>
   )

@@ -1583,6 +1583,18 @@ one PR would have been very large for a repository meant to be read.
     infinite query re-reads every loaded page, so after **Load older** it pauses, says so, and
     offers **Back to latest**. Measured: exactly one read per interval.
 
+75. **Trace detail was built, as a drawer (stakeholder, 2026-09-18).** Parked on 2026-09-16 with
+    three blockers; two dissolved on inspection. `GET /internal/traces/:id` is staff-only from
+    the start (`requireRole('admin', 'engineer')` on that route alone — the list's open guard,
+    Deviation 32, is untouched), which removes the annotator-exposure blocker; and harvest
+    blocker 2 (confidence shown to annotators) does not arise, because annotators get no console
+    at M4. The third — reading a customer's artifact as an audit event — is noted in the route
+    and left for M8, which owns the audit vocabulary. The drawer opens by `?trace=` from any
+    trace-table row (a real link stretched across the row, so it is keyboard-reachable without a
+    handler on `<tr>`), shows Input, then Judges — or "no judges ran" for a collecting panel —
+    then Details, and does not render `raw_response`. Tests: a judged trace returns its judge's
+    verdict and rationale, a collecting one an empty list, another org's is 404, an annotator 403.
+
 ---
 
 ## Open questions for the human
@@ -1596,7 +1608,11 @@ nothing to carry:
    plan says visible-but-inert, on the argument that it makes the app's direction legible. The
    counter-argument is that a console full of dead links reads as unfinished in a demo, which
    is the one context this project is optimised for. Decide at the 6b review.
-2. **Does the trace table get the harvest's design decisions applied** (judge and human as
+2. **ANSWERED 2026-09-18 (stakeholder), in three parts.** The table gets PAGINATION and a live
+   refresh now (Deviation 74) and a trace DRAWER now (Deviation 75); judge-vs-human columns and
+   derived agreement wait for M5, when human labels exist to put in them. Sort/filter by key
+   stays unscheduled, now behind pagination rather than in place of it.
+   Original question, kept: **Does the trace table get the harvest's design decisions applied** (judge and human as
    separate columns, agreement derived, raw payloads expanding rather than inline), or does it
    stay a plain table until M5? The harvest's `console-trace-explorer` notes are usable but
    reference the retired `cls_` vocabulary, and its Q1 — ten columns will not fit a laptop

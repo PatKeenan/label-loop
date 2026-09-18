@@ -42,6 +42,12 @@ export type ConsoleSearch = {
    * the one piece of view state that has more than one way in.
    */
   new?: true | undefined
+  /**
+   * The trace open in the drawer (Deviation 75), on the Traces section or the Overview. In the
+   * URL for the same reasons as `new`: back closes it, reload keeps it, and a link to one trace
+   * is shareable — which is most of the point of being able to look at one.
+   */
+  trace?: string | undefined
 }
 
 /**
@@ -55,7 +61,10 @@ export type ConsoleSearch = {
 export const validateConsoleSearch = ({
   org,
   new: isNew,
+  trace,
 }: Record<string, unknown>): ConsoleSearch => ({
+  // A trace id or nothing — anything else would only produce a not-found drawer.
+  trace: typeof trace === 'string' && trace.startsWith('tr_') ? trace : undefined,
   // An empty `?org=` is treated as absent rather than as a slug nothing matches, so a client
   // that builds the URL from an unset value lands on the default org instead of on a
   // not-found state that blames the person for a bug in a link.
