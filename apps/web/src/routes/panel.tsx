@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { LockIcon } from 'lucide-react'
-import { panelQuery } from '../api/queries.ts'
+import { panelQuery, tracesQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Gate } from '../components/shell/gate.tsx'
 import { issuedKeyFor } from '../components/shell/issued-key.ts'
@@ -8,6 +9,10 @@ import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
 import { Snippet } from '../components/shell/snippet.tsx'
 import { Statement } from '../components/shell/statement.tsx'
+import { TraceTable } from './traces.tsx'
+
+/** How many traces the Overview shows before "View all". */
+const RECENT_TRACES = 5
 
 /**
  * The scope line and title every panel section shares. The shell has already resolved the
@@ -24,8 +29,9 @@ const usePanel = () => {
 /**
  * A PANEL'S OVERVIEW — its home, and at M4 its onboarding.
  *
- * The order is the decision (6c decision 2): state, then the snippet, then progress toward
- * the gate — **what to do, how to do it, what it unlocks**. Nothing else on the panel is
+ * Until the first trace, the order is 6c decision 2's: state, progress toward the gate, then
+ * the snippet — **what to do, how to do it, what it unlocks**. From the first trace the snippet
+ * gives way to Recent traces and moves to Keys (Deviation 65). Nothing else on the panel is
  * dressed up as available, because nothing else IS: judges are locked until an eval pass
  * exists (ADR-0061) and annotation arrives at M5.
  *
@@ -37,6 +43,15 @@ export const PanelOverviewPage = () => {
   const read = useQuery({
     ...panelQuery(resolved?.orgId ?? '', resolved?.panel.slug ?? ''),
     enabled: resolved !== null,
+    // Re-read while collecting, so the count climbs as calls land — "watch traces arrive"
+    // is the M4 demo's own line, and a gate that only moves on reload does not show it.
+    refetchInterval: (query) => (query.state.data?.state === 'collecting' ? 5_000 : false),
+  })
+  const hasTraffic = (read.data?.trace_count ?? 0) > 0
+  const recent = useQuery({
+    ...tracesQuery(resolved?.orgId ?? '', resolved?.panel.id ?? '', RECENT_TRACES),
+    enabled: resolved !== null && hasTraffic,
+    refetchInterval: 5_000,
   })
 
   if (resolved === null) return null
@@ -76,11 +91,55 @@ export const PanelOverviewPage = () => {
       {collecting ? <Gate traceCount={data.trace_count} /> : null}
 
       {/*
-        The key is shown only on the visit that CREATED this panel. It is held in memory by
-        the create flow and never re-fetched, because it is never stored — see `issued-key.ts`.
-        On any later visit the snippet renders with a placeholder and says where to get one.
+        TWO MODES, switched by DATA rather than by a dismiss button (Deviation 65).
+
+        Before the first trace, the Overview is onboarding: the snippet is the page, because
+        getting one call through is the only job. From the first trace, "your first call" is no
+        longer true, so the snippet moves to Keys — where someone holding a key and an endpoint
+        already is — and its place goes to what the traffic looks like. One quiet line keeps
+        the way to it.
       */}
-      <Snippet panelId={data.id} apiKey={issuedKeyFor(data.id)} />
+      {hasTraffic ? (
+        <section aria-labelledby="recent-title" className="flex flex-col gap-[var(--gap-stack)]">
+          <div className="flex items-baseline gap-[var(--gap-inline)]">
+            <h2
+              id="recent-title"
+              className="m-0 text-title font-semibold tracking-[var(--tracking-snug)]"
+            >
+              Recent traces
+            </h2>
+            <Link
+              to="/p/$panelSlug/traces"
+              params={{ panelSlug: panel.slug }}
+              search={{ org: orgSlug }}
+              className="ml-auto text-ui text-muted-foreground hover:text-foreground"
+            >
+              View all traces →
+            </Link>
+          </div>
+          {recent.data === undefined ? (
+            <p className="m-0 text-muted-foreground">Loading…</p>
+          ) : (
+            <TraceTable traces={recent.data} />
+          )}
+          <p className="m-0 text-ui text-muted-foreground">
+            The integration snippet is on{' '}
+            <Link
+              to="/p/$panelSlug/keys"
+              params={{ panelSlug: panel.slug }}
+              search={{ org: orgSlug }}
+              className="text-foreground underline underline-offset-4"
+            >
+              Keys
+            </Link>
+            .
+          </p>
+        </section>
+      ) : (
+        // The key is shown only on the visit that CREATED this panel. It is held in memory by
+        // the create flow and never re-fetched, because it is never stored — `issued-key.ts`.
+        <Snippet panelId={data.id} apiKey={issuedKeyFor(data.id)} variant="first-call" />
+      )}
 
       {collecting ? null : (
         <section className="flex flex-col gap-[var(--gap-inline)] rounded-lg border bg-card px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">

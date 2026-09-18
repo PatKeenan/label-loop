@@ -20,25 +20,22 @@ export const Gate = ({ traceCount }: { traceCount: number }) => {
   // Against the FLOOR, not the target: the bar this fills is the one that unlocks something.
   const pct = Math.min(100, Math.round((traceCount / ANNOTATION_FLOOR) * 100))
 
+  // Deliberately short. It was a headline, two paragraphs and a mark repeating the one in the
+  // page head; the count and the bar are the content, and one line says what they lead to.
+  // The integrator's note about `state: "collecting"` moved beside the snippet it concerns.
   return (
     <section className="flex flex-col gap-[var(--gap-stack)] rounded-lg border bg-card px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">
-      <div className="flex flex-wrap items-center gap-[var(--gap-inline)]">
-        <Mark tone="success">{open ? 'ready to annotate' : 'collecting'}</Mark>
-        <h2 className="m-0 text-title font-semibold tracking-[var(--tracking-snug)]">
-          {open
-            ? `${traceCount} traces collected — annotation is open`
-            : 'Send traffic — that is all there is to do yet'}
-        </h2>
-      </div>
-
-      <div className="flex flex-col gap-[var(--gap-tight)]">
+      <div className="flex flex-col gap-[var(--gap-inline)]">
         <div className="flex flex-wrap items-baseline gap-[var(--gap-tight)]">
-          <strong className="font-mono text-title tabular-nums">{traceCount}</strong>
+          <strong className="font-mono text-display tabular-nums">{traceCount}</strong>
           <span className="text-muted-foreground">
-            {open
-              ? `traces · ${ANNOTATION_TARGET} is where a first pass is worth doing`
-              : `of ${ANNOTATION_FLOOR} traces before annotation opens`}
+            {open ? 'traces collected' : `of ${ANNOTATION_FLOOR} traces before annotation opens`}
           </span>
+          {open ? (
+            <Mark tone="success" className="ml-auto">
+              ready to annotate
+            </Mark>
+          ) : null}
         </div>
         <div
           className="h-[var(--space-2)] overflow-hidden rounded-[var(--radius-pill)] bg-muted"
@@ -52,35 +49,20 @@ export const Gate = ({ traceCount }: { traceCount: number }) => {
         </div>
       </div>
 
-      {open ? (
-        <>
-          <p className="m-0 text-body">
-            An expert reads these traces one at a time and says what went wrong in their own words.
-            Nothing is sorted into categories yet — the categories come out of what they write.
-          </p>
-          <p className="m-0 text-body text-muted-foreground">
-            The panel keeps collecting while they work. <strong>Judges stay locked</strong> until
-            those notes are clustered into a taxonomy, because a judge is created from a category,
-            and the category is what ties it back to the traces that produced it.
-          </p>
-          <Data>annotation lands at M5</Data>
-        </>
-      ) : (
-        <>
-          <p className="m-0 text-body text-muted-foreground">
-            {ANNOTATION_FLOOR} is the floor, not the goal —{' '}
-            <strong>{ANNOTATION_TARGET} is where a first pass is worth doing</strong>, because that
-            is where an expert stops seeing one-offs and starts seeing patterns. Nothing is thrown
-            away below it: every trace you send is kept and annotated later.
-          </p>
-          <p className="m-0 text-body text-muted-foreground">
-            Every call is stored and nothing is judged, so responses carry{' '}
-            <Data className="text-foreground">state: "collecting"</Data> and no verdict. A step that
-            blocks on a failure is never told everything is fine; treat it as a pass while you
-            integrate.
-          </p>
-        </>
-      )}
+      <p className="m-0 text-body text-muted-foreground">
+        {open ? (
+          <>
+            An expert can now review these and say what went wrong in their own words; judges are
+            written from those notes. <Data>Annotation lands at M5.</Data>
+          </>
+        ) : (
+          <>
+            Annotation opens at {ANNOTATION_FLOOR}.{' '}
+            <strong className="text-foreground">{ANNOTATION_TARGET}</strong> is where a first pass
+            is worth doing — every trace is kept either way.
+          </>
+        )}
+      </p>
     </section>
   )
 }

@@ -4,9 +4,10 @@ import { toast } from 'sonner'
 import { api } from '../api/client.ts'
 import { keysQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
-import { rememberIssuedKey } from '../components/shell/issued-key.ts'
+import { issuedKeyFor, rememberIssuedKey } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
+import { Snippet } from '../components/shell/snippet.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
 import { Button } from '../components/ui/button.tsx'
 import {
@@ -225,6 +226,12 @@ export const PanelKeysPage = () => {
           </table>
         </div>
       )}
+
+      {/*
+        The integration snippet's standing home once a panel has traffic (Deviation 65). A
+        key issued above feeds it for this tab — the one other moment a plaintext exists.
+      */}
+      <Snippet panelId={panel.id} apiKey={issuedKeyFor(panel.id)} variant="reference" />
 
       {/*
         THE REVEAL. No close button, and Escape and the backdrop do nothing — dismissing it

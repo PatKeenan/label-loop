@@ -104,7 +104,23 @@ elif data["passed"] is False:
 # data["trace_id"] is the record an expert annotates later.`
 }
 
-export const Snippet = ({ panelId, apiKey }: { panelId: string; apiKey: string | null }) => {
+/**
+ * `first-call` is the Overview's onboarding, before any trace exists. `reference` is the same
+ * code as a standing reference on Keys, once traffic has arrived and "first" is no longer true
+ * — the snippet moves there rather than vanishing, because a key and an endpoint are exactly
+ * what someone on the Keys screen is holding.
+ */
+export type SnippetVariant = 'first-call' | 'reference'
+
+export const Snippet = ({
+  panelId,
+  apiKey,
+  variant,
+}: {
+  panelId: string
+  apiKey: string | null
+  variant: SnippetVariant
+}) => {
   const [language, setLanguage] = useState<Language>('curl')
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState<'key' | 'code' | null>(null)
@@ -137,24 +153,31 @@ export const Snippet = ({ panelId, apiKey }: { panelId: string; apiKey: string |
 
   return (
     <section className="flex flex-col gap-[var(--gap-stack)] rounded-lg border bg-card px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">
-      <h2 className="m-0 text-title font-semibold tracking-[var(--tracking-snug)]">
-        Send your first call
-      </h2>
+      <div className="flex flex-col gap-[var(--gap-tight)]">
+        <h2 className="m-0 text-title font-semibold tracking-[var(--tracking-snug)]">
+          {variant === 'first-call' ? 'Send your first call' : 'Call this panel'}
+        </h2>
+        {/*
+          The one thing an integrator must know while a panel collects, moved here from the
+          gate card: it is about the RESPONSE this code receives, so it belongs beside the code.
+        */}
+        <p className="m-0 text-body text-muted-foreground">
+          While the panel collects, responses carry{' '}
+          <Data className="text-foreground">state: "collecting"</Data> and no verdict — treat that
+          as a pass.
+        </p>
+      </div>
 
       {apiKey === null ? (
         <p className="m-0 text-body text-muted-foreground">
-          This panel's key was shown once, when the panel was created, and is not recoverable —
-          LabelLoop stores only a hash of it, so not even we can put it back.{' '}
-          <strong>Issue a new key from Keys</strong> and this snippet becomes runnable with it, for
-          as long as this tab is open.
+          {variant === 'first-call'
+            ? 'This panel’s key was shown once, when it was created, and can’t be shown again. '
+            : 'A key is shown only when it’s issued, so the snippet uses YOUR_KEY. '}
+          <strong>Issue a key{variant === 'first-call' ? ' from Keys' : ' above'}</strong> and the
+          snippet fills in with it for as long as this tab is open.
         </p>
       ) : (
         <>
-          <p className="m-0 text-body">
-            Every panel is created with a key, so there is nothing else to set up.{' '}
-            <strong>This is the only time the key is shown</strong> — LabelLoop stores a hash of it.
-            Copy the snippet and the key travels with it.
-          </p>
           <div className="flex flex-wrap items-center gap-[var(--gap-inline)]">
             <Eyebrow>Key</Eyebrow>
             <Data className="min-w-0 flex-1 truncate text-foreground select-all">
@@ -170,8 +193,8 @@ export const Snippet = ({ panelId, apiKey }: { panelId: string; apiKey: string |
           <div className="flex items-start gap-[var(--gap-inline)] rounded-md border border-warning-line bg-warning-tint px-[var(--pad-field-x)] py-[var(--pad-field-y)]">
             <Mark tone="warning">shown once</Mark>
             <p className="m-0 text-body">
-              Once you leave this screen the full key can't be shown again — to you or anyone. If
-              it's lost, revoke it and issue another.
+              LabelLoop stores only a hash. Once this tab closes the full key can’t be shown again —
+              if it’s lost, revoke it and issue another.
             </p>
           </div>
         </>

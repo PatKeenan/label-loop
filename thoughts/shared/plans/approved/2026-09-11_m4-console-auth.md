@@ -603,9 +603,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - `apps/web/src/routes/traces.tsx` — extended, not replaced.
 
 ### Steps
-- [ ] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
+- [x] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
       build the real one: feature-detected rather than always rendered, and using the
-      redirect-after-401 below rather than a hard-coded `callbackURL`
+      redirect-after-401 below rather than a hard-coded `callbackURL` (Deviation 69)
 - [x] All three screens mount inside the phase 7 shell; none invents its own layout (the shell
       itself was rebuilt mid-phase — ADR-0062, Deviation 58)
 - [x] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). Merged as #69. A panel is created
@@ -627,12 +627,12 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [~] Wizard: panel details → judges → model picker → review — **DROPPED at the 6c review.**
       Creation is one step (name, slug, threshold); the model picker's UI moves to M6 with
       judge authoring, its API half having shipped in phase 4
-- [~] Trace table extended with the panel and judge context now available — panel and KEY names
-      added (Deviation 63). **Still org-wide**: scoping it to the open panel is not done. Judge
-      context is not added; that is open question 2's to decide, with sort/filter
-- [ ] Redirect-after-401 via `beforeLoad`
-- [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
-      server guard; it never replaces it — CONVENTIONS "Keys & auth")
+- [x] Trace table extended with the panel and judge context now available — KEY names added
+      (Deviation 63), and **scoped to the open panel** by a required `panel_id` (Deviation 66).
+      Judge context is not added; that is open question 2's to decide, with sort/filter
+- [x] Redirect-after-401 via `beforeLoad` (Deviations 67–68)
+- [x] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
+      server guard; it never replaces it — CONVENTIONS "Keys & auth") (Deviation 70)
 - [ ] **`FORBIDDEN` needs to stop meaning two things in the console.** Found in phase 2's
       manual verification: a GitHub account with no membership lands on *"Ask an owner of
       this organisation to grant you access"*, and there is no "this organisation" — the
@@ -1461,6 +1461,68 @@ one PR would have been very large for a repository meant to be read.
     `[0]` from shared tables with no ordering; panels created while driving the console now sort
     first. CI builds a fresh database and is unaffected. The queued task for the member-count test
     should cover this one too — same file, same cause.
+
+65. **The Overview changes mode at the first trace, and the snippet moves to Keys.** Raised by
+    the stakeholder while driving the M4 flow: after one call, the page still said *"Send your
+    first call"*, which was no longer true. The switch is DATA-driven (`trace_count > 0`), not a
+    dismiss button, and happens at ONE trace rather than at the 50-trace gate — the snippet's
+    job is done once a call works (stakeholder, 2026-09-18). Its place goes to Recent traces
+    (five, the same table component as Traces, with View all), and the snippet becomes *"Call
+    this panel"* on Keys, where a key and an endpoint are what the reader is holding. The gate
+    card lost its headline, a duplicate COLLECTING mark and two paragraphs; the integrator's
+    note about `state: "collecting"` moved beside the code it concerns. The Overview re-reads
+    every 5s while collecting, so the count visibly climbs — the demo's own line.
+
+66. **`GET /internal/traces` REQUIRES `panel_id`, rather than accepting it.** Traces is a section
+    inside a panel (ADR-0062), so no screen asks for an org's traces, and an optional filter
+    keeps alive a read nothing uses and every future caller could forget to narrow. Relaxing it
+    later is cheap. Another org's panel id answers an empty list — the org filter still applies,
+    and empty is what a real panel with no traffic says too, so it confirms nothing. The
+    sibling-panel test was mutation-checked: dropping the panel condition fails two tests.
+
+67. **TanStack Router merges a validator's result OVER the raw query string**, so a key the
+    validator omits keeps its unvalidated value. The first redirect check was therefore a no-op
+    — `?redirect=//evil.example/x` survived validation and only the router's own href
+    normalisation kept the result on-origin. The same bug had sat in phase 7's
+    `validateConsoleSearch`: `?org=` drew the not-a-member state its own comment said it
+    prevented. Every validator now returns every key, `undefined` when absent; tests assert the
+    key is PRESENT, since an omitted key passes `toBeUndefined`. `safeRedirect` runs again at
+    the point of use.
+
+68. **The first signed-out redirect hung the tab.** `<Navigate>` re-navigates whenever its props
+    object changes, and `search={{ redirect: location.href }}` is new on every render while
+    each navigation re-renders the layout. Replaced with `router.invalidate()` in an effect
+    keyed on a boolean, which re-runs the route's own `beforeLoad` — one place builds the
+    redirect. Sign-out clears the cache BEFORE navigating: `/login`'s `beforeLoad` would
+    otherwise find the old session cached and bounce straight back.
+
+69. **Login asks which doors exist; it draws BOTH conditionally, not only GitHub.**
+    `GET /internal/sign-in-methods` is public, registered before the guard but kept at the head
+    of the typed chain, and reads better-auth's built options rather than recomputing them from
+    config. The plan named only the GitHub button; the password form had the mirror-image
+    problem — drawn in production, where ADR-0049 disables it.
+
+    **Also found: `bun --hot` does not pick up route changes.** The API ran from source, as
+    Deviation 61 prescribes, and still served the old trace route and 401'd the new public one
+    until restarted. Running from source is necessary, not sufficient: restart it after a
+    route change.
+
+70. **Role-adaptive meant three gaps, not a new surface.** The shell already hid the console
+    from non-staff roles. What the UI still offered past the server: the `?new` dialog mounted
+    for any role (a form that could only end in FORBIDDEN), the panel list was requested for
+    roles the server refuses, and Organisation settings (M8) showed to every role though
+    ADR-0062 calls it admin-only. The org switcher also still opened UPWARD from the top bar
+    ADR-0062 moved it to — working only because Radix flips a colliding menu. `GET
+    /internal/traces` remains unguarded by role (Deviation 32), and the UI is stricter than the
+    server there by showing an annotator nothing.
+
+71. **The empty Home and the create dialog were redesigned at review, three rounds for the
+    dialog.** Home's empty state became a centred screen that draws the loop (the decision node
+    dashed, because a new panel only collects) with one action. The dialog went from an essay
+    (three-sentence description, mono hints 4px under their inputs, 46rem) to one sentence,
+    muted sans hints, 8px within a field and 24px between, 34rem with 32px edges. A muted
+    footer band was tried and REJECTED: on a dark surface a lighter fill reads as a raised
+    slab. All dialogs' overlays now blur as well as dim. No token was changed.
 
 ---
 

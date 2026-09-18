@@ -123,12 +123,14 @@ export const keysQuery = (orgId: string) =>
  * The panel is in the query key for the same reason the org is: two panels give the same URL
  * shape two different answers.
  */
-export const tracesQuery = (orgId: string, panelId: string) =>
+export const tracesQuery = (orgId: string, panelId: string, limit?: number) =>
   queryOptions({
-    queryKey: ['traces', orgId, panelId],
+    // `limit` in the key: the Overview's five and the Traces section's fifty are different
+    // answers, and sharing one entry would show one screen the other's page.
+    queryKey: ['traces', orgId, panelId, limit ?? 'default'],
     queryFn: async () => {
       const response = await api.internal.traces.$get(
-        { query: { panel_id: panelId } },
+        { query: { panel_id: panelId, ...(limit === undefined ? {} : { limit: String(limit) }) } },
         asOrg(orgId),
       )
       if (!response.ok) throw await apiErrorFrom(response)

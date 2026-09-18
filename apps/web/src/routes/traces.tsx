@@ -141,86 +141,98 @@ export const TracesPage = () => {
           <code>/v1/panels/{panel.id}/evaluate</code> and reload.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-data">
-            <thead>
-              <tr className="border-b border-border-strong text-left">
-                {COLUMNS.map(({ label, title }) => (
-                  <th
-                    key={label}
-                    // A column whose meaning is not obvious from its name says so on hover
-                    // rather than relying on the reader to already know. `title` is the
-                    // plainest thing that works on a table head; if more than one column
-                    // needs a richer explanation, that is phase 8's to design.
-                    {...(title === undefined ? {} : { title })}
-                    className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
-                  >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {traces.data.map((trace) => (
-                <tr key={trace.id} className="border-b border-border-soft">
-                  <Cell>
-                    <Data className="text-foreground">{trace.id}</Data>
-                  </Cell>
-                  <Cell>
-                    {trace.key_name === null ? (
-                      <Data className="text-foreground-faint">deleted</Data>
-                    ) : (
-                      <Data className="block max-w-[10rem] truncate" title={trace.key_name}>
-                        {trace.key_name}
-                      </Data>
-                    )}
-                  </Cell>
-                  <Cell>
-                    {/*
-                      The verdict is the one place on this row that earns colour — rule 4 of the
-                      approved tokens: ids and numbers stay achromatic, and colour appears only
-                      where it IS the finding. A NULL verdict is a COLLECTING panel, not a
-                      failure: nothing was judged, so there is nothing to pass or fail.
-                    */}
-                    <span className="flex items-center gap-[var(--gap-tight)]">
-                      {trace.passed === null ? (
-                        <Mark tone="neutral">collecting</Mark>
-                      ) : (
-                        <Mark tone={trace.passed ? 'success' : 'fail'}>
-                          {trace.passed ? 'pass' : 'fail'}
-                        </Mark>
-                      )}
-                      {/* `complete: false` means a scoring judge did not run, so the score
-                          beside it is real but partial — which the verdict alone cannot say. */}
-                      {trace.passed !== null && !trace.complete ? (
-                        <Mark tone="warning">partial</Mark>
-                      ) : null}
-                    </span>
-                  </Cell>
-                  <Cell>
-                    <Data className="tabular-nums">
-                      <span className="text-foreground">
-                        {trace.score === null ? '—' : trace.score.toFixed(2)}
-                      </span>
-                      {' / '}
-                      {trace.threshold.toFixed(2)}
-                    </Data>
-                  </Cell>
-                  <Cell>
-                    <span className="flex items-center gap-[var(--gap-tight)]">
-                      <Data title={trace.created_at}>{shortTime(trace.created_at)}</Data>
-                      {trace.recorded_at === null ? <Mark tone="neutral">pending</Mark> : null}
-                    </span>
-                  </Cell>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TraceTable traces={traces.data} />
       )}
     </>
   )
 }
+
+export type TraceRow = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof tracesQuery>['queryFn']>>
+>[number]
+
+/**
+ * The trace table, shared by the Traces section and the Overview's Recent traces — one
+ * rendering, so the five rows on the Overview are the same five rows at the top of Traces.
+ */
+export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => (
+  <div className="overflow-x-auto">
+    <table className="w-full border-collapse text-data">
+      <thead>
+        <tr className="border-b border-border-strong text-left">
+          {COLUMNS.map(({ label, title }) => (
+            <th
+              key={label}
+              // A column whose meaning is not obvious from its name says so on hover
+              // rather than relying on the reader to already know. `title` is the
+              // plainest thing that works on a table head; if more than one column
+              // needs a richer explanation, that is phase 8's to design.
+              {...(title === undefined ? {} : { title })}
+              className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] font-mono text-micro font-normal uppercase tracking-[var(--tracking-micro)] text-muted-foreground"
+            >
+              {label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {traces.map((trace) => (
+          <tr key={trace.id} className="border-b border-border-soft">
+            <Cell>
+              <Data className="text-foreground">{trace.id}</Data>
+            </Cell>
+            <Cell>
+              {trace.key_name === null ? (
+                <Data className="text-foreground-faint">deleted</Data>
+              ) : (
+                <Data className="block max-w-[10rem] truncate" title={trace.key_name}>
+                  {trace.key_name}
+                </Data>
+              )}
+            </Cell>
+            <Cell>
+              {/*
+                The verdict is the one place on this row that earns colour — rule 4 of the
+                approved tokens: ids and numbers stay achromatic, and colour appears only
+                where it IS the finding. A NULL verdict is a COLLECTING panel, not a
+                failure: nothing was judged, so there is nothing to pass or fail.
+              */}
+              <span className="flex items-center gap-[var(--gap-tight)]">
+                {trace.passed === null ? (
+                  <Mark tone="neutral">collecting</Mark>
+                ) : (
+                  <Mark tone={trace.passed ? 'success' : 'fail'}>
+                    {trace.passed ? 'pass' : 'fail'}
+                  </Mark>
+                )}
+                {/* `complete: false` means a scoring judge did not run, so the score
+                    beside it is real but partial — which the verdict alone cannot say. */}
+                {trace.passed !== null && !trace.complete ? (
+                  <Mark tone="warning">partial</Mark>
+                ) : null}
+              </span>
+            </Cell>
+            <Cell>
+              <Data className="tabular-nums">
+                <span className="text-foreground">
+                  {trace.score === null ? '—' : trace.score.toFixed(2)}
+                </span>
+                {' / '}
+                {trace.threshold.toFixed(2)}
+              </Data>
+            </Cell>
+            <Cell>
+              <span className="flex items-center gap-[var(--gap-tight)]">
+                <Data title={trace.created_at}>{shortTime(trace.created_at)}</Data>
+                {trace.recorded_at === null ? <Mark tone="neutral">pending</Mark> : null}
+              </span>
+            </Cell>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)
 
 const Cell = ({ children }: { children: React.ReactNode }) => (
   <td className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] align-middle whitespace-nowrap">
