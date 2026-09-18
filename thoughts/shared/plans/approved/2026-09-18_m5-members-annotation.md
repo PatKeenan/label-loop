@@ -122,7 +122,8 @@ Each phase is one branch and one PR (`feat/m5-p1-capabilities`, …), per CLAUDE
       org with that role, no SQL involved — verified by the stakeholder 2026-09-18 with a local
       verified account from `dev:account` (Deviation 16) in place of a second GitHub account;
       the invitation row is accepted and audited (`invitation.created`, `invitation.accepted`)
-- [ ] Change that member to **engineer** and back; remove them; the last admin cannot be demoted
+- [x] Change that member to **engineer** and back; remove them; the last admin cannot be demoted
+      — verified by the stakeholder 2026-09-18
 
 ---
 
