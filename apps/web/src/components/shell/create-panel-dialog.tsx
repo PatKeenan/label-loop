@@ -1,3 +1,4 @@
+import { DISPLAY_NAME_RULES, SLUG_RULES, slugify } from '@labelloop/contracts'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
@@ -16,6 +17,7 @@ import { Input } from '../ui/input.tsx'
 import { useConsoleContext } from './context.ts'
 import { rememberIssuedKey } from './issued-key.ts'
 import { Data, Eyebrow } from './mark.tsx'
+import { meetsRules, RuledField } from './rule-checklist.tsx'
 
 /**
  * CREATING A PANEL IS ONE STEP, AND IT IS A DIALOG (6c decision 1, ADR-0061; ADR-0062).
@@ -38,15 +40,13 @@ import { Data, Eyebrow } from './mark.tsx'
  * switcher's menu item — are both plain links, and the back button closes it.
  */
 
-/** Mirrors the server's `slugSchema`, so the field fails here rather than at the API. */
-const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
+/**
+ * What a HAND-TYPED slug becomes: lowercased, spaces turned to hyphens, and nothing else.
+ * Running the full `slugify` on every keystroke stripped a trailing hyphen the instant it was
+ * typed — so `my-slug` could not be typed at all — and silently "fixed" everything else, which
+ * left the rule checklist nothing to say. `slugify` still derives the slug from the name.
+ */
+const typedSlug = (value: string) => value.toLowerCase().replace(/ /g, '-')
 
 export const CreatePanelDialog = () => {
   const context = useConsoleContext()
@@ -118,14 +118,19 @@ export const CreatePanelDialog = () => {
     void navigate({ to: '.', search: { ...(search.org === undefined ? {} : { org: search.org }) } })
 
   const issues = create.error instanceof ApiError ? issuesOf(create.error) : {}
-  const slugValid = effectiveSlug !== '' && SLUG.test(effectiveSlug)
   const thresholdValue = Number(threshold)
   const thresholdValid =
     threshold !== '' &&
     Number.isFinite(thresholdValue) &&
     thresholdValue >= 0 &&
     thresholdValue <= 1
-  const submittable = name.trim() !== '' && slugValid && thresholdValid && !create.isPending
+  // The server's own rules (`@labelloop/contracts`) — this dialog once had a slug regex of its
+  // own that allowed a leading digit, which the server refused.
+  const submittable =
+    meetsRules(DISPLAY_NAME_RULES, name) &&
+    meetsRules(SLUG_RULES, effectiveSlug) &&
+    thresholdValid &&
+    !create.isPending
 
   return (
     // Dismissible on all three exits — Escape, the backdrop, Cancel — because abandoning a
@@ -181,7 +186,13 @@ export const CreatePanelDialog = () => {
             groups, separated by gaps that read as accidental.
           */}
           <div className="flex flex-col gap-[var(--space-6)] px-[var(--space-8)] pb-[var(--space-8)]">
-            <Field id="name" label="Name" error={issues.name}>
+            <RuledField
+              id="name"
+              label="Name"
+              rules={DISPLAY_NAME_RULES}
+              value={name}
+              error={issues.name}
+            >
               <Input
                 id="name"
                 value={name}
@@ -194,7 +205,7 @@ export const CreatePanelDialog = () => {
                 required
                 autoFocus
               />
-            </Field>
+            </RuledField>
 
             {/*
             Slug and threshold share a row: both are short, and neither needs the width. The
@@ -202,7 +213,14 @@ export const CreatePanelDialog = () => {
             slug is without a sentence explaining it.
           */}
             <div className="grid grid-cols-[1fr_7rem] items-start gap-[var(--gap-stack)]">
-              <Field id="slug" label="Slug" hint="Can’t be changed later." error={issues.slug}>
+              <RuledField
+                id="slug"
+                label="Slug"
+                hint="Can’t be changed later."
+                rules={SLUG_RULES}
+                value={effectiveSlug}
+                error={issues.slug}
+              >
                 <div // The wrapper wears the input's own border, fill and focus ring (from `ui/input.tsx`),
                   // so the prefix sits INSIDE the field rather than beside it.
                   className="flex h-9 min-w-0 items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
@@ -216,13 +234,13 @@ export const CreatePanelDialog = () => {
                     onChange={(event) => {
                       create.reset()
                       setSlugEdited(true)
-                      setSlug(slugify(event.target.value))
+                      setSlug(typedSlug(event.target.value))
                     }}
                     className="h-full border-0 bg-transparent pl-[var(--space-1)] font-mono shadow-none focus-visible:ring-0 dark:bg-transparent"
                     required
                   />
                 </div>
-              </Field>
+              </RuledField>
 
               <Field
                 id="threshold"

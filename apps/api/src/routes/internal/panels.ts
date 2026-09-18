@@ -1,4 +1,4 @@
-import { modelPinSchema } from '@labelloop/contracts'
+import { displayNameSchema, modelPinSchema, slugSchema } from '@labelloop/contracts'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
@@ -21,16 +21,11 @@ import { createPanel } from '../../services/create-panel.ts'
  */
 
 /**
- * Lowercase kebab-case. **This is public API surface, not an internal label**: a judge's slug
- * is the key in every `/v1` response — `judges["is-missing-repro"]` — and the name a
- * developer writes in their own code. It has to be something a person can type and a JSON
- * key can hold without quoting surprises.
+ * Slug and name rules are `@labelloop/contracts`' (`names.ts`), shared with the console's live
+ * checklist so the form can never promise what this route refuses. **A judge's slug is public
+ * API surface**: it is the key in every `/v1` response — `judges["is-missing-repro"]` — so its
+ * alphabet is as small as it can be.
  */
-const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-const slugSchema = z
-  .string()
-  .max(64)
-  .regex(SLUG, 'must be lowercase kebab-case, starting with a letter — e.g. `is-missing-repro`')
 
 /**
  * **A ceiling, and it is a cost control rather than a UX one.** Every `llm` judge in a submit
@@ -41,7 +36,7 @@ const MAX_JUDGES = 16
 
 const judgeSchema = z.object({
   slug: slugSchema,
-  name: z.string().trim().min(1).max(80),
+  name: displayNameSchema,
   // Refused with a reason rather than silently narrowed to `llm`: a client that sends
   // `code` deserves to learn why, not to get a judge it did not ask for.
   type: z.string().refine((value) => value === 'llm', {
@@ -62,7 +57,7 @@ const judgeSchema = z.object({
 const createBodySchema = z
   .object({
     slug: slugSchema,
-    name: z.string().trim().min(1).max(80),
+    name: displayNameSchema,
     threshold: z.number().finite().min(0).max(1),
     /**
      * OPTIONAL, and empty is the normal case (ADR-0060, ADR-0061).

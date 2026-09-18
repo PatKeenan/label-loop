@@ -343,6 +343,17 @@ describe('a member of nothing creates an organisation (ADR-0063)', () => {
     expect(parsed.data?.error.issues?.map((issue) => issue.path)).toContain('slug')
   })
 
+  test('a name with a text-direction override is a 422 on `name`, by the shared rule', async () => {
+    const cookie = await signIn(NO_ORG_EMAIL)
+    const response = await createOrg(cookie, { slug: 'spoofed', name: '\u202Eyek-dorp' })
+    expect(response.status).toBe(422)
+    const parsed = errorEnvelopeSchema.safeParse(await response.json())
+    // The same label the console's checklist shows beside the field.
+    expect(parsed.data?.error.issues).toEqual([
+      { path: 'name', message: 'No invisible or text-direction characters' },
+    ])
+  })
+
   test('creates the org, makes the creator its ADMIN, and records it — all three', async () => {
     const cookie = await signIn(FOUNDER_EMAIL)
     const response = await createOrg(cookie, { slug: FOUNDED_SLUG, name: 'Founded' })

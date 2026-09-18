@@ -1,3 +1,4 @@
+import { displayNameSchema } from '@labelloop/contracts'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
@@ -23,12 +24,11 @@ import { issueApiKey, revokeApiKey } from '../../services/api-keys.ts'
  * layer, never only in the UI"*).
  */
 
-/** Long enough to distinguish two clients, short enough not to be a description. */
-const MAX_NAME_LENGTH = 80
-
 const createBodySchema = z.object({
   panel_id: z.string().min(1),
-  name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
+  // The shared name rules — control and invisible characters refused, since a key name is
+  // exactly where a bidi-spoofed label (`prod-key` that is not) would do damage.
+  name: displayNameSchema,
 })
 
 /**

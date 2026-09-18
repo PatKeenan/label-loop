@@ -1539,6 +1539,26 @@ one PR would have been very large for a repository meant to be read.
     creating a second org was mutation-checked. The old no-org screen also had no way to sign
     out; the new one does.
 
+73. **Names and slugs got one set of rules, shared by the server and a live checklist.** Asked
+    whether anything stopped special characters, the audit found slugs already strict but names
+    accepting ANY Unicode — control characters (a newline breaks a table row, ESC rewrites a log
+    reader's terminal), bidi overrides ("Trojan Source": a key name that displays as `prod-key`
+    and is not) and zero-width characters. `@labelloop/contracts` `names.ts` now owns the rules;
+    the API validates org, panel, key and judge names with `displayNameSchema` (NFC-normalised,
+    any script and emoji allowed, ZWJ kept for emoji sequences) and slugs with `slugSchema`,
+    returning each broken rule's own label as the field issue; the console renders the SAME list
+    as a ✓/✕ checklist (stakeholder's request), shown while the field has focus or a rule is
+    broken. A test asserts the slug rules together equal the old regex exactly.
+
+    Three things surfaced doing it. **The create dialog's slug regex had drifted** — it allowed a
+    leading digit the server refused; the rules being shared is what closes that class. **A hyphen
+    could not be typed into a slug**: the field re-ran `slugify` per keystroke, stripping the
+    trailing hyphen as it was typed; hand-typed slugs are now only lowercased and de-spaced, and
+    the checklist says the rest. **The Write tool decoded `\uXXXX` escapes into literal
+    characters**, so `names.ts` briefly held a real RIGHT-TO-LEFT OVERRIDE inside a comment —
+    the attack this rule exists to refuse, in its own source. Caught by reading the diff; every
+    such character is now an escape, and a scan found no others in the touched files.
+
 ---
 
 ## Open questions for the human

@@ -1,3 +1,4 @@
+import { displayNameSchema, slugSchema } from '@labelloop/contracts'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
@@ -23,12 +24,13 @@ import { createOrg } from '../../services/create-org.ts'
  * (`docs/PARKING_LOT.md`).
  */
 
-/** Lowercase kebab-case: it appears in the console's URL as `?org=`. Globally unique. */
-const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-
+/**
+ * The shared rules (`@labelloop/contracts` `names.ts`), which the console renders as a live
+ * checklist. The slug appears in the console's URL as `?org=` and is globally unique.
+ */
 const createBodySchema = z.object({
-  slug: z.string().max(64).regex(SLUG, 'must be lowercase kebab-case, starting with a letter'),
-  name: z.string().trim().min(1).max(80),
+  slug: slugSchema,
+  name: displayNameSchema,
 })
 
 export const createOrgRoutes = () =>

@@ -1,4 +1,6 @@
+import { DISPLAY_NAME_RULES } from '@labelloop/contracts'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { cn } from 'cn'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '../api/client.ts'
@@ -7,6 +9,7 @@ import { useConsoleContext, usePanelContext } from '../components/shell/context.
 import { issuedKeyFor, rememberIssuedKey } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
+import { meetsRules, RuleChecklist } from '../components/shell/rule-checklist.tsx'
 import { Snippet } from '../components/shell/snippet.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
 import { Button } from '../components/ui/button.tsx'
@@ -125,15 +128,32 @@ export const PanelKeysPage = () => {
             issue.mutate()
           }}
         >
-          <Input
-            aria-label="Key name"
-            placeholder="What will use it"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="w-[14rem]"
-            required
-          />
-          <Button type="submit" disabled={name.trim() === '' || issue.isPending}>
+          {/*
+            The shared name rules, as a checklist that floats under the input while it has focus
+            or a rule is broken — inline in the page head there is no room for it to push the
+            layout down. Same rules the server validates `name` with.
+          */}
+          <div className="group relative">
+            <Input
+              aria-label="Key name"
+              placeholder="What will use it"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="w-[14rem]"
+              required
+            />
+            <RuleChecklist
+              rules={DISPLAY_NAME_RULES}
+              value={name}
+              className={cn(
+                'absolute top-full right-0 z-10 mt-[var(--gap-tight)] w-max rounded-md border bg-popover px-[var(--pad-field-x)] py-[var(--pad-field-y)] shadow-md',
+                name !== '' && !meetsRules(DISPLAY_NAME_RULES, name)
+                  ? ''
+                  : 'hidden group-focus-within:flex',
+              )}
+            />
+          </div>
+          <Button type="submit" disabled={!meetsRules(DISPLAY_NAME_RULES, name) || issue.isPending}>
             {issue.isPending ? 'Issuing…' : 'Issue key'}
           </Button>
         </form>

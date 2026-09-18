@@ -1,3 +1,4 @@
+import { DISPLAY_NAME_RULES, SLUG_RULES, slugify } from '@labelloop/contracts'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -5,20 +6,17 @@ import { api, auth } from '../api/client.ts'
 import { meQuery } from '../api/queries.ts'
 import { forgetIssuedKeys } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow } from '../components/shell/mark.tsx'
+import { meetsRules, RuledField } from '../components/shell/rule-checklist.tsx'
 import { Button } from '../components/ui/button.tsx'
 import { Input } from '../components/ui/input.tsx'
 import { ApiError, apiErrorFrom } from '../errors/api-error.ts'
 
-/** Mirrors the server's org slug rule, so the field fails here rather than at the API. */
-const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^[^a-z]+/, '')
-    .replace(/-+$/g, '')
-    .slice(0, 64)
+/**
+ * What a HAND-TYPED slug becomes: lowercased, spaces turned to hyphens, and nothing else — the
+ * checklist says what is still wrong. Full `slugify` on every keystroke made a hyphen
+ * untypeable (it stripped the trailing one as it was typed).
+ */
+const typedSlug = (value: string) => value.toLowerCase().replace(/ /g, '-')
 
 /**
  * CREATE YOUR ORGANISATION — what a member of nothing sees, instead of a dead end (ADR-0063).
@@ -73,7 +71,11 @@ export const CreateOrgPage = ({ email }: { email: string }) => {
     create.error instanceof ApiError
       ? Object.fromEntries(create.error.issues.map((issue) => [issue.path, issue.message]))
       : {}
-  const submittable = name.trim() !== '' && SLUG.test(effectiveSlug) && !create.isPending
+  // The server's own rules (`@labelloop/contracts`), so "enabled" means "will be accepted".
+  const submittable =
+    meetsRules(DISPLAY_NAME_RULES, name) &&
+    meetsRules(SLUG_RULES, effectiveSlug) &&
+    !create.isPending
 
   return (
     <div className="flex w-full max-w-[30rem] flex-col items-center gap-[var(--space-6)]">
@@ -94,7 +96,13 @@ export const CreateOrgPage = ({ email }: { email: string }) => {
           </p>
         </div>
 
-        <Field id="org-name" label="Name" error={issues.name}>
+        <RuledField
+          id="org-name"
+          label="Name"
+          rules={DISPLAY_NAME_RULES}
+          value={name}
+          error={issues.name}
+        >
           <Input
             id="org-name"
             value={name}
@@ -107,21 +115,28 @@ export const CreateOrgPage = ({ email }: { email: string }) => {
             required
             autoFocus
           />
-        </Field>
+        </RuledField>
 
-        <Field id="org-slug" label="Slug" hint="Can’t be changed later." error={issues.slug}>
+        <RuledField
+          id="org-slug"
+          label="Slug"
+          hint="Can’t be changed later."
+          rules={SLUG_RULES}
+          value={effectiveSlug}
+          error={issues.slug}
+        >
           <Input
             id="org-slug"
             value={effectiveSlug}
             onChange={(event) => {
               create.reset()
               setSlugEdited(true)
-              setSlug(slugify(event.target.value))
+              setSlug(typedSlug(event.target.value))
             }}
             className="font-mono"
             required
           />
-        </Field>
+        </RuledField>
 
         <div className="flex flex-col gap-[var(--gap-inline)]">
           <Button type="submit" disabled={!submittable}>
@@ -153,31 +168,3 @@ export const CreateOrgPage = ({ email }: { email: string }) => {
     </div>
   )
 }
-
-const Field = ({
-  id,
-  label,
-  hint,
-  error,
-  children,
-}: {
-  id: string
-  label: string
-  hint?: string
-  error?: string | undefined
-  children: React.ReactNode
-}) => (
-  <div className="flex flex-col gap-[var(--gap-inline)]">
-    <label htmlFor={id} className="text-ui font-medium">
-      {label}
-    </label>
-    {children}
-    {error !== undefined ? (
-      <span role="alert" className="text-ui text-fail">
-        {error}
-      </span>
-    ) : hint !== undefined ? (
-      <span className="text-ui text-muted-foreground">{hint}</span>
-    ) : null}
-  </div>
-)
