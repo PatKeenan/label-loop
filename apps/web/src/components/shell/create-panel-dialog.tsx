@@ -150,9 +150,8 @@ export const CreatePanelDialog = () => {
         a sentence of mono hint under every field). The second cut the words but kept the
         dialog's panel padding — 20–24px, the right number for a card on a page and a cramped
         one for a modal the whole screen defers to — at 30rem, which read as narrow and
-        suffocating against the wide stage behind it. So: 34rem, 32px at the edges, a header
-        that has space of its own, and the actions in a footer band that closes the form off
-        instead of trailing after its last hint.
+        suffocating against the wide stage behind it. So: 34rem, 32px at the edges, and a
+        header with space of its own. The bands are divided by space, not by fill.
       */}
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[34rem]">
         <DialogHeader className="gap-[var(--gap-inline)] px-[var(--space-8)] pt-[var(--space-8)] pb-[var(--space-6)]">
@@ -253,7 +252,13 @@ export const CreatePanelDialog = () => {
             ) : null}
           </div>
 
-          <DialogFooter className="border-t bg-muted px-[var(--space-8)] py-[var(--space-5)]">
+          {/*
+            Same surface as the rest of the dialog, separated by SPACE alone. A muted footer
+            band was tried and rejected at review: on a dark surface a lighter fill does not
+            recede, it reads as a raised slab — a second surface colour in a small dialog with
+            no hierarchy to justify it.
+          */}
+          <DialogFooter className="px-[var(--space-8)] pb-[var(--space-8)]">
             <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
