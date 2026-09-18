@@ -57,6 +57,15 @@ switcher — see Q5.
 
 ## 2. The shell's fixed furniture
 
+> **Superseded in part by ADR-0062 (2026-09-17), after the shell was BUILT.** The frame is now a
+> **top bar at every level** — wordmark (links Home), the scope as a trail, the organisation, and an
+> account menu holding Organisation settings and Sign out — and a **sidebar that exists only inside
+> a panel**, carrying the panel switcher and that panel's sections. Home is a grid of panel cards;
+> Create panel is a dialog opened by `?new`. Rendered against a real organisation, the one-sidebar
+> model left the rail at Home roughly nine-tenths empty, which the drawing below could not show.
+> What follows is kept as the record of the approved design; the section nav, padlock/milestone
+> distinction, error surfaces and modal temperaments all stand unchanged.
+
 Two levels — **Home** (the organisation) and **a panel** — in **one persistent sidebar**. The
 sidebar does not swap its contents when a panel is opened; what it shows below the panel
 switcher depends on whether one is (R1).

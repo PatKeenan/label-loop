@@ -55,7 +55,11 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
+          // `gap-4` / `p-6` / `sm:max-w-lg` as shipped — Tailwind's raw scale, which does not
+          // respond to `data-density` at all. Pointed at our panel tokens so a dialog is
+          // spaced like every other panel in the console, and widened from 32rem: a form
+          // with field hints under each input was wrapping them to three lines.
+          'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-[var(--gap-stack)] rounded-lg border bg-background px-[var(--pad-panel-x)] py-[var(--pad-panel-y)] shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-[46rem]',
           className,
         )}
         {...props}
@@ -79,7 +83,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn('flex flex-col gap-2 text-center sm:text-left', className)}
+      className={cn('flex flex-col gap-[var(--gap-tight)] text-left', className)}
       {...props}
     />
   )
@@ -96,7 +100,10 @@ function DialogFooter({
   return (
     <div
       data-slot="dialog-footer"
-      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      className={cn(
+        'flex flex-col-reverse gap-[var(--gap-inline)] sm:flex-row sm:justify-end',
+        className,
+      )}
       {...props}
     >
       {children}

@@ -31,13 +31,34 @@ import { ApiError } from '../../errors/api-error.ts'
  */
 
 /** What the root route accepts in the query string. */
-export type ConsoleSearch = { org?: string }
+export type ConsoleSearch = {
+  org?: string
+  /**
+   * The create-panel dialog, open.
+   *
+   * In the URL rather than in component state because it has TWO triggers — Home's button and
+   * the panel switcher's menu item, which live in different trees — and because it then costs
+   * nothing to get right: the back button closes it, a reload keeps it, and the link is
+   * shareable. It is the same reasoning ADR-0047 gives for the org and the panel, applied to
+   * the one piece of view state that has more than one way in.
+   */
+  new?: true
+}
 
-export const validateConsoleSearch = ({ org }: Record<string, unknown>): ConsoleSearch =>
+export const validateConsoleSearch = ({
+  org,
+  new: isNew,
+}: Record<string, unknown>): ConsoleSearch => ({
   // An empty `?org=` is treated as absent rather than as a slug nothing matches, so a client
   // that builds the URL from an unset value lands on the default org instead of on a
   // not-found state that blames the person for a bug in a link.
-  typeof org === 'string' && org !== '' ? { org } : {}
+  ...(typeof org === 'string' && org !== '' ? { org } : {}),
+  // Present in any truthy spelling — `?new`, `?new=1`, `?new=true` — because a hand-typed URL
+  // should do the obvious thing, and absent otherwise so it never appears as `?new=false`.
+  ...(isNew === true || isNew === 'true' || isNew === '1' || isNew === ''
+    ? { new: true as const }
+    : {}),
+})
 
 /**
  * The resolved context, as a discriminated union so a caller cannot read `orgId` without

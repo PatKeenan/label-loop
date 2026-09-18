@@ -4,7 +4,6 @@ import { HomePage } from './routes/home.tsx'
 import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
 import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
-import { PanelCreatePage } from './routes/panel-create.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
 import { TracesPage } from './routes/traces.tsx'
 
@@ -23,7 +22,7 @@ import { TracesPage } from './routes/traces.tsx'
  * phase's — see `components/shell/context.ts` for the reasoning):
  *
  *     /                        Home, in the account's default org
- *     /panels/new              create a panel — one step
+ *     ?new                     the create-panel dialog, over whatever is underneath
  *     /p/$panelSlug            that panel's Overview
  *     /p/$panelSlug/judges     …its sections
  *     /p/$panelSlug/traces
@@ -67,13 +66,6 @@ const panelRoute = createRoute({
   component: PanelOverviewPage,
 })
 
-/** One step: name, slug, threshold. The wizard was deleted at its own review (ADR-0061). */
-const panelCreateRoute = createRoute({
-  getParentRoute: () => consoleRoute,
-  path: '/panels/new',
-  component: PanelCreatePage,
-})
-
 /** Read-only and locked at M4 — authoring lands at M6, beside the taxonomy (ADR-0061). */
 const panelJudgesRoute = createRoute({
   getParentRoute: () => consoleRoute,
@@ -110,7 +102,6 @@ export const router = createRouter({
   routeTree: rootRoute.addChildren([
     consoleRoute.addChildren([
       homeRoute,
-      panelCreateRoute,
       panelRoute,
       panelJudgesRoute,
       panelTracesRoute,

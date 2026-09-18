@@ -171,6 +171,10 @@ export const LoginPage = () => {
  * this is the engineer's door, not the annotator's — but there is no shell around it.
  */
 const Frame = ({ children }: { children: React.ReactNode }) => {
+  // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
+  // body text to 17px and read as everything simply getting bigger rather than as anything
+  // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
+  // compact density's SPACING was opened in tokens.css instead and its type left alone.
   useSurface('console')
   return (
     <div

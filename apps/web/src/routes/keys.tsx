@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { api } from '../api/client.ts'
 import { keysQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
+import { rememberIssuedKey } from '../components/shell/issued-key.ts'
 import { Data, Eyebrow, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
@@ -61,6 +62,16 @@ export const PanelKeysPage = () => {
       const issuedName = name.trim()
       setName('')
       setRevealed({ name: issuedName, plaintext: data.key })
+      /**
+       * Hand it to the panel's Overview as well, for this tab's lifetime.
+       *
+       * The snippet there is only RUNNABLE while a real key is in hand, and the plaintext
+       * exists exactly once — so a panel whose creation reveal has been left behind shows
+       * `YOUR_KEY` and nothing can change that. Issuing a key here is the one other moment a
+       * plaintext exists, and it would be strange to hold it in a modal and still send someone
+       * to a snippet that cannot run. Same in-memory store, same lifetime: gone on reload.
+       */
+      rememberIssuedKey(panelId, data.key)
       await queryClient.invalidateQueries({ queryKey: ['keys', orgId] })
     },
     onError: (error) => {

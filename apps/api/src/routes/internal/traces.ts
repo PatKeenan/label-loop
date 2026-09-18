@@ -47,6 +47,12 @@ export const createTraceRoutes = () =>
         traces: traces.map((trace) => ({
           id: trace.id,
           panel_id: trace.panelId,
+          panel_name: trace.panelName,
+          panel_slug: trace.panelSlug,
+          // Null when the key has been deleted outright. A revoked key still has its row and
+          // therefore still has its name — this is the harder case, where the credential is
+          // gone and the trace it authorised remains.
+          key_name: trace.keyName,
           // Null for a trace captured while the panel was COLLECTING: it convened no
           // judges, so there is no verdict and no score (ADR-0060).
           passed: trace.passed,

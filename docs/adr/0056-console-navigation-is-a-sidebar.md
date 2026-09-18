@@ -1,5 +1,8 @@
 # ADR-0056: Console navigation is a persistent left sidebar
 
+> **Partly superseded by ADR-0062 (2026-09-17):** the "two levels, one persistent sidebar" frame is
+> replaced by a persistent top bar and a sidebar that exists only inside a panel. The rest stands.
+
 **Status:** Accepted · **Date:** 2026-09-11 · **Milestone:** M4
 
 ## Decision

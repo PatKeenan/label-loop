@@ -94,7 +94,9 @@ export const PanelSwitcher = ({
           ))}
           {panels.data === undefined || panels.data.length === 0 ? null : <DropdownMenuSeparator />}
           <DropdownMenuItem
-            onSelect={() => void navigate({ to: '/panels/new', search })}
+            // Home, with the dialog open: you make a panel and land back on the list that
+            // now contains it, rather than in the panel you happened to be in before.
+            onSelect={() => void navigate({ to: '/', search: { ...search, new: true } })}
             className="flex min-h-[var(--row-min)] items-center"
           >
             <strong className="font-semibold">Create panel</strong>

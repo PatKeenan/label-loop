@@ -108,6 +108,22 @@ export const markTraceRecorded = async (
 export type TraceListItem = {
   id: string
   panelId: string
+  /**
+   * The names a PERSON reads, joined here rather than resolved client-side.
+   *
+   * A table of `pnl_01M2…` and `key_01M2…` is a table nobody can scan. The alternative — the
+   * console fetching panels and keys and joining them in the browser — is two extra round
+   * trips to rebuild a join the database already does, and it breaks the moment the list is
+   * paginated past what those two endpoints return.
+   *
+   * `keyName` is nullable because `api_key_id` is: a trace OUTLIVES the key that made it
+   * (`on delete set null`), since losing the evaluation record to a key's removal would be
+   * the worse failure. The console renders that as a revoked-and-removed credential rather
+   * than as a blank.
+   */
+  panelName: string
+  panelSlug: string
+  keyName: string | null
   /** Null when the panel was COLLECTING: it convened no judges (ADR-0060). */
   passed: boolean | null
   score: number | null
@@ -135,6 +151,9 @@ export const listTraces = async (
     .select({
       id: schema.traces.id,
       panelId: schema.traces.panelId,
+      panelName: schema.panels.name,
+      panelSlug: schema.panels.slug,
+      keyName: schema.apiKeys.name,
       passed: schema.traces.passed,
       score: schema.traces.score,
       complete: schema.traces.complete,
@@ -143,6 +162,10 @@ export const listTraces = async (
       createdAt: schema.traces.createdAt,
     })
     .from(schema.traces)
+    // INNER on the panel — a trace cannot exist without one (`on delete cascade`). LEFT on the
+    // key, which can be null: the trace outlives the credential that made it.
+    .innerJoin(schema.panels, eq(schema.panels.id, schema.traces.panelId))
+    .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
     .where(eq(schema.traces.orgId, orgId))
     // Matches `traces_org_created_idx`, so the list stays an index scan as the table grows.
     .orderBy(desc(schema.traces.createdAt))

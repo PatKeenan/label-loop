@@ -21,6 +21,8 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 5 — panel and judge creation | #63 | merged |
 > | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
 > | **7 — the frame, built** | #67 | **VERIFIED by the stakeholder 2026-09-16** |
+> | 8a — the API half | #69 | merged |
+> | **8b — the console half** | — | **PR open; steps below still to finish** |
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -604,8 +606,9 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
 - [ ] **Delete the throwaway GitHub button phase 2 added to `login.tsx`** (Deviation 11) and
       build the real one: feature-detected rather than always rendered, and using the
       redirect-after-401 below rather than a hard-coded `callbackURL`
-- [ ] All three screens mount inside the phase 7 shell; none invents its own layout
-- [ ] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). A panel is created
+- [x] All three screens mount inside the phase 7 shell; none invents its own layout (the shell
+      itself was rebuilt mid-phase — ADR-0062, Deviation 58)
+- [x] **ADR-0060 and ADR-0061, which land in this phase** (Deviation 41). Merged as #69. A panel is created
       COLLECTING and judges are not authored in the console at all:
       - `/v1` contract: an explicit state, `passed` and `score` nullable at the decision level
       - `evaluate`: a judgeless panel is a legitimate state — write the trace, run no judges,
@@ -614,17 +617,19 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
         and tests until M6 replaces it)
       - a key is issued WITH the panel, so the console's create flow is one step and the reveal
         is the panel's Overview rather than a dismissible modal
-- [ ] **Panel Overview, live at M4**: collecting state, progress toward the 50-trace annotation
+- [x] **Panel Overview, live at M4**: collecting state, progress toward the 50-trace annotation
       gate, and the integration snippet (curl / Node / Python, key masked on screen and real on
       the clipboard). A panel opens here
-- [ ] **Judges screen, read-only and locked** (Deviations 35, 41): the current version if one
+- [x] **Judges screen, read-only and locked** (Deviations 35, 41): the current version if one
       exists, a padlock and what opens it if not. Needs a panel read endpoint, org-scoped and
       role-guarded. **No authoring UI at M4** — that is M6, beside the taxonomy
-- [ ] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
+- [x] Keys screen: issue with one-time reveal, list with `last4`, revoke with confirmation
 - [~] Wizard: panel details → judges → model picker → review — **DROPPED at the 6c review.**
       Creation is one step (name, slug, threshold); the model picker's UI moves to M6 with
       judge authoring, its API half having shipped in phase 4
-- [ ] Trace table extended with the panel and judge context now available
+- [~] Trace table extended with the panel and judge context now available — panel and KEY names
+      added (Deviation 63). **Still org-wide**: scoping it to the open panel is not done. Judge
+      context is not added; that is open question 2's to decide, with sort/filter
 - [ ] Redirect-after-401 via `beforeLoad`
 - [ ] Role-adaptive: an annotator does not see engineer-only surfaces (the UI mirrors the
       server guard; it never replaces it — CONVENTIONS "Keys & auth")
@@ -1380,6 +1385,82 @@ Recorded as they happen; decision provenance, not a changelog.
     `details` element with no ring, so this is not a departure from the approved screen so much
     as the first time that spacing met a focusable control. **Worth noting for phase 8**: the
     same helper belongs on any menu it adds.
+
+### Phase 8
+
+Phase 8 is landing as TWO PRs, split at the seam that already existed: the API first (#69,
+merged), the console second. The phase stays one unit here; only the review was split, because
+one PR would have been very large for a repository meant to be read.
+
+55. **Neither requirement the API half removed was under test** — no test asserted the judgeless
+    refusal in `evaluate`, and none asserted `judges: min(1)` on create. Both could be deleted with
+    the suite staying green. It is the pattern of Deviations 17, 22 and 29 again, and it suggests
+    the gap is not random: **the rules that say "no" are the ones that go untested**, because the
+    happy path is written first and a refusal only surfaces when someone hits it. The new tests
+    target exactly that — a collecting panel reaches no provider, proved by a provider that FAILS
+    the test if touched rather than by counting calls.
+
+56. **`state: 'collecting' | 'judged'`, with `passed`/`score` null — not false.** ADR-0060
+    deferred the field names to this phase. A gate told `false` blocks everything; told `true` it
+    ships everything believing it is protected. `complete` stays true, vacuously.
+
+57. **The approved snippet predated the contract this phase shipped.** 6c's starter code told
+    callers to read `data.passed`, which is null while a panel collects. Every snippet now reads
+    `state` first. Deviation 40 said the snippet was "written against the contract"; the contract
+    moved underneath it in the same phase.
+
+58. **The frame was rebuilt: a top bar and a panel-only sidebar (ADR-0062).** Superseding the 6b
+    review's decisions 1 and 2, two days after they were approved, because rendering against a real
+    org left the rail at Home about nine-tenths empty. Create panel went page → dialog in the same
+    review. **Built directly rather than mocked first**, on the stakeholder's call — recorded in the
+    ADR so it is a decision rather than a lapse.
+
+59. **The console's SPACING was opened in `tokens.css`; its TYPE was not.** The first attempt at
+    "make it breathe" switched the console to the comfortable density, which moved body text from
+    13px to 17px and read as everything simply getting bigger. The fix edited the approved file's
+    compact block (console-only — comfortable is the annotator's): gap-stack 12→16, gap-section
+    24→32, panel padding 16→20/24, cell padding 6/8→8/12, row-min 30→32, and a new `--pad-bar-*`
+    for the bar. The same pass found spacing that was wrong independently of density: panel rows
+    8px apart carrying 28px of padding inside, stage sections a stack-gap apart when
+    `--gap-section` existed for exactly that and went unused, and a bar padded by a hard-coded
+    `--space-2` that ignored the axis entirely. Edited in `mockups/` first and copied; the ADR-0046
+    diff still reports zero lines lost.
+
+60. **A correlated subquery compiled to `traces.panel_id = traces.id` and answered 0 for every
+    panel.** Drizzle renders a column inside a `sql` template UNQUALIFIED, and inside a subquery an
+    unqualified name binds to the inner table whenever it exists there. The judge count beside it was
+    correct by luck — `panel_version_judges` has no `current_version_id` for its outer reference to
+    be captured by. Found because a card read 0 beside a database holding 4332; no type or error
+    could have shown it. Both are qualified now, and a test asserting real counts was
+    mutation-checked: reverting the qualification fails it.
+
+61. **The API in Docker was four days stale.** The first create from the console returned 422 —
+    `judges: expected array` — against source where judges were optional; the image was built
+    2026-09-13. The test suite ran against source and the browser against the container, so the two
+    were testing different code. Local development now runs the API from source (`bun run --cwd
+    apps/api dev`), and this is worth knowing before trusting any browser check against compose.
+
+62. **The one-time key is memory-only, and a key issued from Keys now feeds the snippet.** The
+    plaintext exists exactly once; it is held per-tab in `issued-key.ts` — never storage, never a
+    URL — and lost on reload, which is its correct lifetime. A panel whose creation reveal is behind
+    you shows `YOUR_KEY`, and "show the last four" cannot help: `last4` is stored, the other sixty
+    characters are not recoverable from a hash. So issuing a key from Keys, the one other moment a
+    plaintext exists, now makes the Overview snippet runnable — masked on screen, real on the
+    clipboard. The first draft masked the key row and put the plaintext in the code block; masking
+    one and not the other protected nothing.
+
+63. **The trace table went nine columns → six by merging, not deleting.** Adding the panel and key
+    NAMES (a server-side join; `key_name` is null when a key is deleted, since a trace outlives its
+    credential) made every cell wrap four lines deep — the harvest's Q1, *ten columns will not fit a
+    laptop*, arriving on schedule. Score and threshold became one cell (`1.00 / 0.50`), Recorded
+    folded into Created as a `pending` mark, and nothing reflows. **Sort and filter by key were asked
+    for and are unscheduled** — the trace explorer has no milestone, and open question 2 is still the
+    place to decide it.
+
+64. **`relations.test.ts` now has TWO failures against a local database, both seed-state.** Both read
+    `[0]` from shared tables with no ordering; panels created while driving the console now sort
+    first. CI builds a fresh database and is unaffected. The queued task for the member-count test
+    should cover this one too — same file, same cause.
 
 ---
 

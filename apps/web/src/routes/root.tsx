@@ -184,6 +184,10 @@ const Loading = () => (
  * `data-surface="console"` so the palette is the console's even where the frame is not.
  */
 const Outside = ({ children }: { children: React.ReactNode }) => {
+  // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
+  // body text to 17px and read as everything simply getting bigger rather than as anything
+  // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
+  // compact density's SPACING was opened in tokens.css instead and its type left alone.
   useSurface('console')
   return (
     <div

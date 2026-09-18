@@ -143,9 +143,10 @@ export const Snippet = ({ panelId, apiKey }: { panelId: string; apiKey: string |
 
       {apiKey === null ? (
         <p className="m-0 text-body text-muted-foreground">
-          This panel's key was issued when it was created and is not recoverable — LabelLoop stores
-          only a hash. Issue another from <strong>Keys</strong> and paste it in place of{' '}
-          <Data className="text-foreground">YOUR_KEY</Data>.
+          This panel's key was shown once, when the panel was created, and is not recoverable —
+          LabelLoop stores only a hash of it, so not even we can put it back.{' '}
+          <strong>Issue a new key from Keys</strong> and this snippet becomes runnable with it, for
+          as long as this tab is open.
         </p>
       ) : (
         <>

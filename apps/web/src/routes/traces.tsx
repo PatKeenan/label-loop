@@ -46,23 +46,63 @@ import { LoadFailed } from '../components/shell/statement.tsx'
  * that stamping this is the job's ONLY effect today; metering (M2) and annotation sampling
  * (M5) are the work it exists to carry later.
  */
+/**
+ * SIX columns, down from nine — and the reduction is the fix, not narrower type.
+ *
+ * Adding the panel and key NAMES took this to nine columns of unbounded text, and every cell
+ * began wrapping: "Support reply gate / support-reply-gate" over four lines, rows four times
+ * their proper height, and a horizontal scrollbar under the lot. That is the harvest's own Q1
+ * arriving on schedule — *ten columns will not fit a laptop viewport* — and it is why the M4
+ * plan's open question 2 exists.
+ *
+ * Two merges rather than two deletions, because no information is actually dropped:
+ *
+ * - **Score and Threshold become one cell**, `1.00 / 0.50`. A score means nothing without the
+ *   bar it is measured against, so they were always one fact read across two columns.
+ * - **Recorded folds into Created.** Its only actionable state is `pending` — the follow-up
+ *   has not run — so it is a mark beside the timestamp rather than a column of near-identical
+ *   times. The exact recorded time is on hover.
+ *
+ * Everything is `whitespace-nowrap` and truncates, with the full value in a `title`: a table
+ * that reflows its rows to fit long content is a table you cannot scan down.
+ */
 const COLUMNS: readonly { label: string; title?: string }[] = [
   { label: 'Trace' },
-  { label: 'Panel' },
+  {
+    label: 'Panel',
+    title:
+      'The panel that judged this call. Phase 8 scopes this table to one panel, at which point this column goes.',
+  },
+  {
+    label: 'Key',
+    title:
+      'The API key that authorised the call — which client sent it. “deleted” when the key is gone; a trace outlives the credential that made it.',
+  },
   {
     label: 'Verdict',
     title:
-      'The panel decision. “partial” means a scoring judge did not run, so the score is real but incomplete.',
+      'The panel decision. “collecting” means the panel had no judges, so nothing was judged. “partial” means a scoring judge did not run.',
   },
-  { label: 'Score' },
-  { label: 'Threshold' },
   {
-    label: 'Recorded',
+    label: 'Score',
     title:
-      'When this evaluation’s asynchronous follow-up ran. “pending” means it has not yet — the decision above is unaffected either way.',
+      'The panel’s score, and the threshold it had to reach. “—” while collecting: a score over zero judges is undefined.',
   },
-  { label: 'Created' },
+  {
+    label: 'Created',
+    title:
+      'When the evaluation ran. “pending” means its asynchronous follow-up has not yet — the decision is unaffected either way.',
+  },
 ]
+
+/** Short and local. An ISO string is precise and unreadable in a column you scan down. */
+const shortTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 export const TracesPage = () => {
   const queryClient = useQueryClient()
@@ -141,24 +181,33 @@ export const TracesPage = () => {
                     <Data className="text-foreground">{trace.id}</Data>
                   </Cell>
                   <Cell>
-                    <Data>{trace.panel_id}</Data>
+                    {/* The NAME, truncated, with the slug on hover — the slug is what appears
+                        in a URL and an API call, so it stays reachable without a second line
+                        that doubles every row's height. */}
+                    <span
+                      className="block max-w-[12rem] truncate"
+                      title={`${trace.panel_name} · ${trace.panel_slug}`}
+                    >
+                      {trace.panel_name}
+                    </span>
+                  </Cell>
+                  <Cell>
+                    {trace.key_name === null ? (
+                      <Data className="text-foreground-faint">deleted</Data>
+                    ) : (
+                      <Data className="block max-w-[10rem] truncate" title={trace.key_name}>
+                        {trace.key_name}
+                      </Data>
+                    )}
                   </Cell>
                   <Cell>
                     {/*
-                      The verdict is the one place on this row that earns colour — rule 4 of
-                      the approved tokens: numbers and ids stay achromatic, and colour appears
-                      only where it IS the finding. `complete: false` means a scoring judge did
-                      not run, so the score beside it is real but PARTIAL, which the panel
-                      decision alone cannot show — so it rides here as a second mark rather
-                      than as a column of yes/no nobody can interpret.
+                      The verdict is the one place on this row that earns colour — rule 4 of the
+                      approved tokens: ids and numbers stay achromatic, and colour appears only
+                      where it IS the finding. A NULL verdict is a COLLECTING panel, not a
+                      failure: nothing was judged, so there is nothing to pass or fail.
                     */}
                     <span className="flex items-center gap-[var(--gap-tight)]">
-                      {/*
-                        A NULL verdict is not a failure — it is a COLLECTING panel (ADR-0060):
-                        the trace was captured in full and no judge was convened, so there is
-                        nothing to pass or fail. Rendering it as `fail` would be the console
-                        inventing a verdict nobody reached, and `pass` would be worse.
-                      */}
                       {trace.passed === null ? (
                         <Mark tone="neutral">collecting</Mark>
                       ) : (
@@ -166,32 +215,27 @@ export const TracesPage = () => {
                           {trace.passed ? 'pass' : 'fail'}
                         </Mark>
                       )}
+                      {/* `complete: false` means a scoring judge did not run, so the score
+                          beside it is real but partial — which the verdict alone cannot say. */}
                       {trace.passed !== null && !trace.complete ? (
                         <Mark tone="warning">partial</Mark>
                       ) : null}
                     </span>
                   </Cell>
                   <Cell>
-                    {/* An em dash, not 0.00: a score over zero judges is undefined, and a
-                        number here would read as a real result. */}
-                    <Data className="text-foreground">
-                      {trace.score === null ? '—' : trace.score.toFixed(2)}
+                    <Data className="tabular-nums">
+                      <span className="text-foreground">
+                        {trace.score === null ? '—' : trace.score.toFixed(2)}
+                      </span>
+                      {' / '}
+                      {trace.threshold.toFixed(2)}
                     </Data>
                   </Cell>
                   <Cell>
-                    <Data>{trace.threshold.toFixed(2)}</Data>
-                  </Cell>
-                  <Cell>
-                    {/* Null until the P5 queue job has stamped it. Visible because "the async
-                        follow-up ran" is one of the things M0 is claiming works. */}
-                    {trace.recorded_at === null ? (
-                      <Mark tone="neutral">pending</Mark>
-                    ) : (
-                      <Data>{trace.recorded_at}</Data>
-                    )}
-                  </Cell>
-                  <Cell>
-                    <Data>{trace.created_at}</Data>
+                    <span className="flex items-center gap-[var(--gap-tight)]">
+                      <Data title={trace.created_at}>{shortTime(trace.created_at)}</Data>
+                      {trace.recorded_at === null ? <Mark tone="neutral">pending</Mark> : null}
+                    </span>
                   </Cell>
                 </tr>
               ))}
@@ -204,5 +248,7 @@ export const TracesPage = () => {
 }
 
 const Cell = ({ children }: { children: React.ReactNode }) => (
-  <td className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] align-middle">{children}</td>
+  <td className="px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] align-middle whitespace-nowrap">
+    {children}
+  </td>
 )

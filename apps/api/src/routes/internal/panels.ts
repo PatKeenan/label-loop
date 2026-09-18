@@ -248,6 +248,11 @@ export const createPanelRoutes = () =>
             slug: panel.slug,
             name: panel.name,
             current_version_id: panel.currentVersionId,
+            // The same fact `/v1` reports, from the same place: no judges on the live
+            // version means collecting (ADR-0060).
+            state: panel.judgeCount === 0 ? ('collecting' as const) : ('judged' as const),
+            judge_count: panel.judgeCount,
+            trace_count: panel.traceCount,
             created_at: panel.createdAt.toISOString(),
           })),
         },
