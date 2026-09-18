@@ -106,15 +106,16 @@ Each phase is one branch and one PR (`feat/m5-p1-capabilities`, …), per CLAUDE
   every write leaves its audit row.
 
 ### Steps
-- [ ] Migration + schema + `inv_` prefix
-- [ ] Members service with the last-admin guard and audit events
-- [ ] Claim in `/me`, verified-email only
-- [ ] Members routes with capability guards
-- [ ] Members screen under Organisation settings
-- [ ] Tests above, including a mutation check on the verified-email condition
+- [x] Migration + schema + `inv_` prefix
+- [x] Members service with the last-admin guard and audit events
+- [x] Claim in `/me`, verified-email only
+- [x] Members routes with capability guards
+- [x] Members screen under Organisation settings
+- [x] Tests above, including a mutation check on the verified-email condition
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build` — 880 pass;
+      the 2 failures are `relations.test.ts`'s seed-state ones (M4 Deviation 64)
 
 ### Manual verification
 - [ ] As admin, invite a second GitHub account as **annotator**; sign in as it → it lands in the
@@ -345,3 +346,33 @@ Recorded as they happen; decision provenance, not a changelog.
    it stays inert until phase 2.
 7. **`.claude/launch.json` gains an `api` configuration** (`bun run --cwd apps/api dev`), so the
    API runs from source beside the console in the preview pane, as CLAUDE.md prescribes.
+
+### Phase 2
+8. **`guest_expert` cannot be invited or granted** (`GRANTABLE_ROLES` in `@labelloop/contracts`
+   `members.ts`). The plan said "email + role" without narrowing; ADR-0072 makes a guest-expert
+   member a person who can do nothing, so offering the role would be offering a dead end. An
+   existing guest-expert member (only possible by SQL) shows their role read-only.
+9. **An EXPIRED open invitation is closed (stamped `revoked_at`) when the same email is invited
+   again.** The one-open-invitation-per-email index cannot include expiry — `now()` is not
+   immutable, so it cannot sit in a partial index's predicate — and without this, an expired
+   invitation would block re-inviting that person forever.
+10. **Audit events carry ids and roles, never the email.** The audit log cannot be edited, and an
+    address is what M8's erasure must be able to scrub; the invitation row holds the email and
+    the event points at it by `inv_` id.
+11. **The last-admin guard takes a row lock on the org's admins.** A check-then-write without it
+    lets two admins demote each other at the same moment and leave nobody. Tested at the service
+    level: over HTTP the second request is usually refused earlier, as a non-admin (403), so the
+    lock is only proven where both writes are already past the guard.
+12. **`GET /internal/members` is `member: [read]`** — engineers may read it (the plan gave them the
+    capability) — but the SCREEN is admin-only, per ADR-0070; the account-menu item is hidden,
+    not disabled, for anyone who cannot manage members.
+13. **The member write routes use Hono's built-in `validator('json')`**, not a hand-parse, so the
+    body's type reaches the console over RPC (a hand-parsed PATCH body is invisible to
+    `hc<AppType>` and did not typecheck). Its own 400 for a body that is not JSON reaches the
+    central handler as INTERNAL, so a small `wellFormedJson` middleware runs first and makes it
+    the usual 422 — tested.
+14. **CORS now allows PATCH and DELETE** (it allowed GET and POST only), which a role change and a
+    removal need from the browser. No test can catch this — `app.request()` sends no preflight.
+15. **Every local seeded account is UNVERIFIED** (`email_verified = false`; they were made with
+    email and password). So the manual check must use GitHub accounts, as the plan says — an
+    invitation to `annotator@labelloop.test` will correctly never be claimed.

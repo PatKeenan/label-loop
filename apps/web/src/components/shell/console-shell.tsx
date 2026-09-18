@@ -13,7 +13,7 @@ import {
 import type { Membership, OrgRole } from './context.ts'
 import { CreatePanelDialog } from './create-panel-dialog.tsx'
 import { forgetIssuedKeys } from './issued-key.ts'
-import { Data, Mark } from './mark.tsx'
+import { Data } from './mark.tsx'
 import { useMenuFocusReturn } from './menu-focus.ts'
 import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
@@ -151,24 +151,18 @@ export const ConsoleShell = ({
             </DropdownMenuTrigger>
             <DropdownMenuContent {...contentProps} align="end">
               {/*
-                Organisation settings: admins only, and ABSENT until M8, when Audit log or
-                Billing first ships (ADR-0059). Shown disabled with its milestone rather than
-                hidden, on the same reasoning as the inert nav sections — it keeps the console
-                honest about what is not built. But only to an ADMIN: showing an engineer a
-                disabled item they could never use tells them nothing about the product's
-                direction. This mirrors the server guard and never replaces it — an engineer
-                who types the URL must get FORBIDDEN from the server, which is M8's to build.
+                Organisation settings: only for a role that may manage members, and live since M5
+                with Members as its first screen (ADR-0070, amending ADR-0059's "absent until
+                M8"). Hidden, not disabled, for everyone else: an item they could never use tells
+                them nothing. This mirrors the server guard and never replaces it — the writes
+                behind the screen are `member: [manage]` on the server.
               */}
               {can(role, { member: ['manage'] }) ? (
                 <>
-                  <DropdownMenuItem
-                    disabled
-                    className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-inline)]"
-                  >
-                    Organisation settings
-                    <Mark tone="neutral" className="ml-auto">
-                      M8
-                    </Mark>
+                  <DropdownMenuItem asChild className="min-h-[var(--row-min)]">
+                    <Link to="/settings/members" search={{ org: orgSlug }}>
+                      Organisation settings
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>

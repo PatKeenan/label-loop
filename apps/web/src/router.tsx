@@ -12,6 +12,7 @@ import { validateConsoleSearch } from './components/shell/context.ts'
 import { HomePage } from './routes/home.tsx'
 import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
+import { MembersPage } from './routes/members.tsx'
 import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
 import { TracePage } from './routes/trace.tsx'
@@ -38,6 +39,7 @@ import { TracesPage } from './routes/traces.tsx'
  *     /p/$panelSlug/traces
  *     /p/$panelSlug/traces/$traceId   one trace, as a page
  *     /p/$panelSlug/keys
+ *     /settings/members        Organisation settings → Members (ADR-0070), admin-only
  *     ?org=acme-support        on any of the above
  *
  * `org` is validated on the ROOT route, so every route in the tree inherits it and a single
@@ -140,6 +142,13 @@ const panelKeysRoute = createRoute({
   component: PanelKeysPage,
 })
 
+/** Organisation settings' first screen, live at M5 rather than M8 (ADR-0070 amends ADR-0059). */
+const settingsMembersRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/settings/members',
+  component: MembersPage,
+})
+
 /**
  * Where "signed out" sends you. `?redirect=` is where to go afterwards, validated as a path
  * on this origin by `safeRedirect` — anything else is dropped, and absent means Home.
@@ -180,6 +189,7 @@ export const router = createRouter({
       panelTracesRoute,
       panelTraceRoute,
       panelKeysRoute,
+      settingsMembersRoute,
     ]),
     loginRoute,
   ]),

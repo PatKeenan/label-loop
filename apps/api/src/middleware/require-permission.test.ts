@@ -11,6 +11,7 @@ import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
 import { createJudgeRoutes } from '../routes/internal/judges.ts'
 import { createKeyRoutes } from '../routes/internal/keys.ts'
+import { createMemberRoutes } from '../routes/internal/members.ts'
 import { createModelRoutes } from '../routes/internal/models.ts'
 import { createPanelRoutes } from '../routes/internal/panels.ts'
 import { createTraceRoutes } from '../routes/internal/traces.ts'
@@ -49,6 +50,7 @@ const guardedRoutes = () =>
     .route('/', createModelRoutes())
     .route('/', createJudgeRoutes())
     .route('/', createTraceRoutes())
+    .route('/', createMemberRoutes())
 
 /** The real app, with the console routes mounted behind a stand-in for the session. */
 const hostWith = (role: OrgRole) => {
@@ -91,6 +93,7 @@ const hostWith = (role: OrgRole) => {
 }
 
 const STAFF: readonly OrgRole[] = ['admin', 'engineer']
+const ADMIN: readonly OrgRole[] = ['admin']
 
 type RouteCase = {
   /** As Hono registers it — what the coverage check below compares against. */
@@ -117,13 +120,21 @@ const MATRIX: readonly RouteCase[] = [
   // Deviation 32 closed: the LIST is staff-only now, not only the detail (ADR-0068).
   { route: 'GET /traces', url: '/traces?panel_id=pnl_x', admitted: STAFF },
   { route: 'GET /traces/:id', url: '/traces/tr_x', admitted: STAFF },
+  // Reading who is in the org is staff; changing it is the admin's alone (ADR-0070).
+  { route: 'GET /members', url: '/members', admitted: STAFF },
+  { route: 'POST /invitations', url: '/invitations', admitted: ADMIN },
+  { route: 'DELETE /invitations/:id', url: '/invitations/inv_x', admitted: ADMIN },
+  { route: 'PATCH /members/:userId', url: '/members/user_x', admitted: ADMIN },
+  { route: 'DELETE /members/:userId', url: '/members/user_x', admitted: ADMIN },
 ]
 
 const send = (role: OrgRole, { route, url }: RouteCase) => {
   const method = route.split(' ')[0] ?? 'GET'
   return hostWith(role).request(`/probe${url}`, {
     method,
-    ...(method === 'POST' ? { body: '{}', headers: { 'content-type': 'application/json' } } : {}),
+    ...(method === 'POST' || method === 'PATCH'
+      ? { body: '{}', headers: { 'content-type': 'application/json' } }
+      : {}),
   })
 }
 
