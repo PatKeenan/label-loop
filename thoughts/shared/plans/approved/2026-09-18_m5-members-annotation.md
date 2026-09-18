@@ -118,8 +118,10 @@ Each phase is one branch and one PR (`feat/m5-p1-capabilities`, …), per CLAUDE
       the 2 failures are `relations.test.ts`'s seed-state ones (M4 Deviation 64)
 
 ### Manual verification
-- [ ] As admin, invite a second GitHub account as **annotator**; sign in as it → it lands in the
-      org with that role, no SQL involved
+- [x] As admin, invite a second GitHub account as **annotator**; sign in as it → it lands in the
+      org with that role, no SQL involved — verified by the stakeholder 2026-09-18 with a local
+      verified account from `dev:account` (Deviation 16) in place of a second GitHub account;
+      the invitation row is accepted and audited (`invitation.created`, `invitation.accepted`)
 - [ ] Change that member to **engineer** and back; remove them; the last admin cannot be demoted
 
 ---
@@ -137,6 +139,13 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
   confidence, model, cost or trace id** (decision 8), minimal chrome. New: the binary is
   *acceptable / not acceptable* (no judge verdict to agree with — decision 2), a session progress
   line, and the empty and locked states (queue drained; panel below 50).
+  **Waiting states, as steered by the stakeholder 2026-09-18** (after seeing M4's "Nothing to
+  review yet" card): centred in the stage, never a card pinned to the top-left; few words; and
+  the locked state shows **progress toward the 50-trace gate for EACH panel** — a list, one row
+  per panel with its count and a bar ("34 of 50"), not only the panel closest to opening. With
+  one panel it reads as a single progress card. The counts come from phase 4's
+  `GET /internal/review/panels` (trace count and gate state are not operator signals, so
+  decision 8 does not withhold them).
 - `mockups/BRIEF.md` — the screen's status and review outcome.
 
 ### Steps
