@@ -1612,6 +1612,10 @@ one PR would have been very large for a repository meant to be read.
     links the trace itself, is what full width naturally is, and has room for what a trace gains
     at M5. Drawer and page render ONE `TraceDetailBody`, so they cannot drift. A trace id under
     the wrong panel's URL is "not in this panel", not shown under a heading it does not belong to.
+    Its header was then tightened at review: **← All traces** above the trail, every trail
+    segment a link (on every panel page, via `panelTrail`), and the trace ID as the trail's last,
+    unlinked segment in place of a "Trace" title — `PageHead`'s `titlePlacement="trail"`. Moving
+    the other pages to the same header is parked, to be decided after living with this one.
 
 ---
 

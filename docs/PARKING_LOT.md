@@ -166,6 +166,18 @@ closing the race ADR-0063 accepts (two concurrent creates by one member of nothi
 Creating a SECOND org, invites and member management belong with Organisation settings
 (ADR-0059), not here.
 
+## The page's name as the breadcrumb's last segment, everywhere (raised 2026-09-18)
+
+The trace page's header ends its trail with the page's own name — `demo / issue-triage /
+traces / tr_01M2…`, not a link, styled as the title — instead of a trail plus a separate title
+row (M4 plan, Deviation 75). It saves a row and reads "where you are" as the end of the path.
+Every other page still uses a trail above a title (`demo / issue-triage` then **Traces**).
+
+**Decide once the trace page has been lived with** (stakeholder: "we won't decide that now").
+The switch is one prop on `PageHead` (`titlePlacement="trail"`) per page, so it can move all
+at once. Two things to weigh: Home's trail would become a single segment (`demo / Panels`),
+and a section's name in the trail loses the title's size as the page's main landmark.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps

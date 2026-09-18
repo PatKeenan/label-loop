@@ -18,6 +18,8 @@ import { Data } from './mark.tsx'
 export const PageHead = ({
   scope,
   title,
+  titlePlacement = 'title',
+  meta,
   actions,
   back,
   className,
@@ -35,7 +37,17 @@ export const PageHead = ({
    * section (one trace) makes its trail the way back rather than a button across the screen.
    */
   scope: readonly React.ReactNode[]
+  /**
+   * The page's name. In `'title'` placement (every page today) it is its own row under the
+   * trail; in `'trail'` placement it is the trail's LAST segment — not a link, styled as the
+   * title — so "where you are" reads as the end of the path and the header loses a row. Only
+   * the trace page uses `'trail'` so far; moving every page over is a noted follow-up
+   * (docs/PARKING_LOT.md), decided once it has been lived with on one page.
+   */
   title: React.ReactNode
+  titlePlacement?: 'title' | 'trail'
+  /** Muted metadata under the header's name — the trace's timestamp, for one. */
+  meta?: React.ReactNode
   actions?: React.ReactNode
 } & Omit<React.ComponentProps<'header'>, 'title'>) => (
   <header
@@ -48,7 +60,7 @@ export const PageHead = ({
   >
     <div className="flex min-w-0 flex-col gap-[var(--gap-tight)]">
       {back === undefined ? null : <div className="mb-[var(--gap-tight)]">{back}</div>}
-      <div className="flex flex-wrap items-center gap-[var(--gap-tight)]">
+      <div className="flex flex-wrap items-baseline gap-[var(--gap-tight)]">
         {scope.map((segment, index) => (
           <Data
             // Position is the identity: a trail is an ordered path, not a set.
@@ -64,8 +76,19 @@ export const PageHead = ({
             {segment}
           </Data>
         ))}
+        {titlePlacement === 'trail' ? (
+          // The current page, ending the path: the page's h1, so it is still the heading a
+          // screen reader lands on, and never a link — you are already here.
+          <h1 className="m-0 flex min-w-0 items-baseline gap-[var(--gap-tight)] text-title font-semibold tracking-[var(--tracking-snug)]">
+            <span className="font-mono text-data font-normal text-foreground-faint">/</span>
+            <span className="min-w-0 break-all">{title}</span>
+          </h1>
+        ) : null}
       </div>
-      <h1 className="text-title font-semibold tracking-[var(--tracking-snug)]">{title}</h1>
+      {titlePlacement === 'title' ? (
+        <h1 className="text-title font-semibold tracking-[var(--tracking-snug)]">{title}</h1>
+      ) : null}
+      {meta === undefined ? null : <div className="mt-[var(--gap-tight)]">{meta}</div>}
     </div>
     {actions === undefined ? null : (
       <div className="ml-auto flex gap-[var(--gap-inline)]">{actions}</div>

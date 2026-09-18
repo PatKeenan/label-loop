@@ -63,7 +63,13 @@ export const TracePage = () => {
             traces
           </Link>,
         ]}
-        title="Trace"
+        // The id IS this page's name, so it ends the trail — replacing a generic "Trace" title
+        // and the separate id line that sat under the header (stakeholder, 2026-09-18).
+        titlePlacement="trail"
+        title={<span className="font-mono select-all">{traceId}</span>}
+        {...(detail.data === undefined
+          ? {}
+          : { meta: <Data>{new Date(detail.data.created_at).toLocaleString()}</Data> })}
       />
       {wrongPanel ? (
         <Statement eyebrow="Not available" title="This trace isn’t in this panel">
@@ -71,12 +77,6 @@ export const TracePage = () => {
         </Statement>
       ) : (
         <div className="flex w-full max-w-[64rem] flex-col gap-[var(--space-6)]">
-          <div className="flex flex-wrap items-baseline gap-[var(--gap-inline)]">
-            <Data className="text-foreground break-all select-all">{traceId}</Data>
-            {detail.data === undefined ? null : (
-              <Data>{new Date(detail.data.created_at).toLocaleString()}</Data>
-            )}
-          </div>
           <TraceDetailBody traceId={traceId} />
         </div>
       )}
