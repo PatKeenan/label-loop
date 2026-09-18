@@ -37,8 +37,9 @@ Each phase is one branch and one PR (`feat/m5-p1-capabilities`, …), per CLAUDE
   `panel: [read, create]`, `key: [read, issue, revoke]`, `model: [read]`, `judge: [read]`,
   `trace: [read]`, `annotation: [create]`, `member: [read, manage]`.
   Roles: **admin** — everything; **engineer** — everything except `member: [manage]`;
-  **annotator** — `annotation: [create]` only; **guest_expert** — `annotation: [create]` only
-  (panel scoping is M8's). Exported: `can(role, request) → boolean`, `ROLES`.
+  **annotator** — `annotation: [create]` only; **guest_expert** — **nothing** until M8 (open
+  question 3, resolved: its time-boxing, panel scoping and PII masking are M8's, and annotation
+  access without them would hand an outsider every trace in the org). Exported: `can(role, request) → boolean`, `ROLES`.
 - `packages/contracts/package.json` — `better-auth` as a dependency (already in the workspace
   at the same version; the contracts package imports only the `/plugins/access` entry).
 - `apps/api/src/middleware/require-permission.ts` (new) — `requirePermission({ key: ['issue'] })`,
@@ -282,6 +283,15 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0064 is 
 13. **Organisation settings becomes live at M5 with Members as its first screen** — amending
     ADR-0059's "absent until M8".
 14. **An org must always keep one admin** — enforced in the service, reported as a field error.
+15. **Invitations expire after 14 days** (open question 1, resolved) — long enough for someone to
+    get round to signing in, short enough that a forgotten invitation does not grant access months
+    later. Revocable before then.
+16. **Annotators see a progress line, not a history list, at M5** (open question 2, resolved) — a
+    list of past answers invites second-guessing and re-annotation, and a changed mind is a new
+    row anyway.
+17. **`guest_expert` grants no capability until M8** (open question 3, resolved) — PRODUCT.md 5.1's
+    guest access is time-boxed, panel-scoped and PII-masked; without those, it is an outsider with
+    an org's traces.
 
 ## Explicitly NOT doing
 - **Invitation emails** — no email provider (stack decision); the admin tells the person to sign in.
@@ -297,12 +307,8 @@ Each becomes an ADR stub at `/approve_plan`. Next free number after ADR-0064 is 
 - **Roles as a set per membership** — ADR-0064 made it unnecessary.
 
 ## Open questions for the human
-1. **Invitation expiry: 14 days?** Chosen as a default; no product input yet.
-2. **Should an annotator see their own history** (a "you annotated N" line is in r5; a list of past
-   annotations is not)? Recommend not at M5 — it invites second-guessing and re-annotation.
-3. **Guest experts at M5**: the capability map gives them `annotation: [create]` in the org they
-   are invited to, with no panel scoping (M8). Acceptable interim, or keep guest_expert inert until
-   M8?
+All three were resolved by the stakeholder on 2026-09-18, accepting the recommendations; they
+are decisions 15–17.
 
 ## Deviations
 Recorded as they happen; decision provenance, not a changelog.
