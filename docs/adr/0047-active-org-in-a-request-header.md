@@ -10,4 +10,4 @@ ADR-0014 made roles org-scoped and multi-org representable from day one, and M4 
 
 Rejected: a path segment (`/internal/orgs/:id/...`), which rewrites every route and every client call; and a server-side "active org" on the session, under which a second browser tab in another org silently changes what the first tab is looking at.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

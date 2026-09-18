@@ -10,4 +10,4 @@ The picker needs catalogue data, and the failure mode — what the wizard does w
 
 Rejected: a Postgres snapshot refreshed by a pg-boss job, which buys restart survival at the cost of a table, a migration and a job handler. A cold start with no network leaves the picker unpopulated, and the wizard must say so plainly rather than render an empty list. It must live in `src/llm/`: ADR-0016's architecture test fails the build on any provider hostname or outbound fetch outside it.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

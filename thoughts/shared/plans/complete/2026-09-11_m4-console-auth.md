@@ -1,16 +1,17 @@
 ---
 date: 2026-09-11T18:40:00Z
 author: claude-code
-status: approved
+status: complete
+completed_at: 2026-09-18
 approved_at: 2026-09-11T19:02:34Z
 approver: Pat Keenan
 milestone: M4
 topic: m4-console-auth
 related_adrs: [0003, 0008, 0009, 0014, 0016, 0019, 0020, 0022, 0023, 0025, 0026, 0034, 0035, 0046]
-spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058]
+spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061, 0062, 0063]
 ---
 
-> **STATUS — 2026-09-14. Phases 1–5 are MERGED; next is phase 6.**
+> **STATUS — 2026-09-18. COMPLETE: all eight phases built and verified.**
 >
 > | phase | PR | |
 > |---|---|---|
@@ -19,10 +20,16 @@ spawned_adrs: [0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0056, 0057,
 > | 3 — keys and the audit log | #60 | merged |
 > | 4 — the catalogue | #61 (+ #62, CI) | merged |
 > | 5 — panel and judge creation | #63 | merged |
-> | **6 — the frame, as mockups** | #65 | **complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15** |
-> | **7 — the frame, built** | #67 | **VERIFIED by the stakeholder 2026-09-16** |
+> | 6 — the frame, as mockups | #65 | complete · 6a, 6b (r2/r3) and 6c (r3) approved 2026-09-15 |
+> | 7 — the frame, built | #67 | verified by the stakeholder 2026-09-16 |
 > | 8a — the API half | #69 | merged |
-> | **8b — the console half** | — | **PR open; steps below still to finish** |
+> | **8b — the console half** | #70 | **verified by the stakeholder 2026-09-18; merging closes M4** |
+>
+> Phase 8 grew well past its written steps during implementation — org creation (ADR-0063),
+> shared name rules, pagination and live refresh, and trace detail as a drawer and a page — all
+> recorded as Deviations 65–75. What it surfaced for the NEXT milestone is recorded too: member
+> management is unscheduled and M5 cannot demo annotation without it, and "may a developer
+> annotate" was decided in conversation (see the decision log, 2026-09-18).
 >
 > **How to read the checkboxes in phases 1–5.** `[x]` is verified, and each one says WHO
 > verified it — the stakeholder, or Claude during implementation. `[~]` is **deferred and does
@@ -655,14 +662,18 @@ rule: rebuild clean from the approved brief; the mockup's HTML is never ported.
       seed-state (Deviation 64), not regressions, and CI builds a fresh database
 
 ### Manual verification
-- [ ] **The full interviewer flow, on a database with no seeded panel** — rewritten by
+- [x] **The full interviewer flow, on a database with no seeded panel** — rewritten by
       ADR-0060/0061 (Deviation 41): sign in with GitHub → create a panel in one step → copy the
       snippet → curl `POST /v1/panels/{id}/evaluate` → watch traces arrive against a COLLECTING
       panel, with the annotation gate counting up. No judges are authored, and that is the
       point. BUILD_SPINE's M4 demo line is rewritten to match.
-- [ ] An annotator account cannot reach the wizard or the keys screen, in the UI **and**
+- [x] An annotator account cannot reach the wizard or the keys screen, in the UI **and**
       by direct API call
-- [ ] The key plaintext is unrecoverable after the reveal is dismissed
+- [x] The key plaintext is unrecoverable after the reveal is dismissed
+
+  **All three verified by the stakeholder, 2026-09-18.** The flow started from a GitHub account
+  in no organisation — possible only because of ADR-0063 — and crossed the annotation gate with
+  51 real `/v1` calls against a collecting panel.
 
 ---
 

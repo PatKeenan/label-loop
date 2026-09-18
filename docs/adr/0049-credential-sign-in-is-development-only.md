@@ -10,4 +10,4 @@ ADR-0009 requires a fresh clone to boot with no secrets, and social providers ne
 
 Consequence, named rather than discovered: a first-time GitHub sign-in in production lands on `FORBIDDEN` / "not a member of any organisation", because M4 has no invite flow and the seeded account is a password account. How the first admin gets a membership row in production is an M8 deploy concern.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)

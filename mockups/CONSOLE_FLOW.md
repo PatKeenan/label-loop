@@ -3,7 +3,7 @@
 **Status:** APPROVED 2026-09-14 at the 6a review · **REVISED 2026-09-14 at the 6b review** — the
 navigation model changed when the stakeholder reviewed the first shell. §1–§6 describe the
 revised model; §7 keeps the 6a answers as they were given, marking the ones §8 supersedes.
-**Plan:** `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (phase 6)
+**Plan:** `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (phase 6)
 **Decisions it works under:** ADR-0055 (the partial Phase A resume), ADR-0056 (sidebar, as
 amended 2026-09-14), ADR-0047 (active org per request), ADR-0057 (a non-member org is not
 found), ADR-0059 (organisation settings are admin-only)

@@ -27,4 +27,4 @@ The deeper problem was not the copy. **M4's demo moment is "sign in with GitHub 
 - **The creator is `admin`**, because they are the only person in the org and someone must be able to reach Organisation settings when it exists.
 - **Two concurrent creates by the same account** could both pass the "member of nothing" check and produce two orgs. Accepted at M4: harmless, visible in the switcher, and closed properly when org limits arrive with M8.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (phase 8, Deviation 72) · Code: `apps/api/src/middleware/session.ts`, `apps/api/src/routes/internal/orgs.ts`, `apps/api/src/services/create-org.ts`, `apps/web/src/routes/create-org.tsx`
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (phase 8, Deviation 72) · Code: `apps/api/src/middleware/session.ts`, `apps/api/src/routes/internal/orgs.ts`, `apps/api/src/services/create-org.ts`, `apps/web/src/routes/create-org.tsx`

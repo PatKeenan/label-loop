@@ -12,4 +12,4 @@ Not rendering the entry at M4 follows from the same argument: both screens are M
 
 **Alternative named and left open to widen later:** an audit log is often wanted by a compliance reader who is not an admin. Admin-only is the default; a read-only audit role would be an amendment, not a reversal.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (phase 6) · Record: `mockups/CONSOLE_FLOW.md` §3, §8 (R4)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (phase 6) · Record: `mockups/CONSOLE_FLOW.md` §3, §8 (R4)

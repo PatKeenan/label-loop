@@ -10,4 +10,4 @@ Migration 0005 revokes `UPDATE` and `DELETE` from the app role on `panel_version
 
 A separate mutable draft table would be a way around this and is deliberately not taken at M4; it would need its own ADR, because it reintroduces the editable configuration ADR-0003 exists to prevent.
 
-Plan: `thoughts/shared/plans/approved/2026-09-11_m4-console-auth.md` (Decisions made)
+Plan: `thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md` (Decisions made)
