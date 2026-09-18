@@ -376,3 +376,11 @@ Recorded as they happen; decision provenance, not a changelog.
 15. **Every local seeded account is UNVERIFIED** (`email_verified = false`; they were made with
     email and password). So the manual check must use GitHub accounts, as the plan says — an
     invitation to `annotator@labelloop.test` will correctly never be claimed.
+16. **`bun run dev:account <email>`** (`scripts/dev-account.ts`) creates a LOCAL email-and-password
+    account and marks its email verified, standing in for GitHub. Without it the manual check
+    needs a second GitHub account, which the stakeholder does not have — and ADR-0065 means an
+    email-and-password account can never claim. It adds no membership (joining is the claim's
+    job) and refuses production and any non-local database. The real gap it papers over locally
+    — a person with no GitHub account cannot join at all — stays open until an email provider or
+    a second verifying sign-in provider is decided.
+
