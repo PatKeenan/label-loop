@@ -1,9 +1,11 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { tracesQuery } from '../api/queries.ts'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { tracePagesQuery, type tracesQuery } from '../api/queries.ts'
 import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Data, Mark } from '../components/shell/mark.tsx'
 import { PageHead } from '../components/shell/page-head.tsx'
 import { LoadFailed } from '../components/shell/statement.tsx'
+import { Button } from '../components/ui/button.tsx'
 
 /**
  * THE TRACE LIST — every row here was written by a real `/v1/panels/{id}/evaluate` call (P4).
@@ -94,16 +96,36 @@ const shortTime = (iso: string) =>
     minute: '2-digit',
   })
 
+/**
+ * How often the list re-reads while live, in seconds. Chosen by the viewer; 0 is off.
+ *
+ * POLLING, deliberately — not server-sent events (M4 phase 8, Deviation 74). At a 5–15s cadence
+ * polling is one indexed read of one panel's newest page; SSE would need a cross-instance
+ * fan-out (a trace is written by whichever API instance served the `/v1` call), long-lived
+ * connections through proxies, heartbeats and reconnection — a stack decision, for a need
+ * nobody has at seconds-scale latency. TanStack Query already pauses polling in a hidden tab.
+ */
+const INTERVALS = [0, 5, 10, 15] as const
+type Interval = (typeof INTERVALS)[number]
+
 export const TracesPage = () => {
   const queryClient = useQueryClient()
   const context = useConsoleContext()
   const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
-  const traces = useQuery({
-    ...tracesQuery(
-      context.state === 'ready' ? context.orgId : '',
-      panel.state === 'ready' ? panel.id : '',
-    ),
+  const [interval, setRefreshInterval] = useState<Interval>(10)
+
+  const options = tracePagesQuery(
+    context.state === 'ready' ? context.orgId : '',
+    panel.state === 'ready' ? panel.id : '',
+  )
+  const traces = useInfiniteQuery({
+    ...options,
     enabled: context.state === 'ready' && panel.state === 'ready',
+    // LIVE ONLY AT THE TOP. Refetching an infinite query re-reads EVERY loaded page, so polling
+    // someone twenty pages deep would cost twenty reads every tick — and would move the rows
+    // they are reading. Once older pages are loaded, live pauses and says so.
+    refetchInterval: (query) =>
+      interval !== 0 && (query.state.data?.pages.length ?? 1) <= 1 ? interval * 1000 : false,
   })
 
   if (context.state !== 'ready' || panel.state !== 'ready') return null
@@ -132,20 +154,102 @@ export const TracesPage = () => {
     )
   }
 
+  const rows = traces.data.pages.flatMap((page) => page.traces)
+  const browsingOlder = traces.data.pages.length > 1
+
+  // Back to the newest page, and live again: keep page one, drop the rest, re-read.
+  const backToLatest = () => {
+    queryClient.setQueryData(options.queryKey, (data) =>
+      data === undefined
+        ? data
+        : { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) },
+    )
+    void traces.refetch()
+  }
+
   return (
     <>
-      {head}
-      {traces.data.length === 0 ? (
+      <PageHead
+        scope={[context.orgSlug, panel.slug]}
+        title="Traces"
+        actions={
+          browsingOlder ? (
+            <span className="flex items-center gap-[var(--gap-inline)] text-ui text-muted-foreground">
+              Live paused while viewing older traces
+              <Button size="sm" variant="outline" onClick={backToLatest}>
+                Back to latest
+              </Button>
+            </span>
+          ) : (
+            <LiveControl value={interval} onChange={setRefreshInterval} />
+          )
+        }
+      />
+      {rows.length === 0 ? (
         <p className="text-muted-foreground">
           No traces for {panel.name} yet. Run an evaluation against{' '}
-          <code>/v1/panels/{panel.id}/evaluate</code> and reload.
+          <code>/v1/panels/{panel.id}/evaluate</code>
+          {interval === 0 ? ' and reload.' : ' — they appear here as they arrive.'}
         </p>
       ) : (
-        <TraceTable traces={traces.data} />
+        <div className="flex flex-col gap-[var(--gap-stack)]">
+          <TraceTable traces={rows} />
+          <div className="flex items-center gap-[var(--gap-inline)]">
+            <Data>
+              {rows.length} {rows.length === 1 ? 'trace' : 'traces'} shown
+            </Data>
+            {traces.hasNextPage ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => void traces.fetchNextPage()}
+                disabled={traces.isFetchingNextPage}
+              >
+                {traces.isFetchingNextPage ? 'Loading…' : 'Load older'}
+              </Button>
+            ) : (
+              <span className="ml-auto text-ui text-muted-foreground">
+                That’s every trace for this panel.
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </>
   )
 }
+
+/**
+ * Off / 5s / 10s / 15s — how often the list re-reads while you are at the top of it. The same
+ * small segmented buttons as the snippet's language picker, so it reads as a setting of the
+ * view rather than as an action.
+ */
+const LiveControl = ({
+  value,
+  onChange,
+}: {
+  value: Interval
+  onChange: (value: Interval) => void
+}) => (
+  <div className="flex items-center gap-[var(--gap-inline)]">
+    <span className="text-ui text-muted-foreground">Refresh</span>
+    <div role="radiogroup" aria-label="Refresh interval" className="flex gap-[var(--gap-tight)]">
+      {INTERVALS.map((option) => (
+        <Button
+          key={option}
+          role="radio"
+          aria-checked={option === value}
+          size="sm"
+          variant={option === value ? 'default' : 'outline'}
+          onClick={() => onChange(option)}
+        >
+          {option === 0 ? 'Off' : `${option}s`}
+        </Button>
+      ))}
+    </div>
+  </div>
+)
 
 export type TraceRow = Awaited<
   ReturnType<NonNullable<ReturnType<typeof tracesQuery>['queryFn']>>

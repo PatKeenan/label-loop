@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { errorEnvelopeSchema, newId } from '@labelloop/contracts'
 import { createDatabase, type Database, schema } from '@labelloop/db'
 import { metrics, trace } from '@opentelemetry/api'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { createFixedClock } from '../../adapters/fixed-clock.ts'
 import { createRecordingErrorReporter } from '../../adapters/noop-error-reporter.ts'
 import { createApp } from '../../app.ts'
@@ -55,6 +55,9 @@ const KEY = newId('key_')
 const TRACE = newId('tr_')
 const OTHER_TRACE = newId('tr_')
 const SIBLING_TRACE = newId('tr_')
+/** A panel whose traces sit on the edges a pagination cursor can get wrong. */
+const PAGED_PANEL = newId('pnl_')
+const PAGED_PANEL_VERSION = newId('pnv_')
 
 /** A real, active key for `PANEL` — the credential that must NOT open a console route. */
 const API_KEY_PLAINTEXT = `llk_test_${'d'.repeat(64)}`
@@ -103,11 +106,13 @@ const seedFixtures = async () => {
     { id: PANEL, orgId: ORG, slug: 'issue-triage', name: 'Issue triage' },
     { id: OTHER_PANEL, orgId: OTHER_ORG, slug: 'theirs', name: 'Theirs' },
     { id: SIBLING_PANEL, orgId: ORG, slug: 'reply-gate', name: 'Reply gate' },
+    { id: PAGED_PANEL, orgId: ORG, slug: 'paged', name: 'Paged' },
   ])
   await db.insert(schema.panelVersions).values([
     { id: PANEL_VERSION, panelId: PANEL, version: 1, threshold: 0.5 },
     { id: OTHER_PANEL_VERSION, panelId: OTHER_PANEL, version: 1, threshold: 0.5 },
     { id: SIBLING_PANEL_VERSION, panelId: SIBLING_PANEL, version: 1, threshold: 0.5 },
+    { id: PAGED_PANEL_VERSION, panelId: PAGED_PANEL, version: 1, threshold: 0.5 },
   ])
   await db.insert(schema.apiKeys).values({
     id: KEY,
@@ -156,6 +161,43 @@ const seedFixtures = async () => {
       threshold: 0.5,
     },
   ])
+}
+
+/**
+ * Five traces on the edges a cursor gets wrong, newest first as the list must return them:
+ * one alone, TWO WITH THE SAME TIMESTAMP (only `id` can order them), and two 100µs apart
+ * inside one millisecond (a cursor built from a JS `Date` cannot tell them apart).
+ */
+const PAGED_TRACES = [
+  { at: '2026-01-01 00:00:05+00' },
+  { at: '2026-01-01 00:00:04+00' },
+  { at: '2026-01-01 00:00:04+00' },
+  { at: '2026-01-01 00:00:03.000200+00' },
+  { at: '2026-01-01 00:00:03.000100+00' },
+].map((row) => ({ ...row, id: newId('tr_') }))
+
+/** The order the API must return them in: time descending, then id descending on a tie. */
+const PAGED_ORDER = [...PAGED_TRACES]
+  .sort((a, b) => (a.at === b.at ? (a.id < b.id ? 1 : -1) : a.at < b.at ? 1 : -1))
+  .map((row) => row.id)
+
+const seedPagedTraces = async () => {
+  for (const [index, row] of PAGED_TRACES.entries()) {
+    await db.insert(schema.traces).values({
+      id: row.id,
+      orgId: ORG,
+      panelId: PAGED_PANEL,
+      panelVersionId: PAGED_PANEL_VERSION,
+      requestId: index.toString(16).padStart(32, '0'),
+      artifact: 'paged',
+      passed: null,
+      score: null,
+      complete: true,
+      threshold: 0.5,
+      // A literal, not a `Date`: the microseconds ARE the test.
+      createdAt: sql`${row.at}::timestamptz`,
+    })
+  }
 }
 
 const dropFixtures = async () => {
@@ -214,6 +256,7 @@ beforeAll(async () => {
   auth = createAuth(db, config)
   await dropFixtures()
   await seedFixtures()
+  await seedPagedTraces()
 
   // Two accounts, identical but for one row in `org_members` — which is the whole
   // difference between seeing the console and being told you are not a member of anything.
@@ -281,6 +324,49 @@ describe('a signed-in member', () => {
     const parsed = errorEnvelopeSchema.safeParse(await response.json())
     expect(parsed.data?.error.code).toBe('VALIDATION_ERROR')
     expect(parsed.data?.error.issues?.map((issue) => issue.path)).toContain('panel_id')
+  })
+
+  test('pages through every trace exactly once — across a timestamp tie and a sub-ms gap', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const seen: string[] = []
+    let cursor: string | null = null
+    let pages = 0
+    do {
+      const response = await app().request(
+        `http://localhost/internal/traces?panel_id=${PAGED_PANEL}&limit=2${
+          cursor === null ? '' : `&before=${cursor}`
+        }`,
+        { headers: { cookie } },
+      )
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as {
+        data: { traces: { id: string }[]; next_cursor: string | null }
+      }
+      seen.push(...body.data.traces.map((trace) => trace.id))
+      cursor = body.data.next_cursor
+      pages += 1
+    } while (cursor !== null && pages < 10)
+
+    // Exact order, no repeats, nothing missed — and no empty trailing page: 5 rows at 2 a page
+    // is 3 pages, and the third says there is no fourth.
+    expect(seen).toEqual(PAGED_ORDER)
+    expect(pages).toBe(3)
+  })
+
+  test('a cursor the API did not issue is a 422 on `before`, not a 500', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const forged = Buffer.from(JSON.stringify(["now'); drop table traces; --", 'tr_x'])).toString(
+      'base64url',
+    )
+    for (const before of ['not-base64-json', forged]) {
+      const response = await app().request(
+        `http://localhost/internal/traces?panel_id=${PAGED_PANEL}&before=${before}`,
+        { headers: { cookie } },
+      )
+      expect(response.status).toBe(422)
+      const parsed = errorEnvelopeSchema.safeParse(await response.json())
+      expect(parsed.data?.error.issues?.map((issue) => issue.path)).toEqual(['before'])
+    }
   })
 
   test('a limit outside the allowed range is a 422 in the standard envelope', async () => {

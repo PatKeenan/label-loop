@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { listTraces } from '../../repositories/traces.ts'
+import { listTraces, type TraceCursor, type TraceListItem } from '../../repositories/traces.ts'
 
 /**
  * `GET /internal/traces` — the console's trace list, and the read half of the loop P4
@@ -34,12 +34,41 @@ const DEFAULT_LIMIT = 50
 const listQuerySchema = z.object({
   panel_id: z.string().startsWith('pnl_'),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+  before: z.string().optional(),
 })
+
+/**
+ * THE PAGINATION CURSOR — opaque to the caller, and that is a decision.
+ *
+ * It is the `(created_at, id)` of the last row of the previous page, base64url-encoded JSON.
+ * Opaque so the console treats it as a token to hand back rather than something to build, which
+ * keeps the ordering free to change without breaking a client that composed its own.
+ *
+ * `created_at` is Postgres's own text rendering (microseconds included) and is validated here
+ * before it reaches a `::timestamptz` cast, so a tampered cursor is a 422 rather than a 500.
+ */
+const TIMESTAMP_TEXT = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/
+const cursorSchema = z.tuple([z.string().regex(TIMESTAMP_TEXT), z.string().startsWith('tr_')])
+
+const encodeCursor = (row: TraceListItem): string =>
+  Buffer.from(JSON.stringify([row.createdAtExact, row.id])).toString('base64url')
+
+const decodeCursor = (value: string): TraceCursor | undefined => {
+  try {
+    const parsed = cursorSchema.safeParse(
+      JSON.parse(Buffer.from(value, 'base64url').toString('utf8')),
+    )
+    return parsed.success ? { createdAt: parsed.data[0], id: parsed.data[1] } : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export const createTraceRoutes = () =>
   new Hono<AppEnv>().get('/traces', async (c) => {
     const query = listQuerySchema.safeParse({
       panel_id: c.req.query('panel_id'),
+      ...(c.req.query('before') === undefined ? {} : { before: c.req.query('before') }),
       // `undefined` rather than the raw value when absent, so the schema's default applies
       // instead of Zod being asked to coerce a missing string.
       ...(c.req.query('limit') === undefined ? {} : { limit: c.req.query('limit') }),
@@ -60,11 +89,25 @@ export const createTraceRoutes = () =>
     // The panel DOES come from the request, and is safe to: the org filter still applies, so
     // another org's panel id answers an empty list — the same answer as a real panel with no
     // traffic yet, which is what keeps it from confirming that panel exists (ADR-0057).
-    const traces = await listTraces(c.var.deps.db, {
+    const before = query.data.before === undefined ? undefined : decodeCursor(query.data.before)
+    if (query.data.before !== undefined && before === undefined) {
+      throw new AppError('VALIDATION_ERROR', 'The query string failed validation.', {
+        issues: [{ path: 'before', message: 'is not a cursor this API issued' }],
+      })
+    }
+
+    // ONE extra row, to learn whether an older page exists without a COUNT(*) over the panel —
+    // which would be the one part of this read that grows with the table.
+    const rows = await listTraces(c.var.deps.db, {
       orgId: c.var.session.orgId,
       panelId: query.data.panel_id,
-      limit: query.data.limit,
+      limit: query.data.limit + 1,
+      before,
     })
+    const traces = rows.slice(0, query.data.limit)
+    const last = traces.at(-1)
+    const nextCursor =
+      rows.length > query.data.limit && last !== undefined ? encodeCursor(last) : null
 
     return c.json({
       data: {
@@ -84,6 +127,8 @@ export const createTraceRoutes = () =>
           recorded_at: trace.recordedAt?.toISOString() ?? null,
           created_at: trace.createdAt.toISOString(),
         })),
+        // Hand this back as `before` for the next-older page; null when there is none.
+        next_cursor: nextCursor,
       },
       request_id: c.var.requestId,
     })

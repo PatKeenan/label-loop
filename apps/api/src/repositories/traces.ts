@@ -1,7 +1,7 @@
 import type { VerdictStatus } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 
 /**
  * Writing the trace, which happens on 100% of evaluations because the judge call flows
@@ -131,7 +131,17 @@ export type TraceListItem = {
   /** Null until the follow-up job has run; the console shows it as "pending". */
   recordedAt: Date | null
   createdAt: Date
+  /**
+   * `created_at` as POSTGRES renders it — microseconds included — for the pagination cursor
+   * only. A JavaScript `Date` keeps milliseconds, so a cursor built from `createdAt` would sit
+   * up to 999µs away from the row it names, and traces written within the same millisecond as
+   * a page boundary would be skipped or repeated.
+   */
+  createdAtExact: string
 }
+
+/** Where the previous page ended: the `(created_at, id)` of its last row. */
+export type TraceCursor = { createdAt: string; id: string }
 
 /**
  * The console's trace list, newest first, for ONE panel in ONE org.
@@ -146,7 +156,12 @@ export type TraceListItem = {
  */
 export const listTraces = async (
   db: Database,
-  { orgId, panelId, limit }: { orgId: string; panelId: string; limit: number },
+  {
+    orgId,
+    panelId,
+    limit,
+    before,
+  }: { orgId: string; panelId: string; limit: number; before?: TraceCursor | undefined },
 ): Promise<TraceListItem[]> =>
   db
     .select({
@@ -159,11 +174,28 @@ export const listTraces = async (
       threshold: schema.traces.threshold,
       recordedAt: schema.traces.recordedAt,
       createdAt: schema.traces.createdAt,
+      // QUALIFIED by hand: a column inside a `sql` template renders unqualified, and
+      // `api_keys` has a `created_at` too (the trap Deviation 60 fell into, in a subquery).
+      createdAtExact: sql<string>`"traces"."created_at"::text`,
     })
     .from(schema.traces)
     // LEFT on the key, which can be null: the trace outlives the credential that made it.
     .leftJoin(schema.apiKeys, eq(schema.apiKeys.id, schema.traces.apiKeyId))
-    .where(and(eq(schema.traces.orgId, orgId), eq(schema.traces.panelId, panelId)))
-    // Matches `traces_panel_created_idx`, so the list stays an index scan as the table grows.
-    .orderBy(desc(schema.traces.createdAt))
+    .where(
+      and(
+        eq(schema.traces.orgId, orgId),
+        eq(schema.traces.panelId, panelId),
+        // KEYSET, not OFFSET. Traces arrive at the top continuously, so "skip the first 50"
+        // names a different 50 every time someone sends a call — a page read twice would show
+        // duplicates, or miss rows. "Older than the last row I saw" names the same rows
+        // however many arrive meanwhile. The row comparison breaks ties on `id`, because
+        // `created_at` alone is not unique.
+        before === undefined
+          ? undefined
+          : sql`("traces"."created_at", "traces"."id") < (${before.createdAt}::timestamptz, ${before.id})`,
+      ),
+    )
+    // Matches `traces_panel_created_idx` for the leading column, so the list stays an index
+    // scan as the table grows; `id` only orders ties.
+    .orderBy(desc(schema.traces.createdAt), desc(schema.traces.id))
     .limit(limit)

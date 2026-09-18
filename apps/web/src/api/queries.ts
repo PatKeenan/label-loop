@@ -1,5 +1,5 @@
 import { ACTIVE_ORG_HEADER } from '@labelloop/contracts'
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { apiErrorFrom } from '../errors/api-error.ts'
 import { api } from './client.ts'
 
@@ -136,4 +136,27 @@ export const tracesQuery = (orgId: string, panelId: string, limit?: number) =>
       if (!response.ok) throw await apiErrorFrom(response)
       return (await response.json()).data.traces
     },
+  })
+
+/**
+ * The Traces section's list, a page at a time, newest first.
+ *
+ * KEYSET pages: each page hands back an opaque `next_cursor` meaning "older than my last row",
+ * and the next request sends it as `before`. Offsets would drift — traces arrive at the top
+ * continuously, so "skip 50" names a different 50 every time a call lands. The Overview's five
+ * recent traces stay on `tracesQuery`; they never page.
+ */
+export const tracePagesQuery = (orgId: string, panelId: string) =>
+  infiniteQueryOptions({
+    queryKey: ['traces', orgId, panelId, 'pages'],
+    queryFn: async ({ pageParam }) => {
+      const response = await api.internal.traces.$get(
+        { query: { panel_id: panelId, ...(pageParam === null ? {} : { before: pageParam }) } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
   })

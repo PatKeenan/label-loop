@@ -1565,6 +1565,24 @@ one PR would have been very large for a repository meant to be read.
     it as "the button is always disabled"; the DOM said enabled. The checklist now stays once a
     field has content, and nothing moves at the moment of a click.
 
+74. **Traces got keyset pagination and a live refresh — POLLING, not SSE (stakeholder,
+    2026-09-18).** The list showed the newest 50 of ~4,300 with no way further back, so "View
+    all traces" was not true. `GET /internal/traces` now takes an opaque `before` cursor and
+    returns `next_cursor`; the cursor is `(created_at, id)` with `created_at` as POSTGRES renders
+    it, because a JS `Date` truncates microseconds and a millisecond-precision cursor skips or
+    repeats rows written within one millisecond of a page boundary. One extra row decides
+    whether an older page exists — no `COUNT(*)`. A test pages through a timestamp tie and a
+    100µs gap, and was mutation-checked against both a millisecond cursor and a missing `id`
+    tie-break; a tampered cursor is a 422, never a 500.
+
+    Live refresh is TanStack Query's `refetchInterval` at a viewer-chosen Off/5/10/15s (default
+    10). Server-sent events were weighed and declined: a trace is written by whichever API
+    instance served `/v1`, so SSE would need a cross-instance fan-out, long-lived connections,
+    heartbeats and reconnection — a stack decision (STACK_DECISIONS is stakeholder-owned) for a
+    need nobody has at seconds-scale latency. Live runs ONLY while at the top: refetching an
+    infinite query re-reads every loaded page, so after **Load older** it pauses, says so, and
+    offers **Back to latest**. Measured: exactly one read per interval.
+
 ---
 
 ## Open questions for the human
