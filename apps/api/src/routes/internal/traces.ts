@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { requireRole } from '../../middleware/require-role.ts'
+import { requirePermission } from '../../middleware/require-permission.ts'
 import {
   getTraceDetail,
   listTraces,
@@ -70,9 +70,14 @@ const decodeCursor = (value: string): TraceCursor | undefined => {
   }
 }
 
+/**
+ * Both reads are `trace: [read]` — staff only (ADR-0068). The list was left open through M4
+ * (Deviation 32); an annotator now reads traces only through their review queue, which serves
+ * the artifact and its context and nothing an operator sees.
+ */
 export const createTraceRoutes = () =>
   new Hono<AppEnv>()
-    .get('/traces', async (c) => {
+    .get('/traces', requirePermission({ trace: ['read'] }), async (c) => {
       const query = listQuerySchema.safeParse({
         panel_id: c.req.query('panel_id'),
         ...(c.req.query('before') === undefined ? {} : { before: c.req.query('before') }),
@@ -144,17 +149,17 @@ export const createTraceRoutes = () =>
      * ONE trace, whole: what the caller's agent sent, and what each judge said about it — the
      * console's trace drawer (Deviation 75).
      *
-     * **Staff only**, unlike the list (Deviation 32 left the list's guard open). This read carries
-     * the customer's own production data in `artifact`, and each judge's rationale and confidence;
-     * whether an annotator may see confidence before annotating is harvest blocker 2, still open,
-     * and M5's annotator surface is where that is answered. Here the answer is simply: not yet.
+     * **Staff only** (`trace: [read]`), like the list since M5 closed Deviation 32. This read
+     * carries the customer's own production data in `artifact`, and each judge's rationale and
+     * confidence — none of which reaches an annotator (ADR-0067), who reads traces only through
+     * their queue.
      *
      * A trace in another org is NOT_FOUND, never FORBIDDEN (ADR-0057).
      *
      * **Not audited**, and that is a known gap rather than an oversight: reading a customer's
      * artifact is a candidate audit event, and M8 owns the audit log's vocabulary and viewer.
      */
-    .get('/traces/:id', requireRole('admin', 'engineer'), async (c) => {
+    .get('/traces/:id', requirePermission({ trace: ['read'] }), async (c) => {
       const trace = await getTraceDetail(c.var.deps.db, {
         orgId: c.var.session.orgId,
         traceId: c.req.param('id'),

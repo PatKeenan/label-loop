@@ -30,7 +30,7 @@ import { Data, Eyebrow, Mark } from './mark.tsx'
  * the request id that finds this call's spans).
  *
  * Staff-only, mounted by the shell only for admin and engineer, mirroring the server's
- * `requireRole` on `GET /internal/traces/:id` (it never replaces it).
+ * `requirePermission` on `GET /internal/traces/:id` (it never replaces it).
  */
 export const TraceDrawer = () => {
   const context = useConsoleContext()

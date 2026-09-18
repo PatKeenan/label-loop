@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { requireRole } from '../../middleware/require-role.ts'
+import { requirePermission } from '../../middleware/require-permission.ts'
 import { findPanelBySlug, listPanels } from '../../repositories/panels.ts'
 import { createPanel } from '../../services/create-panel.ts'
 
@@ -95,9 +95,7 @@ const validationError = (message: string, issues: Issue[]): AppError =>
 
 export const createPanelRoutes = () =>
   new Hono<AppEnv>()
-    .use('/panels', requireRole('admin', 'engineer'))
-    .use('/panels/*', requireRole('admin', 'engineer'))
-    .post('/panels', async (c) => {
+    .post('/panels', requirePermission({ panel: ['create'] }), async (c) => {
       const { db, clock, modelProvider, config } = c.var.deps
       const { orgId, userId } = c.var.session
 
@@ -196,7 +194,7 @@ export const createPanelRoutes = () =>
      * the traces and annotations that produced it, so authoring lands at M6 beside the
      * taxonomy (ADR-0061). The console renders this section locked.
      */
-    .get('/panels/:slug', async (c) => {
+    .get('/panels/:slug', requirePermission({ panel: ['read'] }), async (c) => {
       const panel = await findPanelBySlug(c.var.deps.db, c.var.session.orgId, c.req.param('slug'))
       if (panel === undefined) {
         throw new AppError('NOT_FOUND', 'No such panel.', {
@@ -234,7 +232,7 @@ export const createPanelRoutes = () =>
         request_id: c.var.requestId,
       })
     })
-    .get('/panels', async (c) => {
+    .get('/panels', requirePermission({ panel: ['read'] }), async (c) => {
       const panels = await listPanels(c.var.deps.db, c.var.session.orgId)
       return c.json({
         data: {

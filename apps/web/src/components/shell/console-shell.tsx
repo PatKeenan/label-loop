@@ -1,3 +1,4 @@
+import { can } from '@labelloop/contracts'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { cn } from 'cn'
@@ -9,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu.tsx'
-import { isStaffRole, type Membership, type OrgRole } from './context.ts'
+import type { Membership, OrgRole } from './context.ts'
 import { CreatePanelDialog } from './create-panel-dialog.tsx'
 import { forgetIssuedKeys } from './issued-key.ts'
 import { Data, Mark } from './mark.tsx'
@@ -101,8 +102,7 @@ export const ConsoleShell = ({
     },
   })
 
-  const isStaff = isStaffRole(role)
-  const showSidebar = isStaff && panel !== null
+  const showSidebar = can(role, { panel: ['read'] }) && panel !== null
 
   return (
     <div
@@ -159,7 +159,7 @@ export const ConsoleShell = ({
                 direction. This mirrors the server guard and never replaces it — an engineer
                 who types the URL must get FORBIDDEN from the server, which is M8's to build.
               */}
-              {role === 'admin' ? (
+              {can(role, { member: ['manage'] }) ? (
                 <>
                   <DropdownMenuItem
                     disabled
@@ -227,17 +227,17 @@ export const ConsoleShell = ({
           trigger is what keeps it ONE dialog: two instances would be two pieces of form state
           that could disagree.
 
-          Staff only, mirroring `requireRole('admin', 'engineer')` on `POST /internal/panels`:
-          `?new` is a URL anyone can type, and a form that can only end in FORBIDDEN is not
-          one to offer.
+          Only for a role that may create panels, mirroring `requirePermission` on
+          `POST /internal/panels`: `?new` is a URL anyone can type, and a form that can only end
+          in FORBIDDEN is not one to offer.
         */}
-        {isStaff ? <CreatePanelDialog /> : null}
+        {can(role, { panel: ['create'] }) ? <CreatePanelDialog /> : null}
         {/*
           The trace drawer, opened by `?trace=` from any trace table row — mounted once here
-          for the same reason as the dialog, and staff-only for the same reason: its read is
-          `requireRole('admin', 'engineer')` on the server (Deviation 75).
+          for the same reason as the dialog, and gated the same way: its read is
+          `requirePermission({ trace: ['read'] })` on the server (Deviation 75).
         */}
-        {isStaff ? <TraceDrawer /> : null}
+        {can(role, { trace: ['read'] }) ? <TraceDrawer /> : null}
       </div>
     </div>
   )

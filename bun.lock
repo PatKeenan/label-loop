@@ -78,6 +78,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@hono/zod-openapi": "^1.6.1",
+        "better-auth": "^1.7.1",
         "hono": "^4.13.3",
         "zod": "^4.4.3",
       },

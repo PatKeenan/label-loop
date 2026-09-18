@@ -4,7 +4,7 @@ import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
 import { validatePin } from '../../llm/validate-pin.ts'
-import { requireRole } from '../../middleware/require-role.ts'
+import { requirePermission } from '../../middleware/require-permission.ts'
 
 /**
  * `POST /internal/judges/validate-pin` — **the gate** (ADR-0026, ADR-0053).
@@ -34,9 +34,10 @@ const bodySchema = z.object({
 })
 
 export const createJudgeRoutes = () =>
-  new Hono<AppEnv>()
-    .use('/judges/*', requireRole('admin', 'engineer'))
-    .post('/judges/validate-pin', async (c) => {
+  new Hono<AppEnv>().post(
+    '/judges/validate-pin',
+    requirePermission({ judge: ['read'] }),
+    async (c) => {
       const body = bodySchema.safeParse(await c.req.json().catch(() => undefined))
       if (!body.success) {
         throw new AppError('VALIDATION_ERROR', 'The request body failed validation.', {
@@ -76,4 +77,5 @@ export const createJudgeRoutes = () =>
             },
         request_id: c.var.requestId,
       })
-    })
+    },
+  )

@@ -4,6 +4,7 @@
  * follows import from this entry point rather than restating shapes.
  */
 
+export * from './capabilities.ts'
 export * from './envelope.ts'
 export * from './errors.ts'
 export * from './evaluate.ts'

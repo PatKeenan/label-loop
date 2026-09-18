@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { requireRole } from '../../middleware/require-role.ts'
+import { requirePermission } from '../../middleware/require-permission.ts'
 
 /**
  * `GET /internal/models` — what the model picker is populated from (ADR-0053).
@@ -28,9 +28,7 @@ import { requireRole } from '../../middleware/require-role.ts'
  */
 export const createModelRoutes = () =>
   new Hono<AppEnv>()
-    .use('/models', requireRole('admin', 'engineer'))
-    .use('/models/*', requireRole('admin', 'engineer'))
-    .get('/models', async (c) => {
+    .get('/models', requirePermission({ model: ['read'] }), async (c) => {
       const result = await c.var.deps.catalogue.list()
 
       // An explicit failure, not an empty list. A wizard rendering `models.map(...)` cannot
@@ -77,7 +75,7 @@ export const createModelRoutes = () =>
      * The model id contains a slash (`anthropic/claude-fable-5.1`), so it is matched
      * greedily rather than as one path segment.
      */
-    .get('/models/:model_id{.+}/endpoints', async (c) => {
+    .get('/models/:model_id{.+}/endpoints', requirePermission({ model: ['read'] }), async (c) => {
       const result = await c.var.deps.catalogue.endpointsFor(c.req.param('model_id'))
       if (!result.ok) {
         throw new AppError('PROVIDER_UNAVAILABLE', result.reason, {

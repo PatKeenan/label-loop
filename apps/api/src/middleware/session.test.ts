@@ -210,7 +210,7 @@ describe('the active org, when the request names one', () => {
     expect(response.status).toBe(200)
     const data = (body as Me).data
     expect(data.active_org_id).toBe(SECOND_ORG)
-    // The whole reason the switcher and `requireRole` ship in one phase.
+    // The whole reason the switcher and the role guard shipped in one phase.
     expect(data.role).toBe('annotator')
   })
 
@@ -222,17 +222,20 @@ describe('the active org, when the request names one', () => {
     expect((body as Me).data.active_org_id).toBe(FIRST_ORG)
   })
 
-  test('the org scopes the ROWS, not just the reply', async () => {
+  test('a data route enforces the role IN the named org, not just the reply', async () => {
     const cookie = await signIn(MULTI_ORG_EMAIL)
     // Any well-formed panel id: the list is panel-scoped (M4 phase 8), and this test is about
-    // the org header being honoured by a data route, not about which rows come back.
-    const response = await app().request(
-      `http://localhost/internal/traces?panel_id=${newId('pnl_')}`,
-      {
-        headers: { cookie, [ACTIVE_ORG_HEADER]: SECOND_ORG },
-      },
-    )
-    expect(response.status).toBe(200)
+    // which org's role a data route honours, not about which rows come back.
+    const traces = (org: string) =>
+      app().request(`http://localhost/internal/traces?panel_id=${newId('pnl_')}`, {
+        headers: { cookie, [ACTIVE_ORG_HEADER]: org },
+      })
+
+    // The same account, the same route: an admin in the first org reads the list, and an
+    // annotator in the second is refused it (`trace: [read]`, ADR-0068). A guard resolving
+    // against "the first membership" would answer 200 twice.
+    expect((await traces(FIRST_ORG)).status).toBe(200)
+    expect((await traces(SECOND_ORG)).status).toBe(403)
   })
 })
 
