@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { cn } from 'cn'
 import { ArrowDownToLineIcon, ArrowUpFromLineIcon, ChevronRightIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { traceDetailQuery } from '../../api/queries.ts'
 import { ApiError } from '../../errors/api-error.ts'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet.tsx'
@@ -38,9 +39,6 @@ export const TraceDrawer = () => {
     enabled: context.state === 'ready' && traceId !== undefined,
   })
 
-  // Open by default: the request is usually what someone opened the drawer to read. Collapsing
-  // it is for the reader working down the judges, and it stays how they left it between traces.
-  const [requestOpen, setRequestOpen] = useState(true)
   const contextCount =
     detail.data?.context === null ? 0 : Object.keys(detail.data?.context ?? {}).length
 
@@ -85,60 +83,50 @@ export const TraceDrawer = () => {
                 Borders and direction do the separating, not a new fill (a lighter surface on
                 dark reads as a raised slab — the lesson of the create dialog's footer band).
               */}
-              <details
-                open={requestOpen}
-                onToggle={(event) => setRequestOpen(event.currentTarget.open)}
-                className="group rounded-lg border"
-              >
-                <summary className="flex cursor-pointer list-none items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)] [&::-webkit-details-marker]:hidden">
-                  <ChevronRightIcon
-                    aria-hidden
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
-                  />
+              <section className="rounded-lg border">
+                <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
                   <BlockTitle
                     icon={<ArrowDownToLineIcon className="size-4" />}
                     title="Request"
                     caption="What your agent sent"
                   />
-                  {/* Collapsed, it still says something: the first line, and how much context. */}
-                  <span className="ml-auto flex min-w-0 max-w-[55%] flex-col items-end gap-[var(--gap-tight)] group-open:hidden">
-                    <Data className="max-w-full truncate text-foreground">
-                      {detail.data.artifact.split('\n')[0]}
-                    </Data>
-                    <Data>
-                      {contextCount === 0
-                        ? 'no context'
-                        : `${contextCount} context ${contextCount === 1 ? 'key' : 'keys'}`}
-                    </Data>
-                  </span>
-                </summary>
+                </div>
                 <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
                   <Field label="Artifact">
-                    {/* The caller's own output, verbatim — we never generated it (ADR-0019). */}
-                    <pre className="m-0 max-h-[24rem] overflow-auto rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
-                      {detail.data.artifact}
-                    </pre>
+                    {/* The caller's own output, verbatim — we never generated it (ADR-0019).
+                        Clamped, because nothing bounds how long it is. */}
+                    <Clamped
+                      key={`${traceId}-artifact`}
+                      what="artifact"
+                      lines={lineCount(detail.data.artifact)}
+                    >
+                      <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
+                        {detail.data.artifact}
+                      </pre>
+                    </Clamped>
                   </Field>
                   <Field label="Context">
                     {detail.data.context === null || contextCount === 0 ? (
                       <span className="text-ui text-muted-foreground">None sent.</span>
                     ) : (
-                      <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
-                        {Object.entries(detail.data.context).map(([key, value]) => (
-                          <div key={key} className="contents">
-                            <dt>
-                              <Data>{key}</Data>
-                            </dt>
-                            <dd className="m-0 font-mono text-data break-words text-foreground">
-                              {value}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
+                      <Clamped key={`${traceId}-context`} what="context" keys={contextCount}>
+                        <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
+                          {Object.entries(detail.data.context).map(([key, value]) => (
+                            <div key={key} className="contents">
+                              <dt>
+                                <Data>{key}</Data>
+                              </dt>
+                              <dd className="m-0 font-mono text-data break-words whitespace-pre-wrap text-foreground">
+                                {value}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </Clamped>
                     )}
                   </Field>
                 </div>
-              </details>
+              </section>
 
               <section className="rounded-lg border">
                 <div className="flex items-start gap-[var(--gap-inline)] px-[var(--space-5)] py-[var(--space-4)]">
@@ -272,6 +260,79 @@ const Decision = ({ passed, complete }: { passed: boolean | null; complete: bool
       {complete ? null : <Mark tone="warning">partial</Mark>}
     </span>
   )
+
+const lineCount = (text: string) => text.split('\n').length
+
+/**
+ * CONTENT OF UNKNOWN LENGTH, clamped — the artifact and the context are the caller's own data,
+ * and nothing bounds them. Shown at up to `--clamp` tall with the bottom edge faded out, and a
+ * **Show all** control ONLY if it actually overflows: a one-line artifact gets no toggle, because
+ * a control that does nothing is noise.
+ *
+ * The fade is a MASK (transparency), not a gradient of a colour, so it needs no colour the
+ * approved palette lacks and works on whatever surface it sits on. Keyed by trace at the call
+ * site, so opening another trace starts clamped again.
+ */
+const Clamped = ({
+  what,
+  lines,
+  keys,
+  children,
+}: {
+  what: 'artifact' | 'context'
+  lines?: number
+  keys?: number
+  children: React.ReactNode
+}) => {
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Measured, not guessed from length: wrapping makes "how tall" a question for the layout.
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = () => setOverflows(element.scrollHeight > element.clientHeight + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const clamped = !expanded
+  const size =
+    what === 'artifact'
+      ? `${lines ?? 0} ${lines === 1 ? 'line' : 'lines'}`
+      : `${keys ?? 0} ${keys === 1 ? 'key' : 'keys'}`
+
+  return (
+    <div className="flex flex-col gap-[var(--gap-inline)]">
+      <div
+        ref={ref}
+        className={cn(
+          clamped && 'max-h-[12rem] overflow-hidden',
+          clamped && overflows && '[mask-image:linear-gradient(to_bottom,black_65%,transparent)]',
+        )}
+      >
+        {children}
+      </div>
+      {overflows || expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          className="flex items-center gap-[var(--gap-tight)] self-start text-ui text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn('size-4 transition-transform', expanded && 'rotate-90')}
+          />
+          {expanded ? 'Show less' : `Show all · ${size}`}
+        </button>
+      ) : null}
+    </div>
+  )
+}
 
 /** A block's heading: its direction icon, a title, and what it means in plain words. */
 const BlockTitle = ({

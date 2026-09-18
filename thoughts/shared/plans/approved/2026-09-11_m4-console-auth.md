@@ -1599,10 +1599,12 @@ one PR would have been very large for a repository meant to be read.
     **Revised at review into IN and OUT.** The first drawer set every section at one level, so what
     was sent and what came back read as one list — and the DECISION sat in the header beside the
     trace id, as if it were a property of the call rather than its output. It is now two bordered
-    blocks with a direction: **Request** (what your agent sent; collapsible via native
-    `<details>`, previewing the artifact's first line and the context count when closed) and
-    **Response** (what the panel returned), which the decision now leads. Separated by borders and
-    direction, not by a new fill.
+    blocks with a direction: **Request** (what your agent sent) and **Response** (what the panel
+    returned), which the decision now leads. Separated by borders and direction, not by a new
+    fill. A first cut made the Request block collapsible; the stakeholder meant the CONTENT —
+    the artifact and context have no length bound — so the blocks are fixed and those two are
+    clamped to 12rem with a masked fade, offering **Show all · N lines/keys** only when they
+    actually overflow (measured, so a one-line artifact has no toggle).
 
 ---
 
