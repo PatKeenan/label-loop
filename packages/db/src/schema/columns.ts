@@ -1,5 +1,5 @@
 import type { IdPrefix } from '@labelloop/contracts'
-import { newId, ULID_CHARS } from '@labelloop/contracts'
+import { newId, ROLES, ULID_CHARS } from '@labelloop/contracts'
 import { sql } from 'drizzle-orm'
 import { check, jsonb, type PgColumn, pgEnum, text, timestamp } from 'drizzle-orm/pg-core'
 
@@ -118,8 +118,12 @@ export const aggregationPolicy = pgEnum('aggregation_policy', ['weighted_thresho
 /** Revocation is a status flip, never a row delete (CONVENTIONS.md "Keys & auth"). */
 export const apiKeyStatus = pgEnum('api_key_status', ['active', 'revoked'])
 
-/** PRODUCT.md 5.1. Org-scoped, on `org_members` rather than the user record (ADR-0014). */
-export const orgRole = pgEnum('org_role', ['admin', 'engineer', 'annotator', 'guest_expert'])
+/**
+ * PRODUCT.md 5.1. Org-scoped, on `org_members` rather than the user record (ADR-0014). The
+ * values come from `@labelloop/contracts`, where the capability map is keyed by the same list
+ * (ADR-0068), so a role cannot exist here without the map deciding what it may do.
+ */
+export const orgRole = pgEnum('org_role', ROLES)
 
 /**
  * Why a judge's verdict is what it is, mirroring the closed `status` in the published

@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
-import { requireRole } from '../../middleware/require-role.ts'
+import { requirePermission } from '../../middleware/require-permission.ts'
 import { listApiKeys } from '../../repositories/api-keys.ts'
 import { panelBelongsToOrg } from '../../repositories/panels.ts'
 import { issueApiKey, revokeApiKey } from '../../services/api-keys.ts'
@@ -18,9 +18,9 @@ import { issueApiKey, revokeApiKey } from '../../services/api-keys.ts'
  * check is the one tenancy hole this surface actually has — a key scoped to somebody else's
  * panel would authenticate against their traffic.
  *
- * Guarded by `requireRole('admin', 'engineer')`, applied HERE rather than in `index.ts`, so
- * the guard travels with the routes it guards. An annotator has a legitimate session and must
- * not be able to mint a credential with it (CONVENTIONS.md: *"Roles enforced in the API
+ * Each route asks for its own `key` capability, applied HERE rather than in `index.ts`, so the
+ * guard travels with the route it guards. An annotator has a legitimate session and must not
+ * be able to mint a credential with it (CONVENTIONS.md: *"Roles enforced in the API
  * layer, never only in the UI"*).
  */
 
@@ -50,9 +50,7 @@ const validationError = (issues: z.ZodIssue[]): AppError =>
 
 export const createKeyRoutes = () =>
   new Hono<AppEnv>()
-    .use('/keys', requireRole('admin', 'engineer'))
-    .use('/keys/*', requireRole('admin', 'engineer'))
-    .post('/keys', async (c) => {
+    .post('/keys', requirePermission({ key: ['issue'] }), async (c) => {
       const { db, clock, config } = c.var.deps
       const { orgId, userId } = c.var.session
 
@@ -94,7 +92,7 @@ export const createKeyRoutes = () =>
         201,
       )
     })
-    .get('/keys', async (c) => {
+    .get('/keys', requirePermission({ key: ['read'] }), async (c) => {
       const keys = await listApiKeys(c.var.deps.db, c.var.session.orgId)
       return c.json({
         data: {
@@ -111,7 +109,7 @@ export const createKeyRoutes = () =>
         request_id: c.var.requestId,
       })
     })
-    .post('/keys/:key_id/revoke', async (c) => {
+    .post('/keys/:key_id/revoke', requirePermission({ key: ['revoke'] }), async (c) => {
       const { db, clock } = c.var.deps
       const { orgId, userId } = c.var.session
 

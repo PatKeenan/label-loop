@@ -102,16 +102,13 @@ export type MeData = NonNullable<Awaited<ReturnType<NonNullable<typeof meQuery.q
 export type Membership = MeData['memberships'][number]
 export type OrgRole = Membership['role']
 
-/**
- * Whether a role gets the console at all.
- *
- * Written as an ALLOW list, not as `!== 'annotator'`. A new role added to the schema must
- * default to seeing nothing until someone decides otherwise — the opposite default would
- * hand a console to whoever is added next, which is not a decision anyone would have made on
- * purpose. It mirrors the server rather than replacing it: `requireRole` is the guard, and a
- * hidden nav item is not access control.
+/*
+ * What a role may do is NOT decided here. Every gate in the console reads `can(role, …)` from
+ * `@labelloop/contracts` — the same map the API's `requirePermission` enforces (ADR-0068) — so
+ * a screen can never offer what the server refuses. The map is deny-by-default: a role added
+ * to the schema sees nothing until someone grants it something. A hidden item is still not
+ * access control; the server's guard is.
  */
-export const isStaffRole = (role: OrgRole): boolean => role === 'admin' || role === 'engineer'
 
 /** Everything the shell needs once an org has been settled on. */
 export type ResolvedOrg = {

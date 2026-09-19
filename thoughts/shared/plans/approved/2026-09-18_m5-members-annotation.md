@@ -59,18 +59,20 @@ Each phase is one branch and one PR (`feat/m5-p1-capabilities`, …), per CLAUDE
   annotator cannot read keys; every role in the enum has an entry).
 
 ### Steps
-- [ ] Capability map in contracts, with its test
-- [ ] `requirePermission`, all call sites moved, `require-role.ts` deleted
-- [ ] Trace list guarded by `trace: [read]` (Deviation 32 closed)
-- [ ] Console reads capabilities; `isStaffRole` removed
-- [ ] Role × route matrix test green
+- [x] Capability map in contracts, with its test
+- [x] `requirePermission`, all call sites moved, `require-role.ts` deleted
+- [x] Trace list guarded by `trace: [read]` (Deviation 32 closed)
+- [x] Console reads capabilities; `isStaffRole` removed
+- [x] Role × route matrix test green
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build` — 841 pass;
+      the 2 failures are `relations.test.ts`'s seed-state ones (M4 Deviation 64)
 
 ### Manual verification
-- [ ] Engineer and admin see exactly what they saw before; an annotator still sees
+- [x] Engineer and admin see exactly what they saw before; an annotator still sees
       "Nothing to review yet" and gets 403 on keys, panels and the trace list by direct call
+      — verified by the stakeholder, 2026-09-18
 
 ---
 
@@ -315,3 +317,31 @@ are decisions 15–17.
 
 ## Deviations
 Recorded as they happen; decision provenance, not a changelog.
+
+### Phase 1
+1. **Guards are per route, each naming its own action, instead of a file-level `.use`.** The
+   plan's `requirePermission({ key: ['issue'] })` implies it: a file-level guard can only ask for
+   one action, so `GET /keys` would have needed `issue`. What a file-level `.use` gave for free —
+   a new route in the file is guarded by construction — is kept by the matrix test instead: it
+   compares Hono's own registered-route list against the matrix, so a route added without a row
+   (and therefore without a proven guard) fails the suite. Mutation-checked: removing the trace
+   list's guard fails exactly the annotator and guest-expert rows.
+2. **`ROLES` lives in `@labelloop/contracts`, and the `org_role` Postgres enum is built from it.**
+   The capability map is `satisfies Record<OrgRole, …>`, so the plan's "every role in the enum
+   has an entry" is a compile error rather than only a test. Same values, same order:
+   `drizzle-kit generate` reports no schema change, so no migration.
+3. **`POST /judges/validate-pin` asks for `judge: [read]`.** It is a check made while authoring a
+   judge, and the map has no `judge: [create]`; every role with `judge: [read]` also has
+   `panel: [create]`, so nothing is admitted that the old guard refused. Revisit if M6's judge
+   authoring adds a write action.
+4. **The matrix asserts "admitted" as *not refused by the guard*, not as 2xx.** With no database
+   an admitted request reaches a handler that may answer 422 or 500; the guard's own decision is
+   403-or-not, and that is what is asserted, in both directions, with the `FORBIDDEN` code.
+5. **`session.test.ts`'s "the org scopes the ROWS" relied on Deviation 32** — it listed traces as
+   the annotator in the second org and expected 200. Re-expressed as the stronger claim: the same
+   account reads the list as admin in the first org (200) and is refused it as annotator in the
+   second (403), which a guard resolving against the first membership would fail.
+6. **The organisation-settings menu item is gated by `member: [manage]`** (was `role === 'admin'`);
+   it stays inert until phase 2.
+7. **`.claude/launch.json` gains an `api` configuration** (`bun run --cwd apps/api dev`), so the
+   API runs from source beside the console in the preview pane, as CLAUDE.md prescribes.

@@ -1,8 +1,9 @@
+import { can } from '@labelloop/contracts'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { ConsoleShell } from '../components/shell/console-shell.tsx'
-import { isStaffRole, useConsoleContext, usePanelContext } from '../components/shell/context.ts'
+import { useConsoleContext, usePanelContext } from '../components/shell/context.ts'
 import { Statement } from '../components/shell/statement.tsx'
 import { useSurface } from '../components/shell/surface.ts'
 import { Button } from '../components/ui/button.tsx'
@@ -48,10 +49,10 @@ export const ConsoleLayout = () => {
   const context = useConsoleContext()
   useRedirectWhenSignedOut(context.state === 'signed-out')
   // Resolved only for a role that can read panels. `GET /internal/panels` is
-  // `requireRole('admin', 'engineer')`, so for anyone else it could only answer FORBIDDEN —
-  // and that screen is never drawn for them anyway (see `isStaff` below).
+  // `requirePermission({ panel: ['read'] })`, so for anyone else it could only answer
+  // FORBIDDEN — and that screen is never drawn for them anyway (see `readsPanels` below).
   const panel = usePanelContext(
-    context.state === 'ready' && isStaffRole(context.role) ? context.orgId : null,
+    context.state === 'ready' && can(context.role, { panel: ['read'] }) ? context.orgId : null,
   )
 
   if (context.state === 'pending') return <Loading />
@@ -91,11 +92,11 @@ export const ConsoleLayout = () => {
   const org = context.state === 'not-a-member' ? context.fallback : context
   const notAMember = context.state === 'not-a-member'
 
-  // An annotator — or a guest expert, PRODUCT.md 5.1's invited SME — gets no console at M4.
-  // The shell renders with no Home link, no switcher and no sections: the frame is still
-  // theirs, and the org switcher in the top bar is the way out for someone who also works in
-  // another organisation. `isStaffRole` is an allow list, deliberately (see its comment).
-  const isStaff = isStaffRole(org.role)
+  // A role that cannot read panels — an annotator, or a guest expert (PRODUCT.md 5.1's invited
+  // SME) — gets no console: the console's every screen is a panel's. The shell renders with no
+  // Home link, no switcher and no sections: the frame is still theirs, and the org switcher in
+  // the top bar is the way out for someone who also works in another organisation.
+  const readsPanels = can(org.role, { panel: ['read'] })
 
   return (
     <ConsoleShell
@@ -122,7 +123,7 @@ export const ConsoleLayout = () => {
             </Button>
           </div>
         </Statement>
-      ) : !isStaff ? (
+      ) : !readsPanels ? (
         <Statement eyebrow={org.orgSlug} title="Nothing to review yet">
           <p className="m-0">
             Your role in {org.orgName} is {org.role.replace('_', ' ')}. Reviewing traces will open
