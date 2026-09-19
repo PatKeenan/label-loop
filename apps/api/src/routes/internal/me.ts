@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../app-env.ts'
 import { accountAuth, resolveActiveOrg } from '../../middleware/session.ts'
+import { listMemberships } from '../../repositories/org-members.ts'
+import { claimInvitations } from '../../services/members.ts'
 
 /**
  * `GET /internal/me` — who the session belongs to, which org it is currently looking at,
@@ -27,8 +29,21 @@ import { accountAuth, resolveActiveOrg } from '../../middleware/session.ts'
  * next. With one membership the two look redundant; with two they are the whole answer.
  */
 export const createMeRoutes = () =>
-  new Hono<AppEnv>().use('/me', accountAuth()).get('/me', (c) => {
-    const { userId, email, memberships } = c.var.account
+  new Hono<AppEnv>().use('/me', accountAuth()).get('/me', async (c) => {
+    const { userId, email } = c.var.account
+
+    // THE CLAIM (ADR-0065). `/me` is the console's bootstrap read, so the first page load after
+    // signing in is where a pending invitation becomes a membership — against the account's
+    // VERIFIED email only; see `claimInvitations`. Memberships are re-read only when something
+    // was claimed, so the common case costs one indexed lookup.
+    const claimed = await claimInvitations({
+      db: c.var.deps.db,
+      clock: c.var.deps.clock,
+      userId,
+      requestId: c.var.requestId,
+    })
+    const memberships =
+      claimed > 0 ? await listMemberships(c.var.deps.db, userId) : c.var.account.memberships
 
     // A MEMBER OF NOTHING IS AN ANSWER, not an error (ADR-0063). This route used to sit behind
     // `sessionAuth` and refuse them with FORBIDDEN, which left the console guessing what a 403

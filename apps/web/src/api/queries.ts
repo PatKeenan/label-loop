@@ -179,3 +179,17 @@ export const traceDetailQuery = (orgId: string, traceId: string) =>
     // A trace never changes after it is written, except `recorded_at` being stamped once.
     staleTime: 60_000,
   })
+
+/**
+ * The active org's members and open invitations — Organisation settings → Members (ADR-0070).
+ * Asked only from an admin's screen; the server guards the read with `member: [read]`.
+ */
+export const membersQuery = (orgId: string) =>
+  queryOptions({
+    queryKey: ['members', orgId],
+    queryFn: async () => {
+      const response = await api.internal.members.$get(undefined, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+  })

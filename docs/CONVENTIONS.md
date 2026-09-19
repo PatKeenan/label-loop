@@ -20,7 +20,7 @@
   `{ error: { code, message }, request_id }`. Error codes are a closed enum in contracts.
 - All ids are prefixed ULIDs: `org_` (organisation), `pnl_` (panel), `pnv_` (panel
   version), `jud_` (judge), `jdv_` (judge version), `tax_` (failure taxonomy), `tr_`,
-  `ann_`, `key_`, `ds_`, `ft_`, `aud_` (audit event). Greppable, sortable,
+  `ann_`, `key_`, `ds_`, `ft_`, `aud_` (audit event), `inv_` (org invitation, ADR-0065). Greppable, sortable,
   self-describing. (`cls_`/`clv_` were retired by ADR-0019.) The one exception is
   better-auth's own tables, whose ids it mints itself (ADR-0008) — `org_members.user_id`
   therefore holds a better-auth id, not a prefixed one.

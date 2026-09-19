@@ -6,6 +6,7 @@ import { ACTIVE_ORG_HEADER, sessionAuth } from '../../middleware/session.ts'
 import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
+import { createMemberRoutes } from './members.ts'
 import { createModelRoutes } from './models.ts'
 import { createOrgRoutes } from './orgs.ts'
 import { createPanelRoutes } from './panels.ts'
@@ -55,7 +56,8 @@ const consoleCors = () =>
   cors({
     origin: (origin, c) => (origin === c.var.deps.config.WEB_ORIGIN ? origin : undefined),
     credentials: true,
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    // PATCH and DELETE since M5's Members screen: a role change and a removal are not POSTs.
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['content-type', ACTIVE_ORG_HEADER],
   })
 
@@ -92,4 +94,5 @@ export const createInternalRoutes = () => {
     .route('/', createModelRoutes())
     .route('/', createJudgeRoutes())
     .route('/', createPanelRoutes())
+    .route('/', createMemberRoutes())
 }
