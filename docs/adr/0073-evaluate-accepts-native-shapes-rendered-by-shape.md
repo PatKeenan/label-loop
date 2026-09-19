@@ -14,7 +14,7 @@
 > a tool-calling support bot, and an operations agent that proposes and stops at a gate (all via
 > OpenRouter; commits on `spike/github-triage-agent`). The experiment settled the rule below on
 > what `output` is, and that tool calls are part of the shape. Plan:
-> `thoughts/shared/plans/drafts/2026-09-19_evaluate-native-shapes.md`.
+> `thoughts/shared/plans/approved/2026-09-19_evaluate-native-shapes.md`.
 
 ## Decision
 `POST /v1/panels/{id}/evaluate` (and the single-judge route) take four roles instead of
