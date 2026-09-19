@@ -196,6 +196,25 @@ filters by it, and `org_invitations` gains the panels an invitation grants.
 
 **Promote earlier than M8 if** a real customer arrives with competing clients in one org.
 
+## Bulk seed upload — the on-ramp to a gate (raised 2026-09-19)
+
+Today a new panel waits for 50 LIVE calls before annotation opens. A team with an agent already
+in production has months of runs in its own database, and could start annotating the same day.
+
+**Shape:** a batch endpoint on a panel taking past traces in ADR-0073's four roles
+(`input`/`output`/`reference`/`metadata`), each with its **original timestamp** (an ingest time
+would make a backfill look like it all happened today) and the caller's **own id** (so a re-upload
+is idempotent). Stored exactly as collecting-mode traces are, and counted toward the 50-trace gate.
+**It never calls a model** — cheap, fast, and no cost question to answer.
+
+**What it is NOT:** a way to judge history. "Run judges on 30% of the upload" is backtesting — a
+deliberate pre-launch step with judge alignment (M6/M7), not a side effect of uploading. Keeping the
+two apart is the line between an on-ramp to a gate and an experiments platform (Braintrust and
+Langfuse's ground). The test for every feature here: *does it get a team to a working gate sooner?*
+
+**Depends on** ADR-0073 (the four roles), still Proposed. **Promote** with M6, when judges are
+first authored from annotations and a seeded panel pays off immediately.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps
