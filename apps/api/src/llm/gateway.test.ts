@@ -15,10 +15,11 @@ import { type ModelProvider, ProviderError, type ProviderFailureKind } from './p
 const CALL = {
   model: FAKE_MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
 }
 
-const DOWN = { ...CALL, artifact: `${FAKE_SENTINELS.unavailable} down` }
+const DOWN = { ...CALL, output: `${FAKE_SENTINELS.unavailable} down` }
 
 type GatewayOverrides = Partial<Omit<ModelGatewayOptions, 'provider' | 'clock'>>
 
@@ -151,7 +152,7 @@ describe('a provider that fails', () => {
 
   test('a call that never answers becomes PROVIDER_TIMEOUT', async () => {
     const { gateway } = gatewayFor(createFakeProvider())
-    const outcome = await gateway.judge({ ...CALL, artifact: `${FAKE_SENTINELS.slow} hangs` })
+    const outcome = await gateway.judge({ ...CALL, output: `${FAKE_SENTINELS.slow} hangs` })
 
     expect(outcome.status).toBe('error')
     if (outcome.status !== 'error') throw new Error('unreachable')
@@ -163,7 +164,7 @@ describe('a provider that fails', () => {
     const { gateway } = gatewayFor(provider)
     const outcome = await gateway.judge({
       ...CALL,
-      artifact: `${FAKE_SENTINELS.invalidOutput} garbage`,
+      output: `${FAKE_SENTINELS.invalidOutput} garbage`,
     })
 
     expect(outcome.status).toBe('failed')
@@ -254,7 +255,7 @@ describe('a provider that will never accept us', () => {
       error: { code: 400, metadata: { flagged_input: artifact } },
     })
     const { gateway } = gatewayFor(unhappy.provider)
-    await gateway.judge({ ...CALL, artifact }, { logger })
+    await gateway.judge({ ...CALL, output: artifact }, { logger })
 
     // Metadata, not content (CONVENTIONS.md "Logging"). The detail is not lost: `cause`
     // carries the whole error to the error reporter, which is the sink allowed to hold it.
@@ -324,7 +325,7 @@ describe('the circuit', () => {
   test('an unusable answer never trips it — a bad rubric is not a sick provider', async () => {
     const { gateway } = gatewayFor(createFakeProvider())
     for (let i = 0; i < 10; i++) {
-      await gateway.judge({ ...CALL, artifact: `${FAKE_SENTINELS.invalidOutput} ${i}` })
+      await gateway.judge({ ...CALL, output: `${FAKE_SENTINELS.invalidOutput} ${i}` })
     }
     expect(gateway.breakerState(FAKE_MODEL)).toBe('closed')
   })

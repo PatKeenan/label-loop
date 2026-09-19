@@ -87,7 +87,8 @@ const providerWith = (status: number, body: unknown) => {
 const CALL = {
   model: MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
   pin: DEFAULT_FAKE_PIN,
 }
 
@@ -99,6 +100,42 @@ describeModelProviderContract({
   create: () => createOpenRouterProvider({ apiKey: 'k', fetch: stubFetch(200, okBody()).fetch }),
   model: MODEL,
   unknownModel: 'fake:deterministic',
+})
+
+describe('the prompt — the roles, by shape (ADR-0073)', () => {
+  type Sent = { messages: Array<{ role: string; content: string }> }
+  const sent = (requests: Array<{ body: unknown }>, index: number): string =>
+    (requests[0]?.body as Sent | undefined)?.messages[index]?.content ?? ''
+
+  test('says the OUTPUT is judged, with the input as evidence', async () => {
+    const { provider, requests } = providerWith(200, okBody())
+    await provider.evaluate(CALL)
+    const system = sent(requests, 0)
+    expect(system).toContain('You judge the OUTPUT of an AI agent')
+    expect(system).toContain('judge only the output')
+  })
+
+  test('orders the sections Question, Reference, Input, Output — each rendered by shape', async () => {
+    const { provider, requests } = providerWith(200, okBody())
+    await provider.evaluate({
+      ...CALL,
+      reference: { browser: { name: 'Safari', version: 17 } },
+      output: { action: 'label', labels: ['bug'] },
+    })
+    const user = sent(requests, 1)
+    expect(user).toBe(
+      `Question: ${CALL.question}\n\n` +
+        'Reference:\n{\n  "browser": {\n    "name": "Safari",\n    "version": 17\n  }\n}\n\n' +
+        'Input:\nUser: Triage this bug report.\n\n' +
+        'Output:\n{\n  "action": "label",\n  "labels": [\n    "bug"\n  ]\n}',
+    )
+  })
+
+  test('no reference, no Reference section', async () => {
+    const { provider, requests } = providerWith(200, okBody())
+    await provider.evaluate(CALL)
+    expect(sent(requests, 1)).not.toContain('Reference')
+  })
 })
 
 describe('the request built from the pin', () => {
@@ -350,7 +387,7 @@ describe('a moderation payload, all the way through the gateway', () => {
       clock: createFixedClock(),
       tracer: spans.tracer,
     })
-    const outcome = await gateway.judge({ ...CALL, artifact }, { logger, slug: 'is-bug' })
+    const outcome = await gateway.judge({ ...CALL, output: artifact }, { logger, slug: 'is-bug' })
 
     // A refusal COMPLETED, so it is a rubric problem the console shows — not an incident.
     expect(outcome.status).toBe('failed')
