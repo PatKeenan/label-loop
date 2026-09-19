@@ -1,10 +1,12 @@
 ---
 date: 2026-09-19T04:00:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-19T11:10:38Z
+approved_by: Pat Keenan
 milestone: M5
 topic: evaluate-native-shapes
-related_adrs: [0001, 0003, 0019, 0033, 0037, 0060, 0067, 0073]
+related_adrs: [0001, 0003, 0019, 0033, 0037, 0060, 0067, 0073, 0074, 0075, 0076, 0077, 0078]
 research: thoughts/shared/research/2026-09-19_evaluate-native-shapes.md
 ---
 
@@ -206,8 +208,8 @@ old columns go. **This is the one irreversible phase**, which is why it is last 
 ---
 
 ## Decisions made
-Each becomes an ADR stub at `/approve_plan` (next free number after ADR-0073 is **0074**), unless
-it only restates ADR-0073.
+ADR stubs spawned at approval: decisions 1–3 → ADR-0074, 4 → 0075, 5–6 → 0076, 8 → 0077, 9 → 0078.
+Decisions 7 and 10–12 are recorded here only: they are deferrals or view details.
 
 1. **Additive migration with a backfill; nothing dropped** (stakeholder constraint) — over
    rewriting `traces` in place or dropping and reseeding; existing traces are kept. The old
