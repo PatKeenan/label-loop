@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   aggregationSchema,
-  EVALUATE_ARTIFACT_MAX_LENGTH,
+  EVALUATE_MAX_BYTES,
   evaluateRequestSchema,
   evaluateResponseSchema,
+  evaluateRolesBytes,
   evaluationSchema,
   judgeIdParamSchema,
   judgeOutputSchema,
@@ -15,33 +16,87 @@ import { newId } from './ids.ts'
 
 const REQUEST_ID = '4bf92f3577b34da6a3ce929d0e0e4736'
 
-describe('evaluate request', () => {
-  test('accepts an artifact alone, and an artifact with context', () => {
-    expect(evaluateRequestSchema.parse({ artifact: 'the build is broken' })).toEqual({
-      artifact: 'the build is broken',
+describe('evaluate request — four roles, in native shapes (ADR-0073)', () => {
+  const MESSAGES_WITH_TOOL_CALLS = [
+    { role: 'user', content: 'Was I charged twice?' },
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        { id: 'call_1', type: 'function', function: { name: 'charges', arguments: '{}' } },
+      ],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: '[{"amount":49},{"amount":49}]' },
+  ]
+
+  test.each([
+    ['a string', 'the build is broken'],
+    ['an object (a proposal)', { action: 'refund', amount: 588 }],
+    ['an array', [1, 'two', { three: 3 }]],
+    ['messages with tool calls', MESSAGES_WITH_TOOL_CALLS],
+    ['a number', 42],
+    ['null', null],
+  ])('accepts %s as input and as output', (_, value) => {
+    expect(evaluateRequestSchema.parse({ input: value, output: value })).toEqual({
+      input: value,
+      output: value,
     })
+  })
+
+  test('reference takes any JSON per key; metadata is strings only', () => {
+    const parsed = evaluateRequestSchema.parse({
+      input: 'x',
+      output: 'y',
+      reference: { account: { plan: 'pro' }, charges: [49, 49] },
+      metadata: { conversation_id: 'c_1' },
+    })
+    expect(parsed.reference).toEqual({ account: { plan: 'pro' }, charges: [49, 49] })
+    expect(parsed.metadata).toEqual({ conversation_id: 'c_1' })
     expect(
-      evaluateRequestSchema.parse({ artifact: 'x', context: { source: 'github' } }).context,
-    ).toEqual({ source: 'github' })
+      evaluateRequestSchema.safeParse({ input: 'x', output: 'y', metadata: { n: 1 } }).success,
+    ).toBe(false)
   })
 
-  test('rejects a missing, empty, or oversized artifact with a field-level issue', () => {
-    for (const body of [
-      {},
-      { artifact: '' },
-      { artifact: 'x'.repeat(EVALUATE_ARTIFACT_MAX_LENGTH + 1) },
-    ]) {
-      const result = evaluateRequestSchema.safeParse(body)
+  test.each(['input', 'output'] as const)('%s is required, with a field-level issue', (role) => {
+    const body: Record<string, unknown> = { input: 'x', output: 'y' }
+    delete body[role]
+    const result = evaluateRequestSchema.safeParse(body)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual([role])
+  })
+
+  test('the retired artifact and context are refused, naming their replacements', () => {
+    for (const retired of [{ artifact: 'x' }, { context: { a: 'b' } }]) {
+      const result = evaluateRequestSchema.safeParse({ input: 'x', output: 'y', ...retired })
       expect(result.success).toBe(false)
-      expect(result.error?.issues[0]?.path).toEqual(['artifact'])
+      expect(result.error?.issues[0]?.message).toContain('replaced by `input`, `output`')
     }
+    // And the old request on its own: no silent strip into a bare "output is required".
+    const old = evaluateRequestSchema.safeParse({ artifact: 'x', context: { a: 'b' } })
+    expect(old.error?.issues.map((issue) => issue.code)).toContain('unrecognized_keys')
   })
 
-  test('rejects a non-string artifact and non-string context values', () => {
-    expect(evaluateRequestSchema.safeParse({ artifact: 42 }).success).toBe(false)
-    expect(evaluateRequestSchema.safeParse({ artifact: 'x', context: { a: 1 } }).success).toBe(
-      false,
-    )
+  test('the cap is 64 KiB across the roles serialised — exactly at it passes, one over fails', () => {
+    // A string serialises with its two quotes, so this output is exactly the remaining bytes.
+    const input = 'i'
+    const room = EVALUATE_MAX_BYTES - evaluateRolesBytes({ input })
+    const atCap = { input, output: 'o'.repeat(room - 2) }
+    expect(evaluateRolesBytes(atCap)).toBe(EVALUATE_MAX_BYTES)
+    expect(evaluateRequestSchema.safeParse(atCap).success).toBe(true)
+
+    const over = evaluateRequestSchema.safeParse({ input, output: 'o'.repeat(room - 1) })
+    expect(over.success).toBe(false)
+    expect(over.error?.issues[0]?.path).toEqual(['output'])
+  })
+
+  test('the cap counts BYTES, not characters, and names the largest role', () => {
+    // 'é' is two bytes in UTF-8: half the cap in characters is already over it in bytes.
+    const result = evaluateRequestSchema.safeParse({
+      input: 'é'.repeat(EVALUATE_MAX_BYTES / 2),
+      output: 'short',
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['input'])
   })
 })
 

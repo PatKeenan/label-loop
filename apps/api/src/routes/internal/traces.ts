@@ -73,7 +73,7 @@ const decodeCursor = (value: string): TraceCursor | undefined => {
 /**
  * Both reads are `trace: [read]` — staff only (ADR-0068). The list was left open through M4
  * (Deviation 32); an annotator now reads traces only through their review queue, which serves
- * the artifact and its context and nothing an operator sees.
+ * the trace's roles and nothing an operator sees.
  */
 export const createTraceRoutes = () =>
   new Hono<AppEnv>()
@@ -150,14 +150,14 @@ export const createTraceRoutes = () =>
      * console's trace drawer (Deviation 75).
      *
      * **Staff only** (`trace: [read]`), like the list since M5 closed Deviation 32. This read
-     * carries the customer's own production data in `artifact`, and each judge's rationale and
+     * carries the customer's own production data in its four roles, and each judge's rationale and
      * confidence — none of which reaches an annotator (ADR-0067), who reads traces only through
      * their queue.
      *
      * A trace in another org is NOT_FOUND, never FORBIDDEN (ADR-0057).
      *
      * **Not audited**, and that is a known gap rather than an oversight: reading a customer's
-     * artifact is a candidate audit event, and M8 owns the audit log's vocabulary and viewer.
+     * output is a candidate audit event, and M8 owns the audit log's vocabulary and viewer.
      */
     .get('/traces/:id', requirePermission({ trace: ['read'] }), async (c) => {
       const trace = await getTraceDetail(c.var.deps.db, {
@@ -177,8 +177,17 @@ export const createTraceRoutes = () =>
           key_name: trace.keyName,
           // The W3C id of the HTTP execution, so a person can find this call's spans (ADR-0010).
           request_id: trace.requestId,
-          artifact: trace.artifact,
-          context: trace.context,
+          // The four roles (ADR-0073). `input` is null on a LEGACY row, which never recorded
+          // one; `output` is never null in practice — migration 0013 backfilled every row.
+          //
+          // Widened to `unknown` on the way out, deliberately. The console consumes this through
+          // Hono's RPC type inference, and a RECURSIVE `JsonValue` pushed through it exceeds
+          // TypeScript's instantiation depth (TS2589) at every use site. Nothing is lost: the
+          // console renders by SHAPE, narrowing at runtime, which is what an `unknown` asks for.
+          input: trace.input as unknown,
+          output: trace.output as unknown,
+          reference: trace.reference as Record<string, unknown> | null,
+          metadata: trace.metadata,
           // Null while COLLECTING (ADR-0060) — and then `judges` is empty, because none ran.
           passed: trace.passed,
           score: trace.score,

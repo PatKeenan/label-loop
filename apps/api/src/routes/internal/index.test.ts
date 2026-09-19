@@ -57,6 +57,7 @@ const KEY = newId('key_')
 const TRACE = newId('tr_')
 const OTHER_TRACE = newId('tr_')
 const SIBLING_TRACE = newId('tr_')
+const LEGACY_TRACE = newId('tr_')
 /** A panel whose traces sit on the edges a pagination cursor can get wrong. */
 /** A judge whose verdict hangs off TRACE, so the detail read's judge join has a row. */
 const JUDGE = newId('jud_')
@@ -136,6 +137,10 @@ const seedFixtures = async () => {
       panelVersionId: PANEL_VERSION,
       apiKeyId: KEY,
       requestId: 'a'.repeat(32),
+      input: [{ role: 'user', content: 'Why can I not log in?' }],
+      output: 'Login button does nothing on Safari 17.',
+      reference: { browser: { name: 'Safari', version: 17 } },
+      metadata: { ticket: 'T-1' },
       artifact: 'Login button does nothing on Safari 17.',
       passed: true,
       score: 1,
@@ -148,7 +153,7 @@ const seedFixtures = async () => {
       panelId: OTHER_PANEL,
       panelVersionId: OTHER_PANEL_VERSION,
       requestId: 'b'.repeat(32),
-      artifact: 'Not yours.',
+      output: 'Not yours.',
       passed: false,
       score: 0,
       complete: true,
@@ -160,7 +165,25 @@ const seedFixtures = async () => {
       panelId: SIBLING_PANEL,
       panelVersionId: SIBLING_PANEL_VERSION,
       requestId: 'c'.repeat(32),
-      artifact: 'Yours, but another panel’s.',
+      output: 'Yours, but another panel’s.',
+      passed: null,
+      score: null,
+      complete: true,
+      threshold: 0.5,
+    },
+    {
+      // A trace written BEFORE the four roles existed, as migration 0013 left it (ADR-0074):
+      // `output` and `reference` backfilled from `artifact` and `context`, `input` never
+      // recorded. Written in that shape here because the migration has already run.
+      id: LEGACY_TRACE,
+      orgId: ORG,
+      panelId: PANEL,
+      panelVersionId: PANEL_VERSION,
+      requestId: 'd'.repeat(32),
+      artifact: 'P2 — the export button is misaligned.',
+      context: { your_agent_decision: 'p2' },
+      output: 'P2 — the export button is misaligned.',
+      reference: { your_agent_decision: 'p2' },
       passed: null,
       score: null,
       complete: true,
@@ -237,7 +260,7 @@ const seedPagedTraces = async () => {
       panelId: PAGED_PANEL,
       panelVersionId: PAGED_PANEL_VERSION,
       requestId: index.toString(16).padStart(32, '0'),
-      artifact: 'paged',
+      output: 'paged',
       passed: null,
       score: null,
       complete: true,
@@ -454,7 +477,7 @@ describe('the two auth paths never cross (CONVENTIONS.md “Keys & auth”)', ()
     const response = await app().request(`http://localhost/v1/panels/${PANEL}/evaluate`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ artifact: 'anything' }),
+      body: JSON.stringify({ input: 'the task', output: 'anything' }),
     })
     expect(response.status).toBe(401)
   })
@@ -466,7 +489,10 @@ describe('the two auth paths never cross (CONVENTIONS.md “Keys & auth”)', ()
         authorization: `Bearer ${API_KEY_PLAINTEXT}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ artifact: 'Login button does nothing on Safari 17.' }),
+      body: JSON.stringify({
+        input: 'the task',
+        output: 'Login button does nothing on Safari 17.',
+      }),
     })
     // 404: the panel has no live version in this fixture, which is a decision the route
     // reached AFTER authenticating. The point is that it got past the key check at all.
@@ -531,7 +557,10 @@ describe('the login screen asks which doors exist (Deviation 11)', () => {
 /** Just the fields these tests read — the real shape is the RPC type the console consumes. */
 type Detail = {
   data: {
-    artifact: string
+    input: unknown
+    output: unknown
+    reference: unknown
+    metadata: unknown
     key_name: string | null
     panel_version: number
     passed: boolean | null
@@ -552,7 +581,15 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
     const cookie = await signIn(MEMBER_EMAIL)
     const { status, body } = await detail(cookie, TRACE)
     expect(status).toBe(200)
-    expect(body.data.artifact).toBe('Login button does nothing on Safari 17.')
+    // The four roles, in the shapes they were sent in (ADR-0073) — and not the retired pair.
+    expect(body.data).toMatchObject({
+      input: [{ role: 'user', content: 'Why can I not log in?' }],
+      output: 'Login button does nothing on Safari 17.',
+      reference: { browser: { name: 'Safari', version: 17 } },
+      metadata: { ticket: 'T-1' },
+    })
+    expect(body.data).not.toHaveProperty('artifact')
+    expect(body.data).not.toHaveProperty('context')
     expect(body.data.key_name).toBe('Console test')
     expect(body.data.panel_version).toBe(1)
     expect(body.data.judges).toEqual([
@@ -567,6 +604,18 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
         confidence: expect.closeTo(0.92, 5),
       }),
     ])
+  })
+
+  test('a LEGACY trace reads from its backfill, with no input — never an invented one', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, LEGACY_TRACE)
+    expect(status).toBe(200)
+    expect(body.data).toMatchObject({
+      input: null,
+      output: 'P2 — the export button is misaligned.',
+      reference: { your_agent_decision: 'p2' },
+      metadata: null,
+    })
   })
 
   test('a COLLECTING trace has no judges — none ran — and says so with an empty list', async () => {

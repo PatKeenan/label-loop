@@ -60,12 +60,31 @@ describe('OpenAPI describability', () => {
   test('the evaluation schemas generate a document with their descriptions and examples', async () => {
     const doc = await generate()
     const json = JSON.stringify(doc)
-    expect(json).toContain('The thing to be judged')
-    expect(json).toContain('Login button does nothing')
+    expect(json).toContain('final answer or proposal')
+    expect(json).toContain('I was charged twice for March')
     expect(json).toContain('The evaluation.')
     // The named components survive as component names, not inlined anonymous objects.
     expect(json).toContain('EvaluateRequest')
     expect(json).toContain('ErrorEnvelope')
+  })
+
+  test('input and output are any-JSON, required, and nothing else is accepted', async () => {
+    const doc = (await generate()) as {
+      components: { schemas: { EvaluateRequest: Record<string, unknown> } }
+    }
+    const request = doc.components.schemas.EvaluateRequest
+    expect(request.required).toEqual(['input', 'output'])
+    expect(request.additionalProperties).toBe(false)
+    const properties = request.properties as Record<string, { type?: unknown }>
+    expect(Object.keys(properties)).toEqual(['input', 'output', 'reference', 'metadata'])
+    expect(properties.output?.type).toEqual([
+      'string',
+      'number',
+      'boolean',
+      'object',
+      'array',
+      'null',
+    ])
   })
 
   test('the path parameter and the error envelope are both described', async () => {
