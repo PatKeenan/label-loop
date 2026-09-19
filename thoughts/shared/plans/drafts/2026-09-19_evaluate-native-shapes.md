@@ -16,9 +16,9 @@ four roles — `input` and `output` (required, any JSON), `reference` and `metad
 have LabelLoop, not the integrator, present them: by shape, in time order, with only the agent's
 final answer or proposal marked as judged. Proven first by a reversible experiment
 (`spike/github-triage-agent`, three real agents through OpenRouter). **Existing traces are never
-removed, and every step is reversible until the stakeholder decides otherwise**: storage changes
-are additive, the old columns stay and keep being written, and dropping them is a separate,
-later decision.
+removed, and every phase is reversible until the last one**: storage changes are additive, the
+old columns stay and keep being written through phases 1–4, and phase 5 — once everything else
+is verified — drops them (stakeholder, 2026-09-19).
 
 **Milestone: M5 — a prerequisite, like members was.** M5 phase 4 builds the annotation queue and
 its review payload on the trace's shape, and annotations pin to traces; landing this first means
@@ -112,8 +112,9 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
 ### Changes
 - `apps/web/src/components/shaped/` (new; rebuilt clean from the spike's `shaped-request.tsx`,
   never ported — Phase C) — `to-steps.ts` (pure: OpenAI + Anthropic formats → turns and tool-call
-  steps, results paired by id), `markdown.ts` (pure: the escaped subset — paragraphs, `-`/`1.`
-  lists, `**bold**`, `` `code` `` — to a tree React renders; no HTML is ever interpreted),
+  steps, results paired by id), `markdown.tsx` (a thin wrapper over **`markdown-to-jsx`** with raw
+  HTML disabled, so a caller's `<img onerror>` renders as text, and link URLs restricted to
+  http(s) and mailto),
   `shaped-trace.tsx` (Reference collapsed → the flow, one list in time order → only the final
   reply or the proposal on the judged surface → metadata as one faint line).
 - `apps/web/src/components/shell/trace-drawer.tsx` — the Request section becomes the shaped view
@@ -123,11 +124,15 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
 - Speaker labels neutral: `user` → **User**, `assistant` → **Agent** (the spike labelled an
   operations ticket "Customer").
 - Token-only styling, so M5 phase 5 reuses it under `data-surface="annotator"` unchanged.
-- `apps/web/src/components/shaped/*.test.ts` — `bun test apps/web` covers the pure parts.
+- `apps/web/package.json` — `markdown-to-jsx` (zero dependencies); `docs/STACK_DECISIONS.md` gains
+  its row.
+- `apps/web/src/components/shaped/*.test.ts(x)` — `bun test apps/web` covers the pure parts and
+  the wrapper's safety settings.
 
 ### Steps
 - [ ] `to-steps.ts` + tests (both formats, pairing by id, an unpaired call, the last-reply rule)
-- [ ] `markdown.ts` + tests (the subset; `<img onerror>` stays text)
+- [ ] `markdown-to-jsx` added, STACK_DECISIONS row; `markdown.tsx` + tests (`<img onerror>` and
+      `<script>` stay text; a `javascript:` link is not rendered as a link)
 - [ ] `shaped-trace.tsx`; drawer and trace page use it; legacy rows handled
 - [ ] Neutral speaker labels
 
@@ -174,20 +179,49 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
 
 ---
 
+## Phase 5 — Drop the old columns (after phases 1–4 are verified)
+
+The stakeholder's call (2026-09-19): once the new shape has been lived with through phase 4, the
+old columns go. **This is the one irreversible phase**, which is why it is last and its own PR.
+
+### Changes
+- `packages/db/migrations/0014_drop_artifact_context.sql` + `schema/traces.ts` — drop `artifact`
+  and `context`; `output` becomes NOT NULL (every row has one since the phase-1 backfill).
+- `apps/api/src/services/evaluate.ts` — the dual-write stops.
+- Anything still reading `artifact`/`context` (there should be nothing after phase 4; the
+  typecheck proves it once the columns leave the schema).
+
+### Steps
+- [ ] Confirm every row has `output` (`SELECT count(*) WHERE output IS NULL` = 0) before writing
+      the migration
+- [ ] Migration, schema, dual-write removed
+- [ ] Row count unchanged
+
+### Automated verification
+- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+
+### Manual verification
+- [ ] Every trace — pre-migration, chat, tool-calling, proposal — still opens and reads correctly
+
+---
+
 ## Decisions made
 Each becomes an ADR stub at `/approve_plan` (next free number after ADR-0073 is **0074**), unless
 it only restates ADR-0073.
 
 1. **Additive migration with a backfill; nothing dropped** (stakeholder constraint) — over
-   rewriting `traces` in place or dropping and reseeding; existing traces are kept, and dropping
-   `artifact`/`context` is a separate, later decision.
-2. **Dual-write `artifact` during the transition** — over writing only the new columns; a revert
-   of any phase leaves every row readable by the code it reverts to, which is what "reversible"
-   has to mean with forward-only migrations (ADR-0006).
+   rewriting `traces` in place or dropping and reseeding; existing traces are kept. The old
+   columns are dropped in phase 5, after phases 1–4 are verified (stakeholder, 2026-09-19).
+2. **Dual-write `artifact` through phases 1–4, stopped in phase 5** — over writing only the new
+   columns; a revert of any of phases 1–4 leaves every row readable by the code it reverts to,
+   which is what "reversible" has to mean with forward-only migrations (ADR-0006).
 3. **Legacy rows keep `input` NULL** — over inventing an input from their old context; a
    pre-migration trace never recorded one, and the view says so rather than guessing.
 4. **A 64 KiB cap on the four roles serialised**, a field-level 422 — over a per-field string
-   length; a long conversation is the real growth risk, and the taxonomy has no 413.
+   length (a long conversation is the real growth risk; the taxonomy has no 413) and over 100 KiB
+   (stakeholder asked, 2026-09-19): RAISING a cap later breaks no caller and lowering one does,
+   and the cap also bounds judge cost — everything under it is in every judge's prompt, ~16k
+   tokens at 64 KiB against ~25k at 100. Raise it when a real integration hits it.
 5. **One pure render-for-model function in `llm/`** — over each adapter formatting its own; the
    prompt is the same whatever the provider.
 6. **Every existing judge's prompt changes, recorded, not versioned** — ADR-0033's templates were
@@ -199,8 +233,11 @@ it only restates ADR-0073.
 8. **`metadata` is withheld from the annotator payload** (for M5 phase 4) — ADR-0067's default:
    what the annotator surface never receives it cannot leak; it may carry customer ids. The
    console shows it.
-9. **No markdown dependency: an escaped subset, rendered as a tree** — paragraphs, lists, bold,
-   code; no HTML ever interpreted. A library would be a stack question (below).
+9. **Markdown via `markdown-to-jsx`, raw HTML disabled** (stakeholder chose a package,
+   2026-09-19) — over `react-markdown`, safe by default but pulling the unified/remark tree
+   (≈10 direct dependencies and many transitive), against CONVENTIONS' "no large transitive
+   tree"; and over a hand-rolled subset. `markdown-to-jsx` has zero dependencies, is maintained
+   (9.10.3, updated 2026-09-15) and renders to React elements. A STACK_DECISIONS row and an ADR.
 10. **Neutral speaker labels, User / Agent** — over chat-specific "Customer", which misnamed an
     operations ticket in the experiment.
 11. **Legacy traces render in the new view**, not the old one — one view to maintain, with a note
@@ -209,7 +246,6 @@ it only restates ADR-0073.
     and the one that shows `input` as a messages array.
 
 ## Explicitly NOT doing
-- **Dropping `artifact`/`context`** — a later decision, once the stakeholder is satisfied.
 - **Panel-level reference material** — parked (decision 7).
 - **Bulk seed upload, live sampling modes, backtesting** — parked 2026-09-19.
 - **Versioned prompt templates (ADR-0033)** — decision 6.
@@ -218,13 +254,9 @@ it only restates ADR-0073.
 - **A `/v2`** — ADR-0073's recorded exception.
 
 ## Open questions for the human
-1. **Merge order.** This plan's migration is 0013, after M5 phase 2's 0012, so it should branch
-   from `main` once **#72 and #73 are merged**. #74 (r5) stays open: r5 is redrawn for the
-   transcript layout before it is approved. M5 phase 4's `0013_annotations` becomes 0014.
-   Agree?
-2. **The 64 KiB cap** — enough? A 40-turn support chat with tool results is roughly 20–40 KiB.
-3. **Markdown** — the escaped subset (no dependency), or ask for a library (a stack decision:
-   `docs/STACK_DECISIONS.md` has no row for it)? The subset covers what the experiment's agents
-   actually wrote.
-4. **When the old columns go** — at M5's close, at M8, or only on your word? Default: only on
-   your word.
+All four resolved by the stakeholder on 2026-09-19:
+1. **Merge order** — agreed: branch from `main` after #72 and #73 merge; #74 (r5) held for a
+   redraw; M5 phase 4's annotations migration renumbers to 0015 (this plan takes 0013 and 0014).
+2. **Cap** — 64 KiB kept (decision 4).
+3. **Markdown** — a package: `markdown-to-jsx` (decision 9).
+4. **Old columns** — dropped once the rest is done: phase 5.
