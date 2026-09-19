@@ -90,7 +90,8 @@ const ORG_ID = 'org_01JZZZZZZZZZZZZZZZZZZZZZZZ'
 const CALL = {
   model: FAKE_MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
 }
 
 let recorded: ReturnType<typeof recordingMetrics>
@@ -147,8 +148,8 @@ const driveEverything = async (): Promise<Recorded[]> => {
   // three of the five exits, with the judge and version the caller knows about attached.
   const context = { slug: 'is-missing-repro', judgeVersionId: 'jdv_01JZZZZZZZZZZZZZZZZZZZZZZZ' }
   await gateway.judge({ ...CALL }, context)
-  await gateway.judge({ ...CALL, artifact: `${FAKE_SENTINELS.invalidOutput} x` }, context)
-  await gateway.judge({ ...CALL, artifact: `${FAKE_SENTINELS.unavailable} x` }, context)
+  await gateway.judge({ ...CALL, output: `${FAKE_SENTINELS.invalidOutput} x` }, context)
+  await gateway.judge({ ...CALL, output: `${FAKE_SENTINELS.unavailable} x` }, context)
 
   return await recorded.collect()
 }

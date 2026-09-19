@@ -21,7 +21,8 @@ describeModelProviderContract({
 const call = {
   model: FAKE_MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
   context: { source: 'github' },
 }
 
@@ -32,15 +33,41 @@ describe('determinism', () => {
     expect(second).toEqual(first)
   })
 
-  test('context key order is not part of the input', async () => {
-    const a = await createFakeProvider().evaluate({ ...call, context: { x: '1', y: '2' } })
-    const b = await createFakeProvider().evaluate({ ...call, context: { y: '2', x: '1' } })
+  test('reference key order is not part of the input', async () => {
+    const a = await createFakeProvider().evaluate({ ...call, reference: { x: '1', y: [2] } })
+    const b = await createFakeProvider().evaluate({ ...call, reference: { y: [2], x: '1' } })
     expect(b.output).toEqual(a.output)
+  })
+
+  test('the input is part of the call — the same output after a different input is another call', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 16 }, (_, i) =>
+        createFakeProvider().evaluate({ ...call, input: `input ${i}` }),
+      ),
+    )
+    expect(new Set(results.map((result) => JSON.stringify(result.output))).size).toBeGreaterThan(1)
+  })
+
+  test('sentinels read a STRING output only — an object that mentions one is judged normally', async () => {
+    await expect(
+      createFakeProvider().evaluate({ ...call, output: `${FAKE_SENTINELS.unavailable} down` }),
+    ).rejects.toThrow('sentinel')
+    const judged = await createFakeProvider().evaluate({
+      ...call,
+      output: { note: `${FAKE_SENTINELS.unavailable} down` },
+    })
+    expect(typeof judged.output.verdict).toBe('boolean')
+    // Nor does a sentinel in the INPUT: only the thing judged can drive the fake.
+    const fromInput = await createFakeProvider().evaluate({
+      ...call,
+      input: `${FAKE_SENTINELS.unavailable} down`,
+    })
+    expect(typeof fromInput.output.verdict).toBe('boolean')
   })
 
   test('a different artifact is a different call', async () => {
     const a = await createFakeProvider().evaluate(call)
-    const b = await createFakeProvider().evaluate({ ...call, artifact: 'something else' })
+    const b = await createFakeProvider().evaluate({ ...call, output: 'something else' })
     expect(b.raw).not.toEqual(a.raw)
   })
 
@@ -48,7 +75,7 @@ describe('determinism', () => {
     const provider = createFakeProvider()
     const verdicts = new Set<boolean>()
     for (let i = 0; i < 20; i++) {
-      const result = await provider.evaluate({ ...call, artifact: `artifact ${i}` })
+      const result = await provider.evaluate({ ...call, output: `artifact ${i}` })
       verdicts.add(result.output.verdict)
     }
     expect(verdicts.size).toBe(2)
@@ -57,7 +84,7 @@ describe('determinism', () => {
   test('reasons are present exactly when the verdict is true', async () => {
     const provider = createFakeProvider()
     for (let i = 0; i < 10; i++) {
-      const { output } = await provider.evaluate({ ...call, artifact: `artifact ${i}` })
+      const { output } = await provider.evaluate({ ...call, output: `artifact ${i}` })
       expect(output.reasons.length > 0).toBe(output.verdict)
     }
   })
@@ -77,7 +104,7 @@ describe('the failure knobs', () => {
     [FAKE_SENTINELS.invalidOutput, 'invalid_output'],
   ] as const)('the %s sentinel fails as %s', async (sentinel, kind) => {
     await expectProviderFailure(
-      createFakeProvider().evaluate({ ...call, artifact: `${sentinel} broken` }),
+      createFakeProvider().evaluate({ ...call, output: `${sentinel} broken` }),
       kind,
     )
   })
@@ -86,7 +113,7 @@ describe('the failure knobs', () => {
     const controller = new AbortController()
     const pending = createFakeProvider().evaluate({
       ...call,
-      artifact: `${FAKE_SENTINELS.slow} hangs`,
+      output: `${FAKE_SENTINELS.slow} hangs`,
       signal: controller.signal,
     })
     // A tick with nothing else queued: if the call were going to settle on its own, it
@@ -133,11 +160,11 @@ describe('latency, so a load run measures something (M2)', () => {
     // artifact draws the same delay from any instance, because it comes from the same
     // digest the verdict does. Measured through two fresh providers at a spread wide
     // enough that an accidental collision is implausible rather than merely unlikely.
-    const timeFor = (artifact: string) =>
+    const timeFor = (output: string) =>
       elapsed(() =>
         createFakeProvider({ latency: { meanMs: 200, spreadMs: 180 } }).evaluate({
           ...call,
-          artifact,
+          output,
         }),
       )
 
@@ -153,7 +180,7 @@ describe('latency, so a load run measures something (M2)', () => {
     const provider = createFakeProvider({ latency: { meanMs: 30, spreadMs: 25 } })
     const times: number[] = []
     for (let i = 0; i < 20; i++) {
-      times.push(await elapsed(() => provider.evaluate({ ...call, artifact: `artifact ${i}` })))
+      times.push(await elapsed(() => provider.evaluate({ ...call, output: `artifact ${i}` })))
     }
     expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(10)
   })

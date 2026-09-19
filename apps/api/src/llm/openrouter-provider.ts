@@ -13,6 +13,7 @@ import {
   type ProviderResult,
   type TokenUsage,
 } from './provider.port.ts'
+import { renderForModel } from './render-for-model.ts'
 
 /**
  * The OpenRouter adapter (ADR-0021) — the first real `ModelProvider`, and a peer of the
@@ -85,29 +86,29 @@ const reasoningControl = (pin: ModelPin): Record<string, unknown> =>
  * opinionated would be an unversioned prompt fragment that every `jdv_` silently inherits
  * and no version records.
  */
-const messages = (call: JudgeCall): Array<{ role: string; content: string }> => {
-  const context = Object.entries(call.context ?? {})
-    .map(([key, value]) => `${key}: ${value}`)
-    .join('\n')
-
-  return [
-    {
-      role: 'system',
-      content:
-        'You judge one artifact against one binary question. Answer only with the ' +
-        'required JSON object, giving your reasoning before your verdict. Keep ' +
-        `rationale under ${RATIONALE_TARGET_LENGTH} characters — one or two sentences.`,
-    },
-    {
-      role: 'user',
-      content: [
-        `Question: ${call.question}`,
-        ...(context === '' ? [] : [`Context:\n${context}`]),
-        `Artifact:\n${call.artifact}`,
-      ].join('\n\n'),
-    },
-  ]
-}
+const messages = (call: JudgeCall): Array<{ role: string; content: string }> => [
+  {
+    role: 'system',
+    // WHAT is judged is the one thing this framing must get right (ADR-0073): the output
+    // alone. The spike showed that a judge handed a turn's tool calls beside its reply
+    // reads the tool calls as on trial too.
+    content:
+      'You judge the OUTPUT of an AI agent against one binary question. The input is ' +
+      'what the agent was given or did to get there — use it as evidence, but judge only ' +
+      'the output. Answer only with the required JSON object, giving your reasoning before ' +
+      `your verdict. Keep rationale under ${RATIONALE_TARGET_LENGTH} characters — one or ` +
+      'two sentences.',
+  },
+  {
+    role: 'user',
+    content: [
+      `Question: ${call.question}`,
+      ...(call.reference === undefined ? [] : [`Reference:\n${renderForModel(call.reference)}`]),
+      `Input:\n${renderForModel(call.input)}`,
+      `Output:\n${renderForModel(call.output)}`,
+    ].join('\n\n'),
+  },
+]
 
 /**
  * A refusal COMPLETED (D7). The provider looked at the request, decided, and answered —
