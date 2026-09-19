@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>annotator-session r5 — LabelLoop</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  ============================================================================
+  SCREEN:     annotator-session (+ its landing, /review, and its waiting states)
+  ROLE:       annotator; also any staff member who opts in via "Review traces"
+              (ADR-0064: a role says what you may DO, the surface is a preference)
+  IMPLEMENTS: M5 plan phase 3 (thoughts/shared/plans/approved/2026-09-18_m5-members-
+              annotation.md), ADR-0066 (acceptable / not acceptable + note),
+              ADR-0067 (no operator signals), ADR-0071 (Phase A resumes for this
+              screen only). Feeds M6: the notes are what axial coding clusters.
+  SURFACE:    data-surface="annotator" — light + comfortable. One trace, one
+              question, minimal chrome.
+  REVISION:   r1–r4 (2026-08) — drawn for agree/correct against a classifier's
+              proposed label; decisions harvested to
+              thoughts/shared/research/2026-08-20_phase-a-design-harvest.md.
+              r5 (2026-09-18) — redrawn for what M5 actually does: panels
+              collect before they judge (ADR-0060), so there is NO verdict to
+              agree with. The question becomes "is this acceptable?", the
+              correction branch becomes a required note, and the landing and
+              waiting states are drawn for the first time.
+  ============================================================================
+
+  REVIEW CONTROLS. The strip at the very top switches between the five states.
+  It is not part of the design. The small script at the bottom exists because
+  three behaviours are decisions that a static picture cannot show: the note
+  appearing on "Not acceptable", the note gating Save, and the cap biting.
+  Disposable with the rest of the mockup (CLAUDE.md Phase C).
+
+  KEPT FROM r4 (still true without a judge)
+  1. THE PAIR IS PRESENTED AS A PAIR. What the agent was given (IN) and what it
+     produced (OUT) carry matched header bars and role badges, stacked with a
+     connector, because the annotator is judging whether the output fits its
+     input. OUT keeps the violet "a machine wrote this" tint (tokens.css §2).
+  2. THE TWO ANSWERS CARRY EQUAL WEIGHT UNTIL ONE IS CHOSEN. Neither is styled
+     as the primary action; a button fills when SELECTED, never by default. A
+     dominant "Acceptable" would manufacture the agreement M6 exists to measure.
+  3. NO CONFIDENCE, MODEL, COST, VERDICT, KEY OR TRACE ID — not a number, not a
+     hedge, not a word (decision 8, ADR-0067). Enforced by the API payload in
+     phase 4, not only here: the page cannot show what it never receives.
+  4. THE "WHY AM I SEEING THIS" LINE IS GENERIC. It must stay true when M6 adds
+     low-confidence, disagreement and honeypot samplers, so it names none.
+  5. DISAGREEMENT MUST CARRY A REASON; ACCEPTANCE NEED NOT. "Not acceptable"
+     opens a required note; Save stays disabled until it has text. The note is
+     the expensive signal — it is what becomes the failure taxonomy.
+  6. THE NOTE IS CAPPED AT 280, NOT COAXED. Hard maxlength and a live counter.
+     Short notes cluster; essays do not.
+  7. SKIPPING IS FIRST-CLASS AND FREE. One key, no reason asked. A guess is
+     worse than an abstention. A skip frees the item for someone else and it is
+     never served back to the person who skipped (decision 7).
+  8. KEYBOARD-FIRST. Y / N / S, Enter to save. Twenty items should never need
+     the mouse (the M5 demo: 20 real traces in under 5 minutes).
+
+  NEW IN r5
+  9. THE QUESTION IS "IS THIS ACCEPTABLE?" (ADR-0066). A collecting panel has
+     no judge, so there is nothing to agree with; the binary is what M6 aligns
+     judges against and the note is what axial coding clusters.
+ 10. CONTEXT IS SHOWN AS ITS OWN FIELDS. `context` is an optional map of
+     string to string (evaluate contract), so IN renders each key as a labelled
+     row, humanised (`customer_message` → "Customer message"). With no context,
+     IN is absent and OUT stands alone — never an empty IN panel.
+ 11. A PROGRESS LINE, NOT A HISTORY (decision 16). "7 this session · 44 left".
+     A list of past answers invites second-guessing, and a changed mind is a
+     new row anyway.
+ 12. THE LANDING LISTS EVERY PANEL (stakeholder, 2026-09-18). Open panels show
+     how many are waiting; locked ones show progress toward the 50-trace gate
+     ("34 of 50"). With one panel it reads as a single progress card. Counts
+     come from GET /internal/review/panels; a trace count is not an operator
+     signal, so decision 8 does not withhold it.
+ 13. WAITING STATES ARE CENTRED, WITH FEW WORDS (stakeholder, 2026-09-18,
+     after M4's top-left "Nothing to review yet" card read as broken). Locked
+     and drained both sit in the middle of the stage.
+ 14. r4's SCORING FOOTER IS GONE. It promised accuracy-weighted scoring and
+     disclosed known-answer checks; M5 has neither, and a screen that states
+     something untrue about how people are measured is worse than silence.
+ 15. THE WAY OUT IS ONE CLICK. "All panels" on every session, the org name,
+     and the account menu. Staff also get "Console" (plan phase 5: the console
+     is one click away); an annotator does not see it.
+
+  OPEN QUESTIONS FOR REVIEW
+  - Q1. IN/OUT does not fit every panel. For the triage persona (ADR-0037) the
+        ARTIFACT is the inbound issue and the agent's decision — the route —
+        is in CONTEXT, so "OUT" would badge the customer's issue as machine
+        output. Options: (a) keep IN/OUT and accept the mislabel; (b) neutral
+        badges, CONTEXT and SUBJECT; (c) a per-panel setting for which side is
+        the agent's output. Drawn as (a), per the plan; (b) is the cheap fix.
+  - Q2. Should "Acceptable" accept an OPTIONAL note? The schema allows one.
+        It would be useful input, but any field on the fast path slows the
+        common case. Drawn without.
+  - Q3. Does Y save immediately, or select and wait for Enter? Drawn as
+        select-then-Enter for both answers, so a mis-key is recoverable before
+        it becomes a row. Costs one keystroke per item.
+  - Q4. The question is generic. Should a panel carry one line of guidance
+        ("Would you send this reply to a paying customer?") that replaces the
+        default? Not in the schema; would be a panel-version field.
+  - Q5. Long artifacts. OUT is shown in full here. A 20k-character artifact
+        needs a cap with "show all" — not drawn.
+
+  NOT DRAWN (deliberate): notifications, help, settings, a history of past
+  answers, scores, streaks, consensus — M5 "Not now".
+  ============================================================================
+-->
+<style>
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--type-ui);
+    line-height: var(--leading-ui);
+  }
+  ::selection { background: var(--color-selection); }
+  [hidden] { display: none !important; }
+
+  /* --- review controls: NOT part of the design ------------------------------ */
+  .review {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-tight);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-sunken);
+    border-bottom: var(--border-hair) dashed var(--color-line-strong);
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .review button {
+    font: inherit; letter-spacing: inherit; text-transform: inherit;
+    color: var(--color-text-muted); background: transparent;
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-xs); padding: var(--space-1) var(--space-2);
+    cursor: pointer;
+  }
+  .review button[aria-pressed="true"] { color: var(--color-text); border-color: var(--color-text); }
+
+  /* --- the frame: one quiet bar ---------------------------------------------- */
+  .bar {
+    display: flex; align-items: center; gap: var(--gap-inline);
+    padding: var(--pad-bar-y) var(--pad-bar-x);
+    border-bottom: var(--border-hair) solid var(--color-line);
+  }
+  .brand { font-weight: var(--weight-semibold); }
+  .org { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); }
+  .bar-end { margin-left: auto; display: flex; align-items: center; gap: var(--gap-inline); }
+  .link { color: var(--color-text-muted); text-decoration: none; font-size: var(--type-data); }
+  .link:hover { color: var(--color-text); text-decoration: underline; text-underline-offset: 4px; }
+  .account {
+    font-family: var(--font-mono); font-size: var(--type-data);
+    border: var(--border-hair) solid var(--color-line); border-radius: var(--radius-control);
+    padding: var(--pad-control-y) var(--pad-control-x); background: var(--color-surface);
+  }
+
+  .shell { max-width: 46rem; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-16); }
+
+  /* --- centred waiting / landing stage --------------------------------------- */
+  .stage {
+    min-height: calc(100vh - 10rem);
+    display: grid; place-items: center;
+    padding: var(--space-8) var(--space-6);
+  }
+  .stage-inner { width: 100%; max-width: 32rem; display: grid; gap: var(--space-6); text-align: center; }
+  .stage h1 {
+    margin: 0; font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+  }
+  .stage p { margin: 0; color: var(--color-text-muted); }
+
+  .panels { display: grid; gap: var(--gap-tight); text-align: left; }
+  .panel-row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-2) var(--gap-inline);
+    padding: var(--space-4) var(--space-5);
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+  }
+  .panel-name { font-weight: var(--weight-semibold); }
+  .panel-state { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .panel-row .track { grid-column: 1 / -1; }
+  .panel-open { display: flex; align-items: center; gap: var(--gap-inline); }
+  /* Progress is not a state — it stays achromatic (as r4's session bar). */
+  .track { height: var(--space-1); background: var(--color-sunken); border-radius: var(--radius-pill); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--color-text); }
+
+  /* --- session --------------------------------------------------------------- */
+  .session-head {
+    display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--gap-inline); margin-bottom: var(--space-8);
+  }
+  .session-title { display: flex; align-items: baseline; gap: var(--gap-inline); }
+  .session-title b { font-weight: var(--weight-semibold); }
+  .progress-line { font-family: var(--font-mono); font-size: var(--type-data); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+
+  .card {
+    background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-raise);   /* the one raised thing on the screen */
+    padding: var(--pad-panel-y) var(--pad-panel-x);
+  }
+  .question {
+    font-size: var(--type-title); line-height: var(--leading-title);
+    letter-spacing: var(--tracking-snug); font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-2);
+  }
+  .why { font-size: var(--type-data); color: var(--color-text-muted); margin: 0 0 var(--space-6); }
+
+  .exchange { display: grid; margin-bottom: var(--space-8); }
+  .side {
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field);
+    padding: var(--space-5) var(--space-6);
+  }
+  .side-head {
+    display: flex; align-items: center; gap: var(--gap-inline);
+    padding-bottom: var(--space-3); margin-bottom: var(--space-4);
+    border-bottom: var(--border-hair) solid var(--color-line);
+  }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .role {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    font-weight: var(--weight-semibold);
+    border: var(--border-hair) solid; border-radius: var(--radius-mark);
+    padding: var(--pad-mark-y) var(--pad-mark-x);
+  }
+  .role-in { color: var(--color-text); border-color: var(--color-line-strong); background: var(--color-surface); }
+  .role-out { color: var(--state-info-fg); border-color: var(--state-info-line); background: var(--state-info-tint); }
+  .side-in { border-left: var(--border-thick) solid var(--color-line-strong); }
+  .side-out { border-left: var(--border-thick) solid var(--state-info-line); background: var(--state-info-tint); }
+
+  .fields { display: grid; gap: var(--space-4); margin: 0; }
+  .fields dt { font-size: var(--type-data); color: var(--color-text-muted); margin-bottom: var(--space-1); }
+  .fields dd { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
+
+  .artifact { font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); margin: 0; }
+  .artifact + .artifact { margin-top: var(--space-3); }
+
+  .flow { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-3) 0; }
+  .flow i { display: block; width: var(--border-hair); height: var(--space-4); background: var(--color-line-strong); }
+  .flow b {
+    display: block; width: var(--space-2); height: var(--space-2);
+    border-right: var(--border-hair) solid var(--color-line-strong);
+    border-bottom: var(--border-hair) solid var(--color-line-strong);
+    transform: rotate(45deg); margin-top: calc(var(--space-1) * -1);
+  }
+
+  .actions { display: flex; gap: var(--gap-inline); flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--gap-tight);
+    font-family: var(--font-ui); font-size: var(--type-ui); font-weight: var(--weight-semibold);
+    line-height: var(--leading-ui);
+    padding: var(--pad-control-y) var(--pad-control-x);
+    border: var(--border-hair) solid var(--color-action);
+    border-radius: var(--radius-control);
+    background: var(--color-action); color: var(--color-action-text);
+    cursor: pointer; text-decoration: none;
+    transition: background var(--duration-fast) var(--easing), border-color var(--duration-fast) var(--easing);
+  }
+  .btn:hover { background: var(--color-action-hover); border-color: var(--color-action-hover); }
+  .btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+  .btn.choice { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn.choice:hover { background: var(--color-sunken); border-color: var(--color-line-strong); }
+  .btn.choice[aria-pressed="true"] { background: var(--color-action); color: var(--color-action-text); border-color: var(--color-action); }
+  .btn.plain { background: transparent; color: var(--color-text-muted); border-color: transparent; margin-left: auto; font-weight: var(--weight-medium); }
+  .btn.plain:hover { background: var(--color-sunken); color: var(--color-text); }
+  .btn.quiet { background: transparent; color: var(--color-text); border-color: var(--color-action-quiet-line); }
+  .btn:disabled { background: var(--color-sunken); color: var(--color-text-faint); border-color: var(--color-line); cursor: not-allowed; }
+  kbd {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    padding: 0 var(--space-1); border: var(--border-hair) solid currentColor;
+    border-radius: var(--radius-xs); opacity: 0.7;
+  }
+
+  .note { margin-top: var(--space-6); padding-top: var(--space-6); border-top: var(--border-hair) solid var(--color-line-soft); }
+  .note label { display: block; font-weight: var(--weight-semibold); margin-bottom: var(--space-1); }
+  .note-hint { display: block; font-size: var(--type-data); color: var(--color-text-muted); margin-bottom: var(--space-3); }
+  .note textarea {
+    width: 100%; box-sizing: border-box;
+    font-family: var(--font-ui); font-size: var(--type-body); line-height: var(--leading-body);
+    color: var(--color-text); background: var(--color-surface);
+    border: var(--border-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-field);
+    padding: var(--pad-field-y) var(--pad-field-x); resize: vertical;
+  }
+  .note textarea:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+  .counter { display: block; text-align: right; margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--type-micro); color: var(--color-text-faint); font-variant-numeric: tabular-nums; }
+  .counter[data-near="true"] { color: var(--state-warning-fg); }
+
+  .save-row {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--gap-inline); margin-top: var(--space-6); padding-top: var(--space-5);
+    border-top: var(--border-hair) solid var(--color-line-soft);
+  }
+  .save-aside { font-size: var(--type-data); color: var(--color-text-muted); }
+
+  @media (max-width: 34rem) {
+    .bar { flex-wrap: wrap; padding-left: var(--space-4); padding-right: var(--space-4); }
+    .shell, .stage { padding-left: var(--space-4); padding-right: var(--space-4); }
+    .card { padding: var(--space-5) var(--space-4); }
+    .side { padding: var(--space-4); }
+    .actions .btn { flex: 1 1 auto; justify-content: center; }
+    .btn.plain { margin-left: 0; }
+  }
+</style>
+</head>
+<body data-surface="annotator">
+
+<nav class="review" aria-label="Review controls (not part of the design)">
+  review controls — not part of the design:
+  <button type="button" data-show="landing" aria-pressed="true">1 · Panels</button>
+  <button type="button" data-show="locked">2 · Nothing open yet</button>
+  <button type="button" data-show="session">3 · Session</button>
+  <button type="button" data-show="session-no">4 · Not acceptable</button>
+  <button type="button" data-show="drained">5 · All caught up</button>
+</nav>
+
+<header class="bar">
+  <span class="brand">LabelLoop</span>
+  <span class="org">acme-support</span>
+  <div class="bar-end">
+    <!-- Staff only (decision 15). An annotator's bar has the account menu alone. -->
+    <a class="link" href="#">Console</a>
+    <span class="account">maya.okafor@acme.example</span>
+  </div>
+</header>
+
+<!-- ===================== 1 · THE LANDING: every panel ===================== -->
+<main class="stage" data-state="landing">
+  <div class="stage-inner">
+    <h1>Review traces</h1>
+    <div class="panels">
+      <div class="panel-row">
+        <span class="panel-name">support-reply-gate</span>
+        <span class="panel-open"><span class="panel-state">44 waiting</span><a class="btn" href="#">Start</a></span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-name">brand-voice</span>
+        <span class="panel-state">34 of 50</span>
+        <span class="track" aria-label="34 of 50 traces collected"><i style="width:68%"></i></span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-name">issue-triage</span>
+        <span class="panel-state">6 of 50</span>
+        <span class="track" aria-label="6 of 50 traces collected"><i style="width:12%"></i></span>
+      </div>
+    </div>
+    <p>A panel opens for review at 50 traces.</p>
+  </div>
+</main>
+
+<!-- ============ 2 · NOTHING OPEN YET — replaces M4's "Nothing to review yet" ============ -->
+<main class="stage" data-state="locked" hidden>
+  <div class="stage-inner">
+    <h1>Almost ready</h1>
+    <p>Reviewing opens when a panel has collected 50 traces.</p>
+    <div class="panels">
+      <div class="panel-row">
+        <span class="panel-name">brand-voice</span>
+        <span class="panel-state">34 of 50</span>
+        <span class="track" aria-label="34 of 50 traces collected"><i style="width:68%"></i></span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-name">issue-triage</span>
+        <span class="panel-state">6 of 50</span>
+        <span class="track" aria-label="6 of 50 traces collected"><i style="width:12%"></i></span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ===================== 3 + 4 · THE SESSION ===================== -->
+<main class="shell" data-state="session" hidden>
+  <div class="session-head">
+    <div class="session-title">
+      <a class="link" href="#">← All panels</a>
+      <b>support-reply-gate</b>
+    </div>
+    <span class="progress-line">7 this session · 44 left</span>
+  </div>
+
+  <article class="card">
+    <h1 class="question">Is this output acceptable?</h1>
+    <!-- Generic on purpose (decision 4): true for every sampler M6 will add. -->
+    <p class="why">One of the traces this panel collected.</p>
+
+    <div class="exchange">
+      <section class="side side-in" aria-label="What the agent was given">
+        <div class="side-head"><span class="role role-in">In</span><span class="eyebrow">What the agent was given</span></div>
+        <dl class="fields">
+          <div><dt>Customer message</dt><dd>Hi — I was charged $588 this morning for the annual renewal. I meant to cancel last week and forgot. We haven’t used the product since March. Can I get this refunded?</dd></div>
+          <div><dt>Plan</dt><dd>Team, annual</dd></div>
+          <div><dt>Days since renewal</dt><dd>0</dd></div>
+        </dl>
+      </section>
+      <div class="flow" aria-hidden="true"><i></i><b></b></div>
+      <section class="side side-out" aria-label="What the agent produced">
+        <div class="side-head"><span class="role role-out">Out</span><span class="eyebrow">What the agent produced</span></div>
+        <p class="artifact">Thanks for reaching out! Annual plans are non-refundable once the renewal has processed, as outlined in our Terms of Service.</p>
+        <p class="artifact">To avoid future charges, you can turn off auto-renew under Settings → Billing. Is there anything else I can help with?</p>
+      </section>
+    </div>
+
+    <div class="actions" role="group" aria-label="Your answer">
+      <button type="button" class="btn choice" data-answer="yes" aria-pressed="false">Acceptable <kbd>Y</kbd></button>
+      <button type="button" class="btn choice" data-answer="no" aria-pressed="false">Not acceptable <kbd>N</kbd></button>
+      <button type="button" class="btn plain" data-answer="skip">Skip <kbd>S</kbd></button>
+    </div>
+
+    <div class="note" data-note hidden>
+      <label for="note">What’s wrong with it?</label>
+      <span class="note-hint">Required. One or two sentences.</span>
+      <textarea id="note" rows="3" maxlength="280" placeholder="Refused a same-day refund the policy allows; never mentions the 14-day window."></textarea>
+      <span class="counter" data-counter>0 / 280</span>
+    </div>
+
+    <div class="save-row">
+      <span class="save-aside">Skipping is always fine.</span>
+      <button type="button" class="btn" data-save disabled>Save and next <kbd>↵</kbd></button>
+    </div>
+  </article>
+</main>
+
+<!-- ===================== 5 · ALL CAUGHT UP ===================== -->
+<main class="stage" data-state="drained" hidden>
+  <div class="stage-inner">
+    <h1>All caught up</h1>
+    <p>Nothing left to review in support-reply-gate. New traces appear here as the panel collects them.</p>
+    <div><a class="btn quiet" href="#">All panels</a></div>
+  </div>
+</main>
+
+<script>
+  // Review scaffolding only. Disposable with the mockup.
+  const states = document.querySelectorAll('[data-state]')
+  const controls = document.querySelectorAll('.review button')
+  const choices = document.querySelectorAll('[data-answer]')
+  const noteBlock = document.querySelector('[data-note]')
+  const note = document.getElementById('note')
+  const counter = document.querySelector('[data-counter]')
+  const save = document.querySelector('[data-save]')
+  let answer = null
+
+  const refresh = () => {
+    choices.forEach((b) => b.dataset.answer !== 'skip' && b.setAttribute('aria-pressed', String(b.dataset.answer === answer)))
+    noteBlock.hidden = answer !== 'no'
+    const length = note.value.length
+    counter.textContent = `${length} / 280`
+    counter.dataset.near = String(length >= 250)
+    // Decision 5: "Not acceptable" saves only with a note; "Acceptable" saves as is.
+    save.disabled = answer === null || (answer === 'no' && note.value.trim() === '')
+  }
+
+  const show = (name) => {
+    const session = name === 'session' || name === 'session-no'
+    states.forEach((s) => { s.hidden = s.dataset.state !== (session ? 'session' : name) })
+    controls.forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.show === name)))
+    answer = name === 'session-no' ? 'no' : null
+    note.value = ''
+    refresh()
+    if (answer === 'no') note.focus()
+  }
+
+  const choose = (value) => {
+    if (value === 'skip') { show('session'); return } // a skip records and advances at once
+    answer = value
+    refresh()
+    if (value === 'no') note.focus()
+  }
+
+  controls.forEach((c) => c.addEventListener('click', () => show(c.dataset.show)))
+  choices.forEach((b) => b.addEventListener('click', () => choose(b.dataset.answer)))
+  note.addEventListener('input', refresh)
+  save.addEventListener('click', () => show('session'))
+
+  document.addEventListener('keydown', (event) => {
+    if (document.querySelector('[data-state="session"]').hidden) return
+    if (event.target === note) {
+      // Enter saves from the note; Shift+Enter is a new line.
+      if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!save.disabled) save.click() }
+      if (event.key === 'Escape') note.blur()
+      return
+    }
+    const key = event.key.toLowerCase()
+    if (key === 'y') choose('yes')
+    else if (key === 'n') { event.preventDefault(); choose('no') }
+    else if (key === 's') choose('skip')
+    else if (event.key === 'Enter' && !save.disabled) save.click()
+  })
+</script>
+</body>
+</html>
