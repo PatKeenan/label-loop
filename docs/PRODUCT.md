@@ -189,6 +189,13 @@ Web console + annotator surface · typed API gateway · relational database (+ c
 
 - Which open-weights base family for V1 (e.g., Llama vs Qwen small models)?
 - Judge sampling rate vs cost tradeoff defaults? Related: per-judge sampling means a sampled judge is *monitoring*, not gating, and a skipped judge must be distinguishable from a passing one in the response.
+  *Narrowed 2026-09-19:* sampling is a **per-panel choice of mode** on LIVE traffic, not a property
+  of data: a **gate** judges 100% of calls (a deterministic step reads `passed`); a **monitor**
+  judges X% to watch and annotate, and an unsampled call carries no verdict — visibly, never as a
+  pass. It is NOT how uploaded history gets judged: that is **backtesting** — "what would this judge
+  have blocked last month, and how often does it agree with your experts?" — a deliberate step before
+  a judge goes live, belonging with judge alignment (M6/M7). Bulk upload itself never triggers a
+  judge (docs/PARKING_LOT.md). The defaults remain open.
 - Where training jobs run (rented GPU vs managed service)?
 - Does a panel return an overall verdict, or only the per-judge set? Leaning per-judge only, so we never decide a caller's risk tolerance.
 - Is the near-term target a **shared workspace** (a company's own developers and experts) or the **marketplace** (§10)? The workspace is the right first build either way, but the answer changes what M4/M5 must not foreclose.

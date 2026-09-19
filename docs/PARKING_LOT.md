@@ -178,6 +178,43 @@ The switch is one prop on `PageHead` (`titlePlacement="trail"`) per page, so it 
 at once. Two things to weigh: Home's trail would become a single segment (`demo / Panels`),
 and a section's name in the trail loses the title's size as the page's main landmark.
 
+## Panel-scoped access for internal members (raised 2026-09-18, M5)
+
+Membership is org-wide: an admin, engineer or annotator holds their role across **every** panel
+in the organisation, and M5's annotator will see every panel's review queue. That is a real
+limitation, not a hypothetical one. An **agency serving clients with competing brands** runs
+each client as a panel in one org, and must be able to keep a member to the panels they work on
+— a person annotating Brand A's traces must not see Brand B's.
+
+**Design it once, with M8's guest-expert access**, which already needs panel scoping
+(PRODUCT.md §5.1, ADR-0072) — two mechanisms for "which panels may this person reach" would
+drift. Shape to start from: a member × panel grant (an absent grant meaning every panel, so
+today's orgs are unaffected), checked ALONGSIDE the role capability map. It is not an extension
+of `createAccessControl` (ADR-0068), which answers "may this role create annotations" with no
+notion of which panel. Every panel-scoped read — the panel list, traces, keys, the review queue —
+filters by it, and `org_invitations` gains the panels an invitation grants.
+
+**Promote earlier than M8 if** a real customer arrives with competing clients in one org.
+
+## Bulk seed upload — the on-ramp to a gate (raised 2026-09-19)
+
+Today a new panel waits for 50 LIVE calls before annotation opens. A team with an agent already
+in production has months of runs in its own database, and could start annotating the same day.
+
+**Shape:** a batch endpoint on a panel taking past traces in ADR-0073's four roles
+(`input`/`output`/`reference`/`metadata`), each with its **original timestamp** (an ingest time
+would make a backfill look like it all happened today) and the caller's **own id** (so a re-upload
+is idempotent). Stored exactly as collecting-mode traces are, and counted toward the 50-trace gate.
+**It never calls a model** — cheap, fast, and no cost question to answer.
+
+**What it is NOT:** a way to judge history. "Run judges on 30% of the upload" is backtesting — a
+deliberate pre-launch step with judge alignment (M6/M7), not a side effect of uploading. Keeping the
+two apart is the line between an on-ramp to a gate and an experiments platform (Braintrust and
+Langfuse's ground). The test for every feature here: *does it get a team to a working gate sooner?*
+
+**Depends on** ADR-0073 (the four roles), still Proposed. **Promote** with M6, when judges are
+first authored from annotations and a seeded panel pays off immediately.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps
