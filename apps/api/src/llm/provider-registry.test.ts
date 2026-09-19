@@ -32,7 +32,7 @@ describe('dispatch', () => {
     }
   }
 
-  const CALL = { question: 'Is this a bug?', artifact: 'It crashes.' }
+  const CALL = { question: 'Is this a bug?', input: 'Triage this.', output: 'It crashes.' }
 
   test('sends each model to the adapter its PREFIX names', async () => {
     const { registry, seen } = routed()

@@ -55,7 +55,8 @@ try {
   const result = await provider.evaluate({
     model,
     question: 'Does this report describe something behaving incorrectly?',
-    artifact: ARTIFACT,
+    input: [{ role: 'user', content: 'Write up the bug I just hit, with steps.' }],
+    output: ARTIFACT,
     pin,
   })
   const latencyMs = Math.round(performance.now() - startedAt)
