@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import {
   DEFAULT_FAKE_PIN,
+  EVALUATE_MAX_BYTES,
   type Evaluation,
   errorEnvelopeSchema,
   evaluateResponseSchema,
@@ -332,6 +333,8 @@ const evaluateRequest = (
   })
 
 const ARTIFACT = 'Login button does nothing on Safari 17. Repro: click it. Nothing happens.'
+/** What the agent was given — a chat, the shape most integrators hold (ADR-0073). */
+const INPUT = [{ role: 'user', content: 'Triage this bug report, please.' }]
 
 beforeEach(() => {
   reporter = createRecordingErrorReporter()
@@ -340,7 +343,7 @@ beforeEach(() => {
 
 describe('a successful evaluation', () => {
   test('answers with the published contract, keyed by judge slug', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     expect(res.status).toBe(200)
 
     const parsed = evaluateResponseSchema.safeParse(await res.json())
@@ -355,7 +358,7 @@ describe('a successful evaluation', () => {
   })
 
   test('applies each judge’s own polarity, which is what makes the score mean anything', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
     const positive = data.judges['on-brand']
@@ -378,11 +381,15 @@ describe('a successful evaluation', () => {
 
   test('the same artifact evaluates the same way, into a NEW trace each time', async () => {
     const app = appWith()
-    const first = (await (await app.request(evaluateRequest({ artifact: ARTIFACT }))).json()) as {
+    const first = (await (
+      await app.request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
+    ).json()) as {
       data: Evaluation
       request_id: string
     }
-    const second = (await (await app.request(evaluateRequest({ artifact: ARTIFACT }))).json()) as {
+    const second = (await (
+      await app.request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
+    ).json()) as {
       data: Evaluation
       request_id: string
     }
@@ -400,7 +407,12 @@ describe('a successful evaluation', () => {
 describe('the trace that gets written (ADR-0001)', () => {
   test('records the run, the key that paid for it, and the request that produced it', async () => {
     const res = await appWith().request(
-      evaluateRequest({ artifact: ARTIFACT, context: { source: 'github' } }),
+      evaluateRequest({
+        input: INPUT,
+        output: ARTIFACT,
+        reference: { repo: { name: 'acme/web', default_branch: 'main' } },
+        metadata: { source: 'github' },
+      }),
     )
     const { data, request_id } = (await res.json()) as { data: Evaluation; request_id: string }
 
@@ -411,14 +423,33 @@ describe('the trace that gets written (ADR-0001)', () => {
     expect(trace?.requestId).toBe(request_id)
     expect(trace?.apiKeyId).toBe(KEY)
     expect(trace?.panelVersionId).toBe(PANEL_VERSION)
+    // The four roles, stored in the shapes they were sent in (ADR-0073).
+    expect(trace?.input).toEqual(INPUT)
+    expect(trace?.output).toBe(ARTIFACT)
+    expect(trace?.reference).toEqual({ repo: { name: 'acme/web', default_branch: 'main' } })
+    expect(trace?.metadata).toEqual({ source: 'github' })
+    // And the dual-write (ADR-0074): code that reads only `artifact` — what a revert would
+    // restore — still finds this row readable. `context` is retired: NULL on every new row.
     expect(trace?.artifact).toBe(ARTIFACT)
-    expect(trace?.context).toEqual({ source: 'github' })
+    expect(trace?.context).toBeNull()
     expect(trace?.passed).toBe(data.passed)
+  })
+
+  test('a non-string output is dual-written to artifact as its JSON', async () => {
+    const proposal = { action: 'label', labels: ['bug', 'p2'] }
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: proposal }))
+    const { data } = (await res.json()) as { data: Evaluation }
+
+    const trace = await db.query.traces.findFirst({
+      where: eq(schema.traces.id, data.trace_id),
+    })
+    expect(trace?.output).toEqual(proposal)
+    expect(trace?.artifact).toBe(JSON.stringify(proposal))
     expect(trace?.complete).toBe(data.complete)
   })
 
   test('stores the raw provider payload beside the normalised fields, FK’d to a jdv_', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
     const verdicts = await db.query.traceVerdicts.findMany({
@@ -437,7 +468,7 @@ describe('the trace that gets written (ADR-0001)', () => {
   })
 
   test('an evaluated verdict carries its tokens and its bill', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
     const verdicts = await db.query.traceVerdicts.findMany({
@@ -463,7 +494,7 @@ describe('the trace that gets written (ADR-0001)', () => {
     // rather than as no call. The error envelope carries no `tr_`, which is exactly why
     // every trace stores the `request_id` of the execution that produced it (ADR-0010).
     const res = await appWith().request(
-      evaluateRequest({ artifact: `${FAKE_SENTINELS.unavailable} no bill` }),
+      evaluateRequest({ input: INPUT, output: `${FAKE_SENTINELS.unavailable} no bill` }),
     )
     const { request_id } = (await res.json()) as { request_id: string }
 
@@ -555,7 +586,10 @@ describe('the pin frozen on a jdv_ reaches the provider (ADR-0022)', () => {
   test('the request body carries THAT judge’s pin, field for field', async () => {
     const { app, sent } = routedApp()
     const res = await app.request(
-      evaluateRequest({ artifact: ARTIFACT }, { key: PINNED_PLAINTEXT, panel: PINNED_PANEL }),
+      evaluateRequest(
+        { input: INPUT, output: ARTIFACT },
+        { key: PINNED_PLAINTEXT, panel: PINNED_PANEL },
+      ),
     )
     expect(res.status).toBe(200)
 
@@ -574,7 +608,10 @@ describe('the pin frozen on a jdv_ reaches the provider (ADR-0022)', () => {
   test('and the endpoint that answered is recorded on the verdict, dated', async () => {
     const { app } = routedApp()
     const res = await app.request(
-      evaluateRequest({ artifact: ARTIFACT }, { key: PINNED_PLAINTEXT, panel: PINNED_PANEL }),
+      evaluateRequest(
+        { input: INPUT, output: ARTIFACT },
+        { key: PINNED_PLAINTEXT, panel: PINNED_PANEL },
+      ),
     )
     const { data } = (await res.json()) as { data: Evaluation }
 
@@ -588,7 +625,7 @@ describe('the pin frozen on a jdv_ reaches the provider (ADR-0022)', () => {
 
   test('a fake judge on another panel still routes to the fake — dispatch is per model', async () => {
     const { app, sent } = routedApp()
-    const res = await app.request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await app.request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
 
     expect(res.status).toBe(200)
     // The seeded panel's judges are `fake:`, so nothing should have gone over HTTP at all.
@@ -598,7 +635,7 @@ describe('the pin frozen on a jdv_ reaches the provider (ADR-0022)', () => {
 
 describe('the follow-up job the evaluation enqueues', () => {
   test('exactly one job, carrying the tr_ id and the request_id', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     const { data, request_id } = (await res.json()) as { data: Evaluation; request_id: string }
 
     // Exactly one. A job per judge would be the easy mistake, and it would make the trace's
@@ -619,7 +656,7 @@ describe('the follow-up job the evaluation enqueues', () => {
      * `traces.recorded_at` is still null, which is the query a reconciliation sweep runs.
      */
     queue = fakeQueue({ sendFails: new Error('queue unreachable') })
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT, output: ARTIFACT }))
     expect(res.status).toBe(200)
 
     const { data } = (await res.json()) as { data: Evaluation }
@@ -641,7 +678,9 @@ describe('401 — every rejection looks the same (ADR-0003)', () => {
     ['a revoked key', REVOKED_PLAINTEXT],
     ['a key scoped to another panel', OTHER_PANEL_PLAINTEXT],
   ])('%s is UNAUTHORIZED', async (_name, key) => {
-    const res = await appWith().request(evaluateRequest({ artifact: ARTIFACT }, { key }))
+    const res = await appWith().request(
+      evaluateRequest({ input: INPUT, output: ARTIFACT }, { key }),
+    )
     expect(res.status).toBe(401)
 
     const parsed = errorEnvelopeSchema.safeParse(await res.json())
@@ -652,9 +691,11 @@ describe('401 — every rejection looks the same (ADR-0003)', () => {
   test('the message never says WHICH check failed — a 403 would be a panel oracle', async () => {
     const [unknown, foreign] = await Promise.all([
       appWith().request(
-        evaluateRequest({ artifact: ARTIFACT }, { key: `llk_test_${'z'.repeat(64)}` }),
+        evaluateRequest({ input: INPUT, output: ARTIFACT }, { key: `llk_test_${'z'.repeat(64)}` }),
       ),
-      appWith().request(evaluateRequest({ artifact: ARTIFACT }, { key: OTHER_PANEL_PLAINTEXT })),
+      appWith().request(
+        evaluateRequest({ input: INPUT, output: ARTIFACT }, { key: OTHER_PANEL_PLAINTEXT }),
+      ),
     ])
     const bodies = await Promise.all([unknown.json(), foreign.json()])
     expect((bodies[0] as { error: { message: string } }).error.message).toBe(
@@ -664,17 +705,23 @@ describe('401 — every rejection looks the same (ADR-0003)', () => {
 
   test('an unauthenticated call writes no trace and runs no judge', async () => {
     const provider = createFakeProvider()
-    await appWith(provider).request(evaluateRequest({ artifact: ARTIFACT }, { key: null }))
+    await appWith(provider).request(
+      evaluateRequest({ input: INPUT, output: ARTIFACT }, { key: null }),
+    )
     expect(provider.calls).toBe(0)
   })
 })
 
 describe('422 — real contract validation, on the real endpoint (ADR-0015)', () => {
   test.each([
-    ['an empty artifact', { artifact: '' }],
-    ['no artifact at all', {}],
-    ['an artifact of the wrong type', { artifact: 42 }],
-    ['context that is not a string map', { artifact: ARTIFACT, context: { a: 1 } }],
+    ['no output', { input: INPUT }],
+    ['no input', { output: ARTIFACT }],
+    ['nothing at all', {}],
+    ['metadata that is not a string map', { input: INPUT, output: ARTIFACT, metadata: { a: 1 } }],
+    // The retired request shape (ADR-0073): refused by name, never silently stripped.
+    ['the retired artifact', { artifact: ARTIFACT }],
+    ['the retired context', { input: INPUT, output: ARTIFACT, context: { a: 'b' } }],
+    ['more than 64 KiB across the roles', { input: INPUT, output: 'x'.repeat(EVALUATE_MAX_BYTES) }],
   ])('%s becomes VALIDATION_ERROR with field-level issues', async (_name, body) => {
     const res = await appWith().request(evaluateRequest(body))
     expect(res.status).toBe(422)
@@ -686,16 +733,16 @@ describe('422 — real contract validation, on the real endpoint (ADR-0015)', ()
   })
 
   test('the issues name the offending field, not just that something was wrong', async () => {
-    const res = await appWith().request(evaluateRequest({ artifact: '' }))
+    const res = await appWith().request(evaluateRequest({ input: INPUT }))
     const body = (await res.json()) as { error: { issues: Array<{ path: string }> } }
-    expect(body.error.issues[0]?.path).toBe('artifact')
+    expect(body.error.issues[0]?.path).toBe('output')
   })
 })
 
 describe('a panel whose judges cannot be reached', () => {
   test('fails the request retryably rather than reporting a score of nothing', async () => {
     const res = await appWith().request(
-      evaluateRequest({ artifact: `${FAKE_SENTINELS.unavailable} everything is down` }),
+      evaluateRequest({ input: INPUT, output: `${FAKE_SENTINELS.unavailable} everything is down` }),
     )
 
     expect([503, 504]).toContain(res.status)
@@ -707,7 +754,7 @@ describe('a panel whose judges cannot be reached', () => {
 
   test('the run is still recorded — a failed evaluation is one somebody will look at', async () => {
     const res = await appWith().request(
-      evaluateRequest({ artifact: `${FAKE_SENTINELS.unavailable} also down` }),
+      evaluateRequest({ input: INPUT, output: `${FAKE_SENTINELS.unavailable} also down` }),
     )
     const { request_id } = (await res.json()) as { request_id: string }
 
@@ -727,14 +774,17 @@ describe('a panel whose judges cannot be reached', () => {
 describe('a panel that is not there', () => {
   test('an unknown panel is a 401, not a 404 — the key is checked first', async () => {
     const res = await appWith().request(
-      evaluateRequest({ artifact: ARTIFACT }, { panel: newId('pnl_') }),
+      evaluateRequest({ input: INPUT, output: ARTIFACT }, { panel: newId('pnl_') }),
     )
     expect(res.status).toBe(401)
   })
 
   test('a panel with no live version is a 404, even with a valid key', async () => {
     const res = await appWith().request(
-      evaluateRequest({ artifact: ARTIFACT }, { key: OTHER_PANEL_PLAINTEXT, panel: OTHER_PANEL }),
+      evaluateRequest(
+        { input: INPUT, output: ARTIFACT },
+        { key: OTHER_PANEL_PLAINTEXT, panel: OTHER_PANEL },
+      ),
     )
     expect(res.status).toBe(404)
     const parsed = errorEnvelopeSchema.safeParse(await res.json())
@@ -748,7 +798,7 @@ describe('429 — the key has spent its allowance (M2)', () => {
     // at M1's provider. A limiter that refused after the fan-out would protect nothing.
     const provider = createFakeProvider()
     const res = await appWith(provider, exhaustedRateLimitStore()).request(
-      evaluateRequest({ artifact: ARTIFACT }),
+      evaluateRequest({ input: INPUT, output: ARTIFACT }),
     )
 
     expect(res.status).toBe(429)
@@ -757,7 +807,7 @@ describe('429 — the key has spent its allowance (M2)', () => {
 
   test('answers in the taxonomy, with a Retry-After the console can turn into a timer', async () => {
     const res = await appWith(createFakeProvider(), exhaustedRateLimitStore()).request(
-      evaluateRequest({ artifact: ARTIFACT }),
+      evaluateRequest({ input: INPUT, output: ARTIFACT }),
     )
 
     const parsed = errorEnvelopeSchema.safeParse(await res.json())
@@ -773,7 +823,7 @@ describe('429 — the key has spent its allowance (M2)', () => {
   test('and nothing is persisted — a refused call is not an evaluation', async () => {
     const before = await db.select().from(schema.traces)
     await appWith(createFakeProvider(), exhaustedRateLimitStore()).request(
-      evaluateRequest({ artifact: ARTIFACT }),
+      evaluateRequest({ input: INPUT, output: ARTIFACT }),
     )
     const after = await db.select().from(schema.traces)
     expect(after.length).toBe(before.length)
@@ -793,7 +843,7 @@ describe('a collecting panel', () => {
     evaluateRequest(body, { key: COLLECTING_PLAINTEXT, panel: COLLECTING_PANEL })
 
   test('accepts the call and says plainly that nothing was judged', async () => {
-    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(collectingRequest({ input: INPUT, output: ARTIFACT }))
     expect(res.status).toBe(200)
 
     const { data } = (await res.json()) as { data: Evaluation }
@@ -811,16 +861,20 @@ describe('a collecting panel', () => {
   })
 
   test('captures the trace in full — that is the entire point of the state', async () => {
-    const context = { agent_decision: 'p2' }
-    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT, context }))
+    const reference = { policy: 'P0 means production is down.' }
+    const res = await appWith().request(
+      collectingRequest({ input: INPUT, output: { priority: 'p2' }, reference }),
+    )
     const { data } = (await res.json()) as { data: Evaluation }
 
     const [row] = await db.select().from(schema.traces).where(eq(schema.traces.id, data.trace_id))
     expect(row).toBeDefined()
-    // The artifact and the caller's context are what an annotator later reads. A collecting
-    // panel that dropped them would be collecting nothing.
-    expect(row?.artifact).toBe(ARTIFACT)
-    expect(row?.context).toEqual(context)
+    // The roles are what an annotator later reads. A collecting panel that dropped them would
+    // be collecting nothing.
+    expect(row?.input).toEqual(INPUT)
+    expect(row?.output).toEqual({ priority: 'p2' })
+    expect(row?.reference).toEqual(reference)
+    expect(row?.artifact).toBe('{"priority":"p2"}')
     expect(row?.panelVersionId).toBe(COLLECTING_PANEL_VERSION)
     expect(row?.apiKeyId).toBe(COLLECTING_KEY)
     expect(row?.passed).toBeNull()
@@ -828,7 +882,7 @@ describe('a collecting panel', () => {
   })
 
   test('writes no verdict rows — there was no judge to have an opinion', async () => {
-    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(collectingRequest({ input: INPUT, output: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
     const verdicts = await db
@@ -849,14 +903,16 @@ describe('a collecting panel', () => {
       },
     }
 
-    const res = await appWith(refuses).request(collectingRequest({ artifact: ARTIFACT }))
+    const res = await appWith(refuses).request(
+      collectingRequest({ input: INPUT, output: ARTIFACT }),
+    )
     expect(res.status).toBe(200)
     expect(reporter.reports).toEqual([])
   })
 
   test('still enqueues the follow-up — a collecting trace is one an annotator will read', async () => {
     const before = queue.sent.length
-    const res = await appWith().request(collectingRequest({ artifact: ARTIFACT }))
+    const res = await appWith().request(collectingRequest({ input: INPUT, output: ARTIFACT }))
     const { data } = (await res.json()) as { data: Evaluation }
 
     expect(queue.sent.length).toBe(before + 1)

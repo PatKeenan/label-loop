@@ -91,10 +91,13 @@ export default function () {
       (ready?.data?.checks || []).length === 3 && ready.data.checks.every((c) => c.ok),
   })
 
-  // ---- the product: a panel of judges over one artifact ---------------------------------
+  // ---- the product: a panel of judges over one output -----------------------------------
   const evaluated = http.post(
     `${BASE}/v1/panels/${PANEL}/evaluate`,
-    JSON.stringify({ artifact: 'the login button does nothing on Safari 17' }),
+    JSON.stringify({
+      input: [{ role: 'user', content: 'Triage this bug report.' }],
+      output: 'the login button does nothing on Safari 17',
+    }),
     authed(),
   )
   const evaluation = json(evaluated)
@@ -120,12 +123,12 @@ export default function () {
   // ---- the taxonomy, on real endpoints (ADR-0015) ---------------------------------------
   const malformed = http.post(
     `${BASE}/v1/panels/${PANEL}/evaluate`,
-    JSON.stringify({ artifact: '' }),
+    JSON.stringify({ input: 'a request with no output' }),
     authed(expect(422)),
   )
   const invalid = json(malformed)
   check(malformed, {
-    'an empty artifact is 422': (r) => r.status === 422,
+    'an evaluation with no output is 422': (r) => r.status === 422,
     'and the body names the code, not the number': () =>
       invalid?.error?.code === 'VALIDATION_ERROR',
     'and points at the field': () => (invalid?.error?.issues || []).length > 0,
@@ -133,7 +136,7 @@ export default function () {
 
   const unauthenticated = http.post(
     `${BASE}/v1/panels/${PANEL}/evaluate`,
-    JSON.stringify({ artifact: 'no key' }),
+    JSON.stringify({ input: 'no key', output: 'no key' }),
     { headers: { 'content-type': 'application/json' }, ...expect(401) },
   )
   const denied = json(unauthenticated)

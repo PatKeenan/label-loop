@@ -106,8 +106,8 @@ export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
     ...traceDetailQuery(orgId, traceId),
     enabled: context.state === 'ready',
   })
-  const contextCount =
-    detail.data?.context === null ? 0 : Object.keys(detail.data?.context ?? {}).length
+  const reference = detail.data?.reference ?? null
+  const referenceCount = reference === null ? 0 : Object.keys(reference).length
 
   return (
     <div className="flex flex-col gap-[var(--space-8)]">
@@ -136,32 +136,50 @@ export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
               />
             </div>
             <div className="flex flex-col gap-[var(--gap-stack)] border-t px-[var(--space-5)] py-[var(--space-5)]">
-              <Field label="Artifact">
-                {/* The caller's own output, verbatim — we never generated it (ADR-0019).
-                  Clamped, because nothing bounds how long it is. */}
+              {/*
+                STOPGAP (ADR-0074): the four roles shown as text until the shaped view replaces
+                this block — output, then its input, then the reference, each as the caller's
+                own JSON. A LEGACY row never recorded an input, and says so.
+              */}
+              <Field label="Output">
+                {/* The caller's own output — we never generated it (ADR-0019). Clamped,
+                  because nothing bounds how long it is. */}
                 <Clamped
-                  key={`${traceId}-artifact`}
-                  what="artifact"
-                  lines={lineCount(detail.data.artifact)}
+                  key={`${traceId}-output`}
+                  what="text"
+                  lines={lineCount(asText(detail.data.output))}
                 >
-                  <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
-                    {detail.data.artifact}
-                  </pre>
+                  <Verbatim>{asText(detail.data.output)}</Verbatim>
                 </Clamped>
               </Field>
-              <Field label="Context">
-                {detail.data.context === null || contextCount === 0 ? (
+              <Field label="Input">
+                {detail.data.input === null ? (
+                  <span className="text-ui text-muted-foreground">
+                    Recorded before inputs were captured.
+                  </span>
+                ) : (
+                  <Clamped
+                    key={`${traceId}-input`}
+                    what="text"
+                    lines={lineCount(asText(detail.data.input))}
+                  >
+                    <Verbatim>{asText(detail.data.input)}</Verbatim>
+                  </Clamped>
+                )}
+              </Field>
+              <Field label="Reference">
+                {reference === null || referenceCount === 0 ? (
                   <span className="text-ui text-muted-foreground">None sent.</span>
                 ) : (
-                  <Clamped key={`${traceId}-context`} what="context" keys={contextCount}>
+                  <Clamped key={`${traceId}-reference`} what="fields" keys={referenceCount}>
                     <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-tight)]">
-                      {Object.entries(detail.data.context).map(([key, value]) => (
+                      {Object.entries(reference).map(([key, value]) => (
                         <div key={key} className="contents">
                           <dt>
                             <Data>{key}</Data>
                           </dt>
                           <dd className="m-0 font-mono text-data break-words whitespace-pre-wrap text-foreground">
-                            {value}
+                            {asText(value)}
                           </dd>
                         </div>
                       ))}
@@ -305,8 +323,18 @@ const Decision = ({ passed, complete }: { passed: boolean | null; complete: bool
 
 const lineCount = (text: string) => text.split('\n').length
 
+/** A role as text: a string verbatim, anything else as indented JSON (a stopgap, ADR-0074). */
+const asText = (value: unknown): string =>
+  typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+
+const Verbatim = ({ children }: { children: string }) => (
+  <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
+    {children}
+  </pre>
+)
+
 /**
- * CONTENT OF UNKNOWN LENGTH, clamped — the artifact and the context are the caller's own data,
+ * CONTENT OF UNKNOWN LENGTH, clamped — the trace's roles are the caller's own data,
  * and nothing bounds them. Shown at up to `--clamp` tall with the bottom edge faded out, and a
  * **Show all** control ONLY if it actually overflows: a one-line artifact gets no toggle, because
  * a control that does nothing is noise.
@@ -321,7 +349,7 @@ const Clamped = ({
   keys,
   children,
 }: {
-  what: 'artifact' | 'context'
+  what: 'text' | 'fields'
   lines?: number
   keys?: number
   children: React.ReactNode
@@ -343,7 +371,7 @@ const Clamped = ({
 
   const clamped = !expanded
   const size =
-    what === 'artifact'
+    what === 'text'
       ? `${lines ?? 0} ${lines === 1 ? 'line' : 'lines'}`
       : `${keys ?? 0} ${keys === 1 ? 'key' : 'keys'}`
 

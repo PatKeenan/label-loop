@@ -34,7 +34,7 @@ const traceFor = async (id: string) => {
     panelId,
     panelVersionId,
     requestId: 'b'.repeat(32),
-    artifact: 'an artifact',
+    output: 'an output',
     passed: false,
     score: 0,
     complete: true,

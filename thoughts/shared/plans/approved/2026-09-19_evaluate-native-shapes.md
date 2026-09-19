@@ -59,17 +59,17 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
   `contracts/src/evaluate.test.ts`, `openapi.test.ts` — moved to the new shape; new cases below.
 
 ### Steps
-- [ ] Contract: four roles, 64 KiB cap, OpenAPI text
-- [ ] Migration 0013: add columns, backfill, `artifact` nullable — nothing dropped
-- [ ] Evaluate service writes the four roles and dual-writes `artifact`
-- [ ] Trace repository and detail route return the four roles
-- [ ] Tests: each JSON shape accepted (string, object, array, messages with tool calls); `input`
+- [x] Contract: four roles, 64 KiB cap, OpenAPI text
+- [x] Migration 0013: add columns, backfill, `artifact` nullable — nothing dropped
+- [x] Evaluate service writes the four roles and dual-writes `artifact`
+- [x] Trace repository and detail route return the four roles
+- [x] Tests: each JSON shape accepted (string, object, array, messages with tool calls); `input`
       and `output` required; the cap refuses at 64 KiB + 1 on the field; `artifact`/`context` in a
       request are a 422; the backfill maps a pre-migration row exactly; a new row's `artifact`
       equals its rendered output; **row count unchanged by the migration**
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run db:migrate` on a copy of the
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run db:migrate` on a copy of the
       local database, then the row-count and backfill assertions
 
 ### Manual verification
@@ -262,3 +262,39 @@ All four resolved by the stakeholder on 2026-09-19:
 2. **Cap** — 64 KiB kept (decision 4).
 3. **Markdown** — a package: `markdown-to-jsx` (decision 9).
 4. **Old columns** — dropped once the rest is done: phase 5.
+
+## Deviations
+
+1. **Phase 1 carries two bridges the plan scheduled later** (stakeholder, 2026-09-19). As
+   written, phase 1 would have merged red: once `artifact` is a 422, CI's required k6 smoke
+   posts `{ artifact }`, and once the detail route stops returning `artifact`/`context`,
+   `apps/web` no longer typechecks. So phase 1 also moves `infra/k6/load-lib.js`'s
+   `evaluate()` and `smoke.js` to `{ input, output }` (phase 4 still owns the rest of k6's
+   wording), and the trace drawer gets a STOPGAP Request block — output, input, reference as
+   text, "Recorded before inputs were captured." for a legacy row — which phase 3 replaces.
+2. **The judge call is bridged in phase 1, and `input` does not reach judges until phase 2.**
+   `JudgeCall` keeps `artifact`/`context` until phase 2 changes the port, so the service passes
+   the output as text (a string verbatim, else JSON) as `artifact` and each reference value as
+   text as `context`. Sentinels on a string `output` work unchanged.
+3. **The retired fields are refused by a STRICT request object**, not by per-field `never`
+   schemas. Zod's `z.never()` has no OpenAPI rendering, and a strict object also says
+   `additionalProperties: false` in the spec, which is true. The issue has path `""` rather
+   than `artifact`, and its message names the four replacement fields. It also means any
+   unknown key is a 422, not only the two retired ones.
+4. **`input`/`output` are `z.custom` with a stated OpenAPI type, not `z.json()`.** `z.json()`
+   is recursive, and generating the OpenAPI document from it overflows the stack. The check
+   only refuses absence, because a parsed JSON body is already JSON. `null` is accepted as
+   a value: it is JSON, and the plan said any JSON.
+5. **The 64 KiB cap is the SUM of each present role's serialised UTF-8 bytes**
+   (`evaluateRolesBytes`), which makes the boundary exact to test. The issue is attributed to
+   the largest role, which is where a caller has to cut.
+6. **The detail route widens the roles to `unknown` on the way out.** A recursive `JsonValue`
+   through Hono's RPC inference fails the console's typecheck with TS2589 (instantiation too
+   deep). The console narrows by shape at runtime anyway (phase 3), and storage and
+   validation keep `JsonValue`.
+
+Phase 1 evidence (2026-09-19): 0013 applied to a `pg_dump` copy of the local database:
+4,593 rows before and after, 0 `output` NULL, 0 non-string `output`, 0 `output` ≠ `artifact`,
+0 `reference` ≠ `context`, 0 rows with an invented `input`/`metadata`. Local k6 smoke: every API
+and evaluate check passed. The two console checks could not reach the Vite dev server from
+Docker; CI serves the web container instead.

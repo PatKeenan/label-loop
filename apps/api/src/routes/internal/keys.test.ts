@@ -261,7 +261,7 @@ describe('the key actually works on /v1, and stops working when revoked', () => 
           authorization: `Bearer ${issued.data.key}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ artifact: 'anything' }),
+        body: JSON.stringify({ input: 'the task', output: 'anything' }),
       })
 
     // 404, not 401: the panel has no live version in this fixture, which is a decision
