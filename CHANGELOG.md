@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.4.0](https://github.com/PatKeenan/label-loop/compare/v0.3.0...v0.4.0) (2026-09-19)
+
+
+### Features
+
+* **api:** add GitHub sign-in, and shut the password door in production ([#59](https://github.com/PatKeenan/label-loop/issues/59)) ([de7208a](https://github.com/PatKeenan/label-loop/commit/de7208a5db36b6dea0f33712ab9659db8b6b7556))
+* **api:** add the model catalogue, and bound what the picker may claim ([#61](https://github.com/PatKeenan/label-loop/issues/61)) ([9db1669](https://github.com/PatKeenan/label-loop/commit/9db1669eb5de463f9111df90741e47272bfb36e8))
+* **api:** app-emitted metrics, through the collector ([#50](https://github.com/PatKeenan/label-loop/issues/50)) ([a875c6b](https://github.com/PatKeenan/label-loop/commit/a875c6be17d75d4eb989e79418998f62ddcf53e2))
+* **api:** create panels and judges, the first write path for versions ([#63](https://github.com/PatKeenan/label-loop/issues/63)) ([27ec479](https://github.com/PatKeenan/label-loop/commit/27ec479714b177dd508a942ae125b9869d475df5))
+* **api:** invite members by email, claimed on verified sign-in ([#73](https://github.com/PatKeenan/label-loop/issues/73)) ([69adee8](https://github.com/PatKeenan/label-loop/commit/69adee81e24d33efbe4c89c98c8d6f526f8d6e8a))
+* **api:** issue and revoke keys, and give the audit log its first writer ([#60](https://github.com/PatKeenan/label-loop/issues/60)) ([d6ef323](https://github.com/PatKeenan/label-loop/commit/d6ef323366a392e495ea89ee554ac871d76572c8))
+* **api:** let a panel collect before it judges ([#69](https://github.com/PatKeenan/label-loop/issues/69)) ([d049189](https://github.com/PatKeenan/label-loop/commit/d049189aa2cfd2b7ee6e5e8da2b954b0b4e82839))
+* **api:** make the org explicit, and enforce the role in it ([#58](https://github.com/PatKeenan/label-loop/issues/58)) ([b57056b](https://github.com/PatKeenan/label-loop/commit/b57056be71b479a89bdc70d6d018c68fa56f294a))
+* **api:** replace role lists with a shared capability map ([#72](https://github.com/PatKeenan/label-loop/issues/72)) ([1d456ab](https://github.com/PatKeenan/label-loop/commit/1d456abbe3e86ddcb88940d889d01915e90ef737))
+* **db:** a read-only role for the dashboards ([#51](https://github.com/PatKeenan/label-loop/issues/51)) ([027a19d](https://github.com/PatKeenan/label-loop/commit/027a19d1775ebe8cccc7e4efe97b0fd22d4ef333))
+* **grafana:** dashboards as code, and one alert rule ([#52](https://github.com/PatKeenan/label-loop/issues/52)) ([2702d50](https://github.com/PatKeenan/label-loop/commit/2702d500ea347222a79a00cb9db380626aa002e5))
+* **infra:** logs to Loki, by out-of-process collection ([#53](https://github.com/PatKeenan/label-loop/issues/53)) ([c8d786c](https://github.com/PatKeenan/label-loop/commit/c8d786c7562828cf255b67fcc6106802b8622ac9))
+* **k6:** a soak, and retention sized from what it shows ([#54](https://github.com/PatKeenan/label-loop/issues/54)) ([51119ad](https://github.com/PatKeenan/label-loop/commit/51119ad3734c3ad3a9b8a2d0a4f8eb5cdc7f320e))
+* **web:** build the console frame on the converted tokens ([#67](https://github.com/PatKeenan/label-loop/issues/67)) ([4422597](https://github.com/PatKeenan/label-loop/commit/44225978e58ba982605e0cf36df152f350a4e85e))
+* **web:** build the console rooms for collecting panels ([#70](https://github.com/PatKeenan/label-loop/issues/70)) ([0475686](https://github.com/PatKeenan/label-loop/commit/0475686041a7cdf733e6fd0bd5fdbe56a96192c0))
+
+
+### Documentation
+
+* accept ADR-0073 and plan the native-shapes evaluate contract ([#75](https://github.com/PatKeenan/label-loop/issues/75)) ([9c67d63](https://github.com/PatKeenan/label-loop/commit/9c67d63211ec4983cca18e99bee65aeda5d8ea50))
+* approve the M4 console and auth plan, and decide D17 (shadcn/ui) ([#57](https://github.com/PatKeenan/label-loop/issues/57)) ([9663b8d](https://github.com/PatKeenan/label-loop/commit/9663b8d5530f1cf733f65c6bd7ff991c21e5cc08))
+* **mockups:** draw the console frame, and let a panel collect before it judges ([#65](https://github.com/PatKeenan/label-loop/issues/65)) ([8033fad](https://github.com/PatKeenan/label-loop/commit/8033fad9abff1b3715aad8b5ecd75ab4c517cc8b))
+* **plan:** approve evaluate-native-shapes (+ ADR 0074..0078) ([#76](https://github.com/PatKeenan/label-loop/issues/76)) ([b381bb2](https://github.com/PatKeenan/label-loop/commit/b381bb287f7af0e9fdc62d33ea69bd065ea67d4b))
+* **plan:** approve the M3 observability plan (+ ADR 0041-0045) ([#49](https://github.com/PatKeenan/label-loop/issues/49)) ([b26be36](https://github.com/PatKeenan/label-loop/commit/b26be36f82886b6d444329bd673fa7dc24ecd484))
+* **plan:** approve the M5 members and annotation plan (+ ADR 0064-0072) ([#71](https://github.com/PatKeenan/label-loop/issues/71)) ([dc5a38d](https://github.com/PatKeenan/label-loop/commit/dc5a38d43bc2b42192cac9454a73263554cbf7a0))
+* **plan:** complete the M2 resilience and load baseline ([#47](https://github.com/PatKeenan/label-loop/issues/47)) ([3126b55](https://github.com/PatKeenan/label-loop/commit/3126b55cfaf552f217447c21d109ce4d75f1ae0d))
+* **plan:** complete the M3 observability plan ([#55](https://github.com/PatKeenan/label-loop/issues/55)) ([6b19444](https://github.com/PatKeenan/label-loop/commit/6b19444942cf486bc04f002bad08d9fa0d885668))
+* point CLAUDE.md at phase 7, and at what phase 8 now builds ([#66](https://github.com/PatKeenan/label-loop/issues/66)) ([2904749](https://github.com/PatKeenan/label-loop/commit/2904749ae60d096b186f1e7095576d2c94e29f28))
+* point CLAUDE.md at phase 8, and at what phase 7 leaves behind ([#68](https://github.com/PatKeenan/label-loop/issues/68)) ([8ff50bc](https://github.com/PatKeenan/label-loop/commit/8ff50bc81b1a83d083ba83b30fd9be86ee41cc33))
+* reconcile the M4 plan and CLAUDE.md before a context reset ([#64](https://github.com/PatKeenan/label-loop/issues/64)) ([01410e8](https://github.com/PatKeenan/label-loop/commit/01410e87f42821d10bb8621267026626144d864f))
+* remove the SDK from M4, which ADR-0002 descoped in August ([#56](https://github.com/PatKeenan/label-loop/issues/56)) ([289077a](https://github.com/PatKeenan/label-loop/commit/289077a0e4a0a7a63336bf7af63ab8de42c09c8f))
+
+
+### CI
+
+* **gitleaks:** allowlist model identifiers, which look like API keys ([#62](https://github.com/PatKeenan/label-loop/issues/62)) ([320f60a](https://github.com/PatKeenan/label-loop/commit/320f60a4f3f2cb28ae8fcdc5b26cb6b7555e379a))
+
 ## [0.3.0](https://github.com/PatKeenan/label-loop/compare/v0.2.0...v0.3.0) (2026-09-08)
 
 
