@@ -325,7 +325,9 @@ const lineCount = (text: string) => text.split('\n').length
 
 /** A role as text: a string verbatim, anything else as indented JSON (a stopgap, ADR-0074). */
 const asText = (value: unknown): string =>
-  typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  // `JSON.stringify(undefined)` returns undefined despite its type — and an API older than the
+  // console (one not restarted after the route changed) sends no `output` at all.
+  typeof value === 'string' ? value : (JSON.stringify(value, null, 2) ?? '')
 
 const Verbatim = ({ children }: { children: string }) => (
   <pre className="m-0 rounded-md border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] font-mono text-data leading-[var(--leading-snug)] whitespace-pre-wrap break-words">
