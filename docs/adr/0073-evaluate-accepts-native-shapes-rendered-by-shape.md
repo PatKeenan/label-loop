@@ -1,10 +1,14 @@
 # ADR-0073: Evaluate accepts native shapes in four roles; LabelLoop renders by shape
 
-**Status:** Accepted · **Date:** 2026-09-19 · **Milestone:** M5 (lands before phase 4)
+**Status:** Proposed — pending a reversible experiment · **Date:** 2026-09-19 · **Milestone:** M5 (would land before phase 4)
 **Amends:** the evaluate contract (ADR-0019) · **Excepts:** CONVENTIONS "Breaking change = new version"
 
 > Stub from `/log_decision`. Rationale is in `thoughts/shared/progress/decisions-log.md`
-> (2026-09-19T00:30Z). Expand when the contract-change plan settles the details.
+> (2026-09-19T00:30Z). **Moved from Accepted to Proposed the same day** at the stakeholder's
+> request: prove it before migrating anything. The experiment encodes the four roles as JSON
+> inside today's `artifact`/`context` fields and renders them on a throwaway branch
+> (`spike/github-triage-agent`) — no migration, no contract change, rollback is deleting the
+> branch. Accepted if it feels right; Rejected, with the spike as the record, if not.
 
 ## Decision
 `POST /v1/panels/{id}/evaluate` (and the single-judge route) take four roles instead of
