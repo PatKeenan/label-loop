@@ -22,11 +22,11 @@ ever losing what it held when a given annotation was made.
 **Milestone: M5, phase 7.** BUILD_SPINE M5 names "sampling queues: random, low-confidence" as
 this milestone's work; manual/latest/earliest/random need only traces, where low-confidence and
 judge-disagreement need judges and are M6's. It lands after phase 6, whose staff read is what
-makes a set's progress visible. **Several reviewers on one set are in this plan; OVERLAP — the same
-trace answered twice on purpose, with an arbiter to settle a split — is the open question below.**
-BUILD_SPINE M5 lists "multi-annotator consensus" under *Not now*, and the vocabulary overlap needs
-(arbiter, overlap, split, alignment session) is still absent from PRODUCT.md 5.5, which the Phase
-A harvest §5 recorded in August and which is a human writing act, not a coding one.
+makes a set's progress visible. **OVERLAP and the arbiter are phase 4** (stakeholder, 2026-09-20).
+Two documents must change before that phase is implemented, and neither is a coding act:
+**PRODUCT.md 5.5 has to gain the arbiter / overlap / split vocabulary** its own mockups cited in
+August (Phase A harvest §5), and **BUILD_SPINE M5 lists "multi-annotator consensus" under *Not
+now***, which this promotes. Phases 1–3 do not depend on either.
 
 ---
 
@@ -52,8 +52,10 @@ A harvest §5 recorded in August and which is a human writing act, not a coding 
     someone annotated it would rewrite what a past pass covered (ADR-0003's posture).
   - `rvs_` added to `ID_PREFIXES`.
 - `packages/contracts/src/review-sets.ts` (new) — the strategy enum, the size bounds
-  (1…`REVIEW_SET_MAX_SIZE`), the create / top-up / assign request schemas, and the name rule
-  reusing `names.ts` (the shared rules M4 Deviation 56 put there).
+  (1…**`REVIEW_SET_MAX_SIZE` = 250**, stakeholder 2026-09-20: *saturation* is what bounds a pass,
+  not stamina — PRODUCT 5.6 drives taxonomy size by when new traces stop producing new
+  categories, and past roughly this many they have stopped), the create / top-up / assign request
+  schemas, and the name rule reusing `names.ts` (the shared rules M4 Deviation 56 put there).
 - `packages/contracts/src/capabilities.ts` — `annotation` gains `curate`. `admin` and `engineer`
   hold it; `annotator` holds `create` only. Curating is choosing what someone's afternoon is
   spent on, which is the engineer's call, not the reviewer's.
@@ -168,6 +170,67 @@ A harvest §5 recorded in August and which is a human writing act, not a coding 
 
 ---
 
+## Phase 4 — Overlap, splits, and the arbiter · BLOCKED ON TWO DOCUMENT EDITS
+
+**Do not implement this phase until PRODUCT.md 5.5 defines overlap, split and the arbiter, and
+BUILD_SPINE M5 promotes multi-annotator consensus out of "Not now".** Both are the stakeholder's
+to write; the Phase A mockups ran ahead of the docs once already (harvest §5) and the cost was a
+vocabulary nobody could check against anything.
+
+### Changes
+- `packages/db/migrations/0017_review_set_overlap.sql` + schema:
+  - `review_sets.overlap` (int, NOT NULL, default 1, CHECK 1–3) — how many INDEPENDENT answers
+    each trace in this set needs. Per SET rather than per panel or per trace: it is a property of
+    the pass being run ("this one is worth two opinions"), which is the unit an engineer thinks in.
+  - `review_sets.arbiter_id` (nullable → `user`, RESTRICT) — who settles a split. Nullable
+    because `overlap = 1` needs none; a set with `overlap > 1` and no arbiter is refused at the
+    route, not left to discover itself at the first disagreement.
+  - `annotations.kind` (enum `review | arbitration`, default `review`) — the arbiter's answer is
+    an ANNOTATION like any other, on the same append-only table, so M6 reads one place. It is
+    marked rather than moved, because "who decided, and were they deciding or reviewing" is the
+    distinction, and a second table would fork every downstream read.
+- `apps/api/src/services/annotation-queue.ts` — rule 2 becomes the only change:
+  a trace leaves the pool when it has **`overlap` non-skip answers from DISTINCT reviewers**,
+  and never goes to the same person twice (unchanged). At `overlap = 1` this is exactly today's
+  behaviour, which is what keeps phases 1–3 intact.
+- `apps/api/src/services/splits.ts` (new) — a SPLIT is a trace with its full `overlap` of answers
+  that do not agree on `outcome`. `listSplits(setId)` for the arbiter, `resolveSplit` writing the
+  arbitration annotation in one transaction with its audit event.
+- `apps/api/src/routes/internal/review.ts` — `GET /review/sets/:id/splits` and
+  `POST /review/sets/:id/splits/:traceId`, both `annotation: ['create']` **and** restricted to
+  the set's arbiter: a reviewer on the set is not automatically its arbiter.
+- **What each surface sees**, and this is the decision the phase turns on:
+  - a REVIEWER answering never sees another reviewer's answer (ADR-0067's reasoning: knowing
+    what someone else said is the strongest anchor there is, and agreement measured after it is
+    not agreement);
+  - the ARBITER sees both answers and both notes, with the reviewers NAMED — contribution
+    attaches to the person (PRODUCT §10), and an anonymised split cannot feed the reliability
+    scores 5.5 describes.
+- `apps/web/src/routes/review-splits.tsx` (new) — the arbiter's surface: the trace, the two
+  answers side by side with their notes, and one decision. Same `ShapedTrace`, annotator surface.
+
+### Steps
+- [ ] **PRODUCT.md 5.5 and BUILD_SPINE M5 updated by the stakeholder** — the gate on this phase
+- [ ] Migration 0017: `overlap`, `arbiter_id`, `annotations.kind`
+- [ ] Rule 2 counts distinct reviewers against `overlap`; `overlap = 1` behaves exactly as before
+- [ ] Splits service and routes, arbiter-only
+- [ ] The arbiter's screen
+- [ ] Tests: a trace with `overlap = 2` is served to two different people and to neither twice;
+      it leaves the pool at two answers, not one; agreeing answers produce NO split; disagreeing
+      ones do; a non-arbiter reviewer is FORBIDDEN on the splits routes; the arbitration row is
+      `kind = arbitration` and does not itself create a split; a set with `overlap > 1` and no
+      arbiter is refused at creation
+
+### Automated verification
+- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+
+### Manual verification
+- [ ] A set of 10 at `overlap = 2`, two annotators, one arbiter: both answer the same ten traces
+      without ever seeing each other's answer; the disagreements appear as splits; the arbiter
+      resolves one and it leaves the queue for everyone
+
+---
+
 ## Decisions made
 1. **Membership is a snapshot, resolved once per picker run** — over a saved query that
    re-evaluates: what an annotation was part of must not change under it (ADR-0003).
@@ -197,16 +260,32 @@ A harvest §5 recorded in August and which is a human writing act, not a coding 
    spending it.
 10. **The set's name reaches the annotator; its strategy does not** — ADR-0067's reasoning applied
    to selection: naming the picker would leak what M6's samplers exist to hide.
-11. **OVERLAP and the arbiter are the open question below, not a settled deferral.** Sharing a
-    set is in this plan; the same trace being answered TWICE deliberately is not, yet. It changes
-    what "answered" means (today: anybody has), adds a resolution object, and needs the arbiter /
-    overlap / split vocabulary PRODUCT.md 5.5 still lacks — a human writing act, recorded in the
-    Phase A harvest §5 since August. BUILD_SPINE M5 lists multi-annotator consensus under
-    *Not now*, so promoting it is a spine edit as well.
+11. **A set is capped at 250 traces** (stakeholder, 2026-09-20) — over 500 or 1,000: PRODUCT 5.6
+    drives taxonomy size by SATURATION, the point where new traces stop producing new categories,
+    and a pass past roughly this size is paying for attention that finds nothing new. It is also
+    a number a person can finish, which is what makes "completed" mean something.
+12. **Overlap is a per-SET number (1–3) with a named arbiter** — over per-panel (too coarse: one
+    panel holds passes of different value) and over per-trace (nobody wants that decision 250
+    times). A set with `overlap > 1` and no arbiter is refused at creation rather than at the
+    first disagreement.
+13. **The arbiter's answer is an ANNOTATION marked `kind = arbitration`** — over a separate
+    resolutions table: one append-only table stays one place for M6 to read, and the marker keeps
+    "were they deciding or reviewing" answerable.
+14. **A reviewer never sees another reviewer's answer; the arbiter sees both, NAMED** — ADR-0067's
+    reasoning (an anchor inflates agreement, which is the number M6 exists to measure) applied to
+    each other rather than to a judge, and PRODUCT §10's rule that contribution attaches to the
+    person applied to the arbiter's view.
+15. **`overlap = 1` is exactly today's behaviour** — the rule change counts distinct reviewers
+    against the set's overlap, so phases 1–3 keep working unchanged and the risky part of phase 4
+    is one predicate.
 
 ## Explicitly NOT doing
-- **Overlap, arbiter, split verdicts, alignment sessions** — deferred (decision 10). PRODUCT.md
-  5.5 must gain the vocabulary first; that is a human writing act.
+- **Alignment sessions** — a discrete, versioned run of one judge against a held-out set, ending
+  in a revised rubric (BUILD_SPINE M6). Phase 4 resolves SPLITS between people; that is the raw
+  material for an alignment session, not one.
+- **Inter-annotator agreement as a METRIC** — phase 4 creates the data (two answers, one trace)
+  and stops there. κ, TPR/TNR and the class-imbalance argument the Phase A harvest §4 recorded
+  are M6's, beside the judge-validation metrics PRODUCT 5.7 still lacks.
 - **Low-confidence and judge-disagreement pickers** — they need judges (M6).
 - **Honeypots** — gold-standard traces with known answers are a different object (PRODUCT 5.5).
 - **Sets spanning panels** — a set belongs to one panel; a cross-panel pass is M6's taxonomy work.
@@ -215,24 +294,22 @@ A harvest §5 recorded in August and which is a human writing act, not a coding 
   overlap.
 
 ## Open questions for the human
-1. **Does OVERLAP land here or after PRODUCT.md 5.5 is written?** Two shapes:
-   (a) **share-and-divide now** — several reviewers, each trace answered once, no arbiter, no
-   splits: the smallest change that honours "more than one annotator can annotate a set", and it
-   ships with this plan;
-   (b) **overlap now** — a per-set number ("every trace gets 2 answers"), a split when they
-   disagree, and a designated arbiter who resolves it. That needs the 5.5 vocabulary first,
-   carries a resolution object, and is where inter-annotator agreement (M6's metric) starts.
-   The plan as written is (a). Say the word and I will fold (b) into it as phase 4 — but the
-   PRODUCT.md paragraph is yours to write either way.
-2. **`REVIEW_SET_MAX_SIZE`** — a cap on one set. 500? 1,000? A set of 10,000 is not a pass anyone
-   finishes, and the number belongs in contracts where both sides read it.
-3. **Manual selection across pages** — the trace table is keyset-paginated; does selection
+1. **PRODUCT.md 5.5 and BUILD_SPINE M5 are yours to write, and phase 4 is blocked on them.**
+   5.5 needs overlap, split and the arbiter defined (its own mockups cited them in August); the
+   spine needs multi-annotator consensus moved out of M5's "Not now". Phases 1–3 are unblocked.
+2. **Must the arbiter also be a reviewer on the set?** Drawn as NOT required — a tie-breaker who
+   answered ten of the traces themselves is resolving their own opinion against someone else's.
+   The alternative (arbiter must be assigned) is one CHECK away.
+3. **What happens to a split nobody resolves?** Drawn as: the trace is out of the reviewers' pool
+   and waiting on the arbiter, and the SET cannot complete. The alternative is completing anyway
+   and leaving splits as a debt M6 inherits.
+4. **Manual selection across pages** — the trace table is keyset-paginated; does selection
    survive paging (state in the URL), or is one page the practical limit for a first cut?
-4. **Does a set's completion need every trace answered**, or is "no answerable traces left for
+5. **Does a set's completion need every trace answered**, or is "no answerable traces left for
    anyone" enough? They differ once a trace is skipped by every reviewer assigned to it.
 6. **Can a person be assigned a set in a panel they otherwise cannot see?** Membership is
    org-wide today (the panel-scoping deferral of 2026-09-18), so assignment is currently the only
    thing narrowing an annotator to a panel — which is either a happy accident or the panel-scoped
    access that deferral described, arriving early.
-5. **Should an engineer see a set's ANNOTATIONS from the set screen** (phase 6 shows them per
+7. **Should an engineer see a set's ANNOTATIONS from the set screen** (phase 6 shows them per
    trace), or is that M6's taxonomy surface?
