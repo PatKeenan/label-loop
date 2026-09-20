@@ -17,7 +17,8 @@ import { type ModelProvider, ProviderError } from './provider.port.ts'
 const CALL = {
   model: FAKE_MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
 }
 
 const IDENTITY = { slug: 'is-bug', judgeVersionId: 'jdv_01EXAMPLE' }
@@ -70,8 +71,15 @@ describe('a judge call that succeeds', () => {
     expect(attempt?.spanContext().traceId).toBe(judge?.spanContext().traceId ?? '')
   })
 
-  test('carries no question, artifact or context — telemetry is metadata, not content', async () => {
-    await gatewayFor().judge({ ...CALL, context: { customer_email: 'ada@example.com' } }, IDENTITY)
+  test('carries no question and no role — telemetry is metadata, not content', async () => {
+    await gatewayFor().judge(
+      {
+        ...CALL,
+        input: [{ role: 'user', content: 'I am ada@example.com' }],
+        reference: { customer_email: 'ada@example.com' },
+      },
+      IDENTITY,
+    )
 
     const serialized = JSON.stringify(spans.spans().map((span) => span.attributes))
     expect(serialized).not.toContain('ada@example.com')
@@ -112,7 +120,7 @@ describe('a judge call that has to retry', () => {
 describe('a judge call the circuit refuses', () => {
   test('produces a judge span with NO attempt span beneath it, because nobody was called', async () => {
     const gateway = gatewayFor()
-    const down = { ...CALL, artifact: `${FAKE_SENTINELS.unavailable} down` }
+    const down = { ...CALL, output: `${FAKE_SENTINELS.unavailable} down` }
 
     // Three failures trip the breaker; the fourth call never reaches the provider.
     await gateway.judge(down, IDENTITY)
@@ -136,7 +144,7 @@ describe('a judge call the circuit refuses', () => {
 describe('a judge whose answer was unusable', () => {
   test('is not an ERROR span — the call worked and the rubric did not', async () => {
     const outcome = await gatewayFor().judge(
-      { ...CALL, artifact: `${FAKE_SENTINELS.invalidOutput} nonsense` },
+      { ...CALL, output: `${FAKE_SENTINELS.invalidOutput} nonsense` },
       IDENTITY,
     )
     expect(outcome.status).toBe('failed')
@@ -214,7 +222,7 @@ describe('a judge the provider will never accept', () => {
           }),
         ),
     }
-    await gatewayFor(provider).judge({ ...CALL, artifact }, IDENTITY)
+    await gatewayFor(provider).judge({ ...CALL, output: artifact }, IDENTITY)
 
     const serialized = JSON.stringify(
       spans.spans().map((span) => ({ attributes: span.attributes, status: span.status })),

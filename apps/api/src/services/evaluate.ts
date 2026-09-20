@@ -70,9 +70,8 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, Math.round(va
 type JudgeResult = { judge: PanelJudge; outcome: JudgeCallOutcome }
 
 /**
- * A role as text: a string verbatim, anything else as JSON. The one place a native shape is
- * flattened, and it has two callers, both temporary (ADR-0074): the `artifact` dual-write,
- * and the judge call until the judge prompt takes the roles themselves.
+ * The output as text: a string verbatim, anything else as JSON. Its one caller is the
+ * `artifact` dual-write, and it leaves with that (ADR-0074).
  */
 const asText = (value: JsonValue): string =>
   typeof value === 'string' ? value : JSON.stringify(value)
@@ -127,17 +126,11 @@ const runJudge = async (
     {
       model: judge.model,
       question: judge.question,
-      // INTERIM (ADR-0074, until the judge prompt takes the roles): the judge reads the
-      // output as its artifact and the reference as its context. `input` does not reach the
-      // judge yet; `metadata` never will — it is bookkeeping, not evidence.
-      artifact: asText(request.output),
-      ...(request.reference === undefined
-        ? {}
-        : {
-            context: Object.fromEntries(
-              Object.entries(request.reference).map(([key, value]) => [key, asText(value)]),
-            ),
-          }),
+      // The roles as sent (ADR-0073) — the judge renders them by shape. `metadata` is not
+      // passed and never will be: it is bookkeeping, not evidence.
+      input: request.input,
+      output: request.output,
+      ...(request.reference === undefined ? {} : { reference: request.reference }),
       // The frozen pin, onto the wire. Without this line the version's capability contract
       // would be a row nobody reads, and the judge's real capability would go back to being
       // decided by routing at call time — which is the whole defect ADR-0022 exists against.

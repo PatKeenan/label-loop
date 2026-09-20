@@ -95,12 +95,12 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
   `fake-provider.test.ts` — the new shape; `render-for-model.test.ts` covers every shape.
 
 ### Steps
-- [ ] `render-for-model.ts` with tests (string, fields, OpenAI and Anthropic tool calls, JSON)
-- [ ] Port, OpenRouter prompt, fake provider, pin probe moved over
-- [ ] Sentinels proven on a string `output`
+- [x] `render-for-model.ts` with tests (string, fields, OpenAI and Anthropic tool calls, JSON)
+- [x] Port, OpenRouter prompt, fake provider, pin probe moved over
+- [x] Sentinels proven on a string `output`
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`; `bun run verify:pin` against one real
+- [x] `bun test`, `bun run typecheck`, `bun run lint`; `bun run verify:pin` against one real
       model (a real call — the only proof the new prompt still produces valid structured output)
 
 ### Manual verification
@@ -298,3 +298,18 @@ Phase 1 evidence (2026-09-19): 0013 applied to a `pg_dump` copy of the local dat
 0 `reference` ≠ `context`, 0 rows with an invented `input`/`metadata`. Local k6 smoke: every API
 and evaluate check passed. The two console checks could not reach the Vite dev server from
 Docker; CI serves the web container instead.
+7. **Phase 2 is stacked on phase 1's branch** (`feat/shapes-p2-judge-prompt` from
+   `feat/shapes-p1-contract`). It is retargeted to `main` once #77 merges.
+8. **Speaker labels in the PROMPT are neutral too** (User / Agent / System). Decision 10 named
+   them for the view; the model reads the same transcript, so one vocabulary serves both.
+9. **Sentinels read a string `output` only**. A sentinel inside an object output, or anywhere
+   in `input`, is judged normally: only the thing judged can drive the fake. The fake's
+   verdict seed is the rendered question, input, output and sorted reference, so the input
+   now changes the verdict.
+
+Phase 2 evidence (2026-09-19): `bun run verify:pin openrouter:anthropic/claude-sonnet-5`
+returned valid structured output in the new prompt, with key order rationale → reasons →
+verdict → confidence, 2,795 tokens in, and a verdict of true @ 0.95. A direct run of the real
+Haiku 4.5 judge used an outage chat whose tool result showed a 98% error rate. A "low-priority
+cosmetic" reply was judged false and a "paging on-call, SEV-1" reply true. Both rationales judged
+the reply and cited the tool result as evidence.
