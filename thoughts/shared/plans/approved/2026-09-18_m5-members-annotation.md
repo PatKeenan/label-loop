@@ -151,6 +151,12 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 
 ### Steps
 - [x] r5 drawn, with its decisions and open questions in the header comment, as the harvest style
+- [x] **r6: the trace redrawn for ADR-0073** (2026-09-20). ADR-0073 landed between r5 and its
+      review, so r5's IN/OUT pair described a contract that no longer exists. r6 draws the same
+      flow the console does — reference collapsed, turns in time order, tool calls as steps
+      outside the reviewed turn, the violet surface on the final reply alone — plus a sixth
+      state for a LEGACY trace with no input. Metadata is absent (ADR-0077). Q1 is closed by the
+      four roles; Q6 (should an annotator see tool steps) is new.
 - [ ] **Reviewed and approved by the stakeholder** before phase 5 starts
 
 ### Automated verification
