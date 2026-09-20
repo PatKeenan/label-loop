@@ -461,3 +461,10 @@ Recorded as they happen; decision provenance, not a changelog.
     signing in means entering a password. Signed out, `/review` correctly redirects to `/login`;
     everything past that is the stakeholder's manual verification — including the M5 demo
     moment (20 traces in under 5 minutes, keyboard only).
+33. **The account menu is ONE component, shared by both surfaces** (stakeholder, 2026-09-20).
+    The first build of the review frame rendered the signed-in address as a static chip, taking
+    r6's `.account` box literally when its own header comment said "the account menu alone" —
+    which left an annotator with no way to sign out at all. `components/shell/account-menu.tsx`
+    now owns the trigger, the sign-out mutation and the order that matters (forget the one-time
+    key plaintext, clear the cache, then navigate), and the console passes its Organisation
+    settings item into it. Two implementations of signing out is one of them being forgotten.

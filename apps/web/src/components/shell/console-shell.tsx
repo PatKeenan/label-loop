@@ -1,20 +1,11 @@
 import { can } from '@labelloop/contracts'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { cn } from 'cn'
-import { auth } from '../../api/client.ts'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu.tsx'
+import { DropdownMenuItem } from '../ui/dropdown-menu.tsx'
+import { AccountMenu } from './account-menu.tsx'
 import type { Membership, OrgRole } from './context.ts'
 import { CreatePanelDialog } from './create-panel-dialog.tsx'
-import { forgetIssuedKeys } from './issued-key.ts'
 import { Data } from './mark.tsx'
-import { useMenuFocusReturn } from './menu-focus.ts'
 import { OrgSwitcher } from './org-switcher.tsx'
 import { PanelSwitcher } from './panel-switcher.tsx'
 import { SectionNav } from './section-nav.tsx'
@@ -77,33 +68,11 @@ export const ConsoleShell = ({
   role: OrgRole
   children: React.ReactNode
 }) => {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
   // The console preset — dark + COMPACT. It briefly ran dark + comfortable, which grew 13px
   // body text to 17px and read as everything simply getting bigger rather than as anything
   // gaining room. Dense product UI keeps small type and spends its room on SPACE, so the
   // compact density's SPACING was opened in tokens.css instead and its type left alone.
   useSurface('console')
-  const { triggerProps, contentProps } = useMenuFocusReturn()
-
-  const signOut = useMutation({
-    mutationFn: async () => {
-      await auth.signOut()
-    },
-    onSuccess: async () => {
-      // The one-time key plaintext lives outside the query cache, so nothing below reaches
-      // it. A credential minted as one account must not survive into the next.
-      forgetIssuedKeys()
-      // Everything in the cache was read as this user, so none of it may be shown again.
-      // `clear` BEFORE navigating, and it is the order that matters: `/login`'s `beforeLoad`
-      // asks who is signed in, and a cache still holding this user would answer "you are"
-      // and bounce straight back. `clear` notifies no observer, so this screen does not
-      // re-render as signed out in the meantime — which would send it to `/login` with THIS
-      // page as the redirect, when signing out is a request to leave, not to come back.
-      queryClient.clear()
-      await navigate({ to: '/login', replace: true })
-    },
-  })
 
   const showSidebar = can(role, { panel: ['read'] }) && panel !== null
 
@@ -145,40 +114,24 @@ export const ConsoleShell = ({
         <div className="ml-auto flex items-center gap-[var(--gap-inline)]">
           <OrgSwitcher memberships={memberships} activeOrgId={activeOrgId} />
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              {...triggerProps}
-              className="flex min-h-[var(--row-min)] items-center gap-[var(--gap-tight)] rounded-md border bg-secondary px-[var(--pad-field-x)] hover:border-border-strong"
-            >
-              <Data className="max-w-[16rem] truncate text-foreground">{email}</Data>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent {...contentProps} align="end">
-              {/*
-                Organisation settings: only for a role that may manage members, and live since M5
-                with Members as its first screen (ADR-0070, amending ADR-0059's "absent until
-                M8"). Hidden, not disabled, for everyone else: an item they could never use tells
-                them nothing. This mirrors the server guard and never replaces it — the writes
-                behind the screen are `member: [manage]` on the server.
-              */}
-              {can(role, { member: ['manage'] }) ? (
-                <>
-                  <DropdownMenuItem asChild className="min-h-[var(--row-min)]">
-                    <Link to="/settings/members" search={{ org: orgSlug }}>
-                      Organisation settings
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
-              <DropdownMenuItem
-                onSelect={() => signOut.mutate()}
-                disabled={signOut.isPending}
-                className="min-h-[var(--row-min)]"
-              >
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/*
+            The SAME menu the annotator surface uses (M5 phase 5). Only its extra item differs:
+            Organisation settings, for a role that may manage members, hidden rather than
+            disabled for everyone else — an item they could never use tells them nothing. It
+            mirrors the server guard and never replaces it.
+          */}
+          <AccountMenu
+            email={email}
+            items={
+              can(role, { member: ['manage'] }) ? (
+                <DropdownMenuItem asChild className="min-h-[var(--row-min)]">
+                  <Link to="/settings/members" search={{ org: orgSlug }}>
+                    Organisation settings
+                  </Link>
+                </DropdownMenuItem>
+              ) : undefined
+            }
+          />
         </div>
       </header>
 

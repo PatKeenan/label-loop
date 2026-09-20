@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { AccountMenu } from '../shell/account-menu.tsx'
 import { useConsoleContext } from '../shell/context.ts'
 import { useSurface } from '../shell/surface.ts'
 
@@ -44,11 +45,13 @@ export const ReviewFrame = ({ children }: { children: React.ReactNode }) => {
               Console
             </Link>
           ) : null}
-          {org === null ? null : (
-            <span className="rounded-[var(--radius-control)] border bg-card px-[var(--pad-control-x)] py-[var(--pad-control-y)] font-mono text-data">
-              {org.email}
-            </span>
-          )}
+          {/*
+            THE SAME account menu the console has, not a label beside it. r6 drew "the account
+            menu alone" for an annotator's bar and the first build rendered the address as a
+            static chip — which left this surface with no way to sign out at all. The way out
+            of an application is not a console feature.
+          */}
+          {org === null ? null : <AccountMenu email={org.email} />}
         </div>
       </header>
       {children}
