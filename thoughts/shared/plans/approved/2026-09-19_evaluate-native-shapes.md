@@ -343,3 +343,12 @@ the reply and cited the tool result as evidence.
     ambiguity ADR-0073 removes. ADR-0037 keeps its decision and carries an amendment note.
 18. **CONVENTIONS records the `/v1` exception directly under the rule it excepts**, rather than
     beside the evaluate bullet, so nobody reads "breaking change = new version" without it.
+19. **README carries a "what goes in which role" table** (stakeholder, 2026-09-19), with the four
+    roles and the shapes an agentic caller actually takes — an agent that acts, a coding agent, a
+    RAG answer, a triage bot — plus the tie-breaker: if the agent saw it, it is `input`; if only
+    the judge needs it, it is `reference`. The snippet stays a chat (decision 12), but the
+    reference documentation no longer reads as though chat were the design.
+20. **A neutral step format is PARKED, not built** (stakeholder, 2026-09-19). The view and the
+    judge prompt recognise OpenAI and Anthropic tool calls; a framework's own step list is
+    stored and judged identically and reads as fields. `docs/PARKING_LOT.md` records the
+    proposal, the two files it touches, and its promotion condition.

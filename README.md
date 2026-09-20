@@ -325,6 +325,35 @@ You get a decision (`passed`, `score`, `threshold`) and one verdict per judge, r
 first. Keep the `request_id` from the response — it is the next two steps. What is behind
 it, and why the judge is deliberately a fake, is [The seeded panel](#the-seeded-panel).
 
+**What goes in which role (ADR-0073).** Four fields, each any JSON, in whatever shape your
+system already holds. **A chat is one case, not the design** — the shape above is a triage
+agent, and an agent that acts sends its proposed action:
+
+| Role | | What goes in it |
+|---|---|---|
+| `input` | required | Everything the agent was given or did to get there: the task, the conversation so far, the tool calls of this turn, the documents it retrieved. Evidence — never itself judged |
+| `output` | required | The agent's FINAL answer or proposal, and **the only thing judged**. A reply, a diff, a routing decision, an action it proposes before taking it |
+| `reference` | optional | Facts the judges need that the agent did not necessarily see: an account record, a policy, a known-good answer |
+| `metadata` | optional | Bookkeeping, strings only: a conversation id, a release. For filtering and grouping; never shown to the judges |
+
+The same four roles across the shapes an agent actually takes:
+
+| The caller | `input` | `output` (judged) |
+|---|---|---|
+| Support chat | the messages array it already holds | the reply |
+| Tool-using agent | the turn's messages, tool calls and results included | the final reply |
+| An agent that ACTS | the ticket and what it looked up | `{"action":"refund","amount":588}` — gated **before** it runs |
+| Coding agent | the task and the files it read | the diff, or the PR body |
+| RAG answer | the question and the retrieved chunks | the answer |
+| Triage bot | the inbound issue | the route it chose (ADR-0037) |
+
+When it is ambiguous: **if the agent saw it, it is `input`**; if only the judge needs it, it is
+`reference`. We render each role by its shape — a messages array as a transcript with tool calls
+as steps, an object as labelled fields, a string as text — so nothing has to be flattened into a
+string first. Tool calls are recognised in the OpenAI (`tool_calls` / `role: "tool"`) and
+Anthropic (`tool_use` / `tool_result`) formats; any other step format is stored and judged
+identically and reads as fields (`docs/PARKING_LOT.md`).
+
 **2. Find the same call in the console.** Open http://localhost:5173 and sign in:
 
 ```
