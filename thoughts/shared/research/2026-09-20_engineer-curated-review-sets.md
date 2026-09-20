@@ -88,7 +88,15 @@ work that can be **completed** rather than an infinite stream.
    (how many annotators per trace), **split** verdicts and an **alignment session**, and that
    **5.5 contains none of them**. That gap is now on the critical path: the vocabulary has to be
    written into PRODUCT.md before it is built, which is a human act.
-4. **The 50-trace floor stays on the PANEL.** A set cannot route around ADR-0061; a small set
+4. **A panel gets a DEFAULT SET automatically** (stakeholder, 2026-09-20), named as such and
+   renameable, so "set-only" costs nothing at onboarding: an annotator arriving at a freshly
+   gated panel has something to work, and the two panels already being annotated keep working
+   without anyone curating. Engineers then build named sets beside it. **What this makes safe is
+   TOP-UP** (see the recommendation): membership append-only and timestamped means a set can gain
+   traces later and "what it held when this annotation happened" is still answerable — which is
+   the versioned join table CONVENTIONS asks for, and the difference between growing a set and
+   the saved query that was rejected.
+5. **The 50-trace floor stays on the PANEL.** A set cannot route around ADR-0061; a small set
    inside a gated panel is fine, a set inside an ungated one is not.
 
 ## Open questions for the human
@@ -96,23 +104,31 @@ work that can be **completed** rather than an infinite stream.
 Answered above: snapshot, set-only, multi-reviewer with an arbiter, floor on the panel. What
 those answers RAISE:
 
-1. **Overlap is a number, and somebody sets it.** Is it per set ("every trace in this set gets 2
+1. **When is the default set created, and from which picker?** At the gate (50 traces) it can
+   only hold 50, and a snapshot never grows — so traces 51+ would sit in no set until someone
+   curated or topped it up. Options: create it at the gate and top it up explicitly; create it
+   lazily when an annotator first arrives (snapshotting up to N then); or make the default the one
+   set that tops itself up. **Recommendation: RANDOM 100, not the first 100** — ADR-0066 chose
+   random serving because a solid block of one week's traffic is the worst sample to build a
+   taxonomy from, and "the first 100" reintroduces exactly that at the selection layer, where it
+   is harder to see. The convenience is identical.
+2. **Overlap is a number, and somebody sets it.** Is it per set ("every trace in this set gets 2
    answers"), or per trace? The harvest's mockups put it at assignment time, with a bulk "send to
    annotation queue" action setting it (§6a, Q4 there).
-2. **Who may be the arbiter?** The harvest asks whether the role needs restricted console access
+3. **Who may be the arbiter?** The harvest asks whether the role needs restricted console access
    (its Q5, recorded as possibly paranoia). A dictator who is also an annotator on the same set is
    a different claim from one who only adjudicates.
-3. **When does adjudication happen** — as splits arise, or after the set is complete? The
+4. **When does adjudication happen** — as splits arise, or after the set is complete? The
    mockups' alignment session is a discrete, reviewed-first object; M6 owns alignment sessions,
    so the plan must say which half of this lands in M5.
-4. **What does an arbiter SEE?** ADR-0067 withholds operator signals from an annotator; an
+5. **What does an arbiter SEE?** ADR-0067 withholds operator signals from an annotator; an
    arbiter necessarily sees both annotators' answers and notes, which is a different payload and
    deserves its own decision rather than inheriting either surface's.
-5. **Does the set carry the overlap and arbiter, or does the PANEL?** A per-set choice is more
+6. **Does the set carry the overlap and arbiter, or does the PANEL?** A per-set choice is more
    flexible; a per-panel default is fewer decisions per set.
-6. **Set-only means a migration story**: what happens to the 47 spike traces and the two panels
-   already being annotated — an implicit "everything so far" set, or nothing until someone
-   curates?
+7. **ANSWERED by the default set**: the two panels already being annotated get one on migration.
+   Still to say: does a panel below the floor get one too (dormant until the gate opens), and does
+   a set that is `completed` stop a default from being made again?
 7. **Is "completed" a state on the set**, and does it require every trace answered by the full
    overlap, arbitration included?
 8. **`ds_` is reserved for datasets** (CONVENTIONS). A review set is not a dataset — it is what
@@ -120,6 +136,10 @@ those answers RAISE:
    prefix. `rvs_`? And does an M6 dataset then reference a set, or the annotations directly?
 
 ## Recommended approach (input to planning, not the plan)
+- **Membership is APPEND-ONLY and timestamped**, which is what lets a set be topped up without
+  giving up the snapshot: the picker resolves once per run, never removes, and "the set as of
+  this annotation" is a query rather than a lost fact. A saved query that silently re-evaluates
+  stays rejected; an engineer pressing "add 100 more" is a different act with a row to show for it.
 - **A new table, `review_sets` (`rvs_`), plus an append-only membership join** — following the
   dataset rule rather than a flag on the trace. The set stores its `strategy` and `size` as
   written; membership stores the traces the strategy resolved to, at creation.
