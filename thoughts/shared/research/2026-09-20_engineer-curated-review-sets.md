@@ -96,7 +96,20 @@ work that can be **completed** rather than an infinite stream.
    traces later and "what it held when this annotation happened" is still answerable — which is
    the versioned join table CONVENTIONS asks for, and the difference between growing a set and
    the saved query that was rejected.
-5. **The 50-trace floor stays on the PANEL.** A set cannot route around ADR-0061; a small set
+5. **The default set is RANDOM 100, created LAZILY, and can be TOPPED UP** (stakeholder,
+   2026-09-20).
+   - **Random, not the first 100**: ADR-0066 chose random serving because a solid block of one
+     week's traffic is the worst sample to build a taxonomy from, and "the first 100" reintroduces
+     that at the selection layer, where it is harder to see. Wanting a specific window — a launch
+     week, a bad deploy — is an engineer making a named set on purpose, which is the feature.
+   - **Lazily**: made when an annotator first arrives at a gated panel with no set, from the
+     traces that exist then. Nothing is created for a panel below the floor, so no dormant sets
+     accumulate for panels nobody annotates.
+   - **Topped up**: an explicit engineer action that runs a picker again and APPENDS. Membership
+     is append-only and timestamped, so a set grows without giving up the snapshot — "what it held
+     when this annotation happened" stays a query. The saved query that silently re-evaluates
+     stays rejected; this is the same act with a row to show for it.
+6. **The 50-trace floor stays on the PANEL.** A set cannot route around ADR-0061; a small set
    inside a gated panel is fine, a set inside an ungated one is not.
 
 ## Open questions for the human
@@ -104,14 +117,6 @@ work that can be **completed** rather than an infinite stream.
 Answered above: snapshot, set-only, multi-reviewer with an arbiter, floor on the panel. What
 those answers RAISE:
 
-1. **When is the default set created, and from which picker?** At the gate (50 traces) it can
-   only hold 50, and a snapshot never grows — so traces 51+ would sit in no set until someone
-   curated or topped it up. Options: create it at the gate and top it up explicitly; create it
-   lazily when an annotator first arrives (snapshotting up to N then); or make the default the one
-   set that tops itself up. **Recommendation: RANDOM 100, not the first 100** — ADR-0066 chose
-   random serving because a solid block of one week's traffic is the worst sample to build a
-   taxonomy from, and "the first 100" reintroduces exactly that at the selection layer, where it
-   is harder to see. The convenience is identical.
 2. **Overlap is a number, and somebody sets it.** Is it per set ("every trace in this set gets 2
    answers"), or per trace? The harvest's mockups put it at assignment time, with a bulk "send to
    annotation queue" action setting it (§6a, Q4 there).
@@ -126,9 +131,10 @@ those answers RAISE:
    deserves its own decision rather than inheriting either surface's.
 6. **Does the set carry the overlap and arbiter, or does the PANEL?** A per-set choice is more
    flexible; a per-panel default is fewer decisions per set.
-7. **ANSWERED by the default set**: the two panels already being annotated get one on migration.
-   Still to say: does a panel below the floor get one too (dormant until the gate opens), and does
-   a set that is `completed` stop a default from being made again?
+6. **ANSWERED**: no migration is needed — the two live panels get a default set the next time an
+   annotator opens them, and panels below the floor get nothing. Still to say: once a default set
+   is `completed`, does the next annotator get a SECOND default from what has arrived since, or
+   does the panel then require a curated set?
 7. **Is "completed" a state on the set**, and does it require every trace answered by the full
    overlap, arbitration included?
 8. **`ds_` is reserved for datasets** (CONVENTIONS). A review set is not a dataset — it is what
