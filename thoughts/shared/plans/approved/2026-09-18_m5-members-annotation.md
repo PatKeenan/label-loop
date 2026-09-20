@@ -165,7 +165,7 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 ## Phase 4 — Annotations: the append-only record and the queue
 
 ### Changes
-- `packages/db/migrations/0013_annotations.sql` + `schema/annotations.ts` — `annotations`:
+- `packages/db/migrations/0015_annotations.sql` + `schema/annotations.ts` — `annotations`:
   `id (ann_)`, `org_id`, `trace_id` (→ traces), `panel_id`, `panel_version_id` (copied from the
   trace at write time — pinned, ADR-0003), `annotator_id` (→ user, **RESTRICT**: contribution
   attaches to the person, PRODUCT.md §10), `outcome` enum (`acceptable | not_acceptable |
