@@ -34,7 +34,7 @@ none of them gates these three.
 
 Plan: `thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`, phase 3.
 
-4. [ ] **`annotator-session.html`** — *r6 drawn 2026-09-20, awaiting stakeholder review.*
+4. [x] **`annotator-session.html`** — *r6 drawn AND APPROVED 2026-09-20.*
    r5 (2026-09-18) redrew it for judgeless panels: *acceptable / not acceptable* with a
    required note (ADR-0066), no operator signals (ADR-0067), the `/review` landing listing
    every panel with its progress toward 50, and centred "nothing open yet" and "all caught up"

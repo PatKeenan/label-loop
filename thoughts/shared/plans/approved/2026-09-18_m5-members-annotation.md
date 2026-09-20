@@ -157,7 +157,7 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
       outside the reviewed turn, the violet surface on the final reply alone — plus a sixth
       state for a LEGACY trace with no input. Metadata is absent (ADR-0077). Q1 is closed by the
       four roles; Q6 (should an annotator see tool steps) is new.
-- [ ] **Reviewed and approved by the stakeholder** before phase 5 starts
+- [x] **Reviewed and approved by the stakeholder** (2026-09-20, on r6). Phase 5 may start.
 
 ### Automated verification
 - [x] `bun run lint` (the mockup is outside Biome; this proves nothing about it — Deviation 33 of
