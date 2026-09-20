@@ -16,6 +16,11 @@
 
 ## API rules
 - Version prefix `/v1/` from day one. Breaking change = new version, never mutation.
+- **Version prefix, and the ONE recorded exception to it.** ADR-0073 replaced `artifact` +
+  `context` with the four roles **in place on `/v1`**, breaking the rule directly above,
+  because on 2026-09-19 no caller existed outside this repository. The exception does not
+  generalise: once an external caller exists, "breaking change = new version" applies without
+  exception.
 - Every response is enveloped: success `{ data, request_id }`, failure
   `{ error: { code, message }, request_id }`. Error codes are a closed enum in contracts.
 - All ids are prefixed ULIDs: `org_` (organisation), `pnl_` (panel), `pnv_` (panel
@@ -35,11 +40,15 @@
 - Idempotency: mutating endpoints accept `Idempotency-Key`; evaluation is naturally
   idempotent per request and always returns its `tr_` `trace_id` in `data` (alongside
   the envelope's `request_id`).
-- **The product surface is a panel of judges (ADR-0019).** A caller sends an artifact to
-  `POST /v1/panels/{panel_id}/evaluate` and receives one verdict per judge, each with its
-  reasoning; `POST /v1/judges/{judge_id}/evaluate` runs a single judge. We never generate
-  the caller's artifact — their agent does — but we ARE the inference path for judge
-  calls, which is what keeps ADR-0001 true.
+- **The product surface is a panel of judges (ADR-0019).** A caller sends FOUR ROLES to
+  `POST /v1/panels/{panel_id}/evaluate` — `input` and `output` (required, any JSON),
+  `reference` and `metadata` (optional) — and receives one verdict per judge, each with its
+  reasoning; `POST /v1/judges/{judge_id}/evaluate` runs a single judge. **`output` is the
+  agent's final answer or proposal and the ONLY thing judged**; everything it was given or did
+  to get there is `input`, which is evidence (ADR-0073). LabelLoop, not the integrator, decides
+  how each renders, by its shape. The payload is capped at 64 KiB serialised (ADR-0075). We
+  never generate the caller's output — their agent does — but we ARE the inference path for
+  judge calls, which is what keeps ADR-0001 true.
 - **Reasoning is emitted before the verdict**, always. These models are autoregressive, so
   a verdict generated first makes its reasoning post-hoc rationalisation. Under structured
   output this means JSON schema key order is load-bearing, not cosmetic.
@@ -200,7 +209,7 @@
   cost panel is not showing. The money line itself FILTERS to `cost_priced="true"` rather
   than summing across the label.
 - **No key id, org id, panel id, trace id, `request_id`, annotator id, raw URL path or
-  artifact-derived value may ever be a metric label** (ADR-0042). Per-key usage is a SQL
+  value derived from the caller's payload may ever be a metric label** (ADR-0042). Per-key usage is a SQL
   `GROUP BY` against Postgres, which is also the source M8's billing must read from: a SQL
   group costs a query, a Prometheus label costs a time series forever. The rule is
   **machine-enforced** (`metrics.cardinality.test.ts`, ADR-0016) rather than remembered,

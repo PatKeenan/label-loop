@@ -112,11 +112,11 @@ export function setup() {
 
 export default function (data) {
   // Per-VU AND per-iteration, so the fake's deterministic latency is drawn fresh every
-  // call. A constant artifact would make every request take the same hashed delay and turn
+  // call. A constant output would make every request take the same hashed delay and turn
   // the whole distribution into one value.
-  const artifact = `soak artifact for vu ${__VU} iteration ${__ITER}`
+  const output = `soak output for vu ${__VU} iteration ${__ITER}`
 
-  const res = evaluate(artifact)
+  const res = evaluate(output)
   const body = json(res)
 
   limitedRate.add(res.status === 429)

@@ -1,6 +1,13 @@
 # ADR-0037: The triage persona returns, as a gate on the caller's own routing
 
 **Status:** Accepted · **Date:** 2026-09-04 · **Milestone:** M5
+
+> **Amended by ADR-0073 (2026-09-19).** The shape below is pre-ADR-0073 and the field names are
+> gone: what the bot DECIDED is now the `output` — the one thing judged — and the inbound issue
+> is the `input`. Nothing about the decision this ADR records changes: the gate is still on the
+> bot's own routing decision, never a label we manufacture for it. Only where that decision
+> travels does.
+
 **Revises a recorded cost of:** ADR-0034 · **Applies the design move in:** ADR-0036
 
 > **Stub.** Created by `/approve_plan` from the "Decisions made" section of

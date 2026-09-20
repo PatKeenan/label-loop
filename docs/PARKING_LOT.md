@@ -215,6 +215,26 @@ Langfuse's ground). The test for every feature here: *does it get a team to a wo
 **Depends on** ADR-0073 (the four roles), still Proposed. **Promote** with M6, when judges are
 first authored from annotations and a seeded panel pays off immediately.
 
+## A neutral step format for agentic callers (raised 2026-09-19, ADR-0073)
+
+The shaped view and the judge prompt recognise tool calls in exactly two formats — OpenAI
+(`tool_calls` on an assistant message, `role: "tool"` results) and Anthropic (`tool_use` /
+`tool_result` blocks) — because those are what agents hold today. An agent sending its
+FRAMEWORK's own state instead (a LangGraph state object, a custom step list) is accepted,
+stored and judged identically, and reads as labelled fields and JSON rather than as steps.
+
+**The proposal:** recognise a third, neutral shape — an array like
+`[{"step": "lookup_account", "args": {…}, "result": {…}}]` — documented as what to send when
+you hold neither API's format. It is one branch in `apps/web/src/components/shaped/to-steps.ts`
+and one in `apps/api/src/llm/render-for-model.ts`, both of which already return null for an
+unrecognised shape and fall back to JSON.
+
+**Parked, not rejected** (stakeholder, 2026-09-19), for the same reason the 64 KiB cap stays at
+64: no caller has hit it. Inventing a step vocabulary before an integration needs one is
+guessing at a shape. **Promote** when a real agentic integration sends steps we cannot draw —
+or before the public writeup, if the agentic story is what the writeup leads with, since a
+framework-native trace rendering as raw JSON is the screenshot nobody wants.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps

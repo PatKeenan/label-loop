@@ -97,9 +97,9 @@ export function setup() {
 export default function () {
   // Per-VU, so the fake's deterministic latency spreads across the population instead of
   // every virtual user drawing the same delay from the same hash.
-  const artifact = `spike artifact for vu ${__VU} iteration ${__ITER}`
+  const output = `spike output for vu ${__VU} iteration ${__ITER}`
 
-  const res = evaluate(artifact)
+  const res = evaluate(output)
 
   const body = json(res)
 

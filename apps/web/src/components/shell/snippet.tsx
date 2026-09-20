@@ -16,6 +16,11 @@ import { Data, Eyebrow, Mark } from './mark.tsx'
  * **The same call works unchanged once judges exist.** Only what comes back changes. That is
  * deliberate: nothing about integrating has to be redone when a panel leaves collecting.
  *
+ * **The example is a CHAT** (ADR-0073, plan decision 12): `input` is the messages array an
+ * integrator already holds, and `output` is the reply. It is the commonest shape, and the one
+ * that shows what `input` is for. The old example — the agent's own decision buried in a
+ * `context` map — taught exactly the ambiguity ADR-0073 removed.
+ *
  * **The key is masked on screen and real on the clipboard** (6c decision 7). It exists
  * exactly once — LabelLoop stores only a hash — so this screen IS the reveal, rather than a
  * modal that can be dismissed with the key uncopied.
@@ -39,8 +44,8 @@ const snippetFor = (language: Language, panelId: string, key: string): string =>
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: $(uuidgen)" \\
   -d '{
-    "artifact": "what your agent produced, or decided about",
-    "context": { "your_agent_decision": "p2" }
+    "input": [{ "role": "user", "content": "Was I charged twice for March?" }],
+    "output": "Yes — I refunded the duplicate charge of $49."
   }'`
   }
   if (language === 'node') {
@@ -53,10 +58,13 @@ const snippetFor = (language: Language, panelId: string, key: string): string =>
     "Idempotency-Key": crypto.randomUUID(),
   },
   body: JSON.stringify({
-    // What your agent PRODUCED — a draft, an image, a reply.
-    artifact: draft,
-    // What a judge needs to decide, INCLUDING your agent's own decision.
-    context: { your_agent_decision: "p2" },
+    // Everything your agent was given or did to get there. For a chat, the
+    // messages array you already hold — tool calls and all.
+    input: messages,
+    // Your agent's FINAL answer or proposal. This is the one thing judged.
+    output: reply,
+    // Optional: facts the judges need (an account record), and bookkeeping.
+    // reference: { account }, metadata: { conversation_id },
   }),
 })
 
@@ -84,10 +92,13 @@ res = requests.post(
         "Idempotency-Key": str(uuid.uuid4()),
     },
     json={
-        # What your agent PRODUCED — a draft, an image, a reply.
-        "artifact": draft,
-        # What a judge needs to decide, INCLUDING your agent's own decision.
-        "context": {"your_agent_decision": "p2"},
+        # Everything your agent was given or did to get there. For a chat, the
+        # messages list you already hold — tool calls and all.
+        "input": messages,
+        # Your agent's FINAL answer or proposal. This is the one thing judged.
+        "output": reply,
+        # Optional: facts the judges need (an account record), and bookkeeping.
+        # "reference": {"account": account}, "metadata": {"conversation_id": cid},
     },
 )
 
