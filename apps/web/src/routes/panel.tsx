@@ -88,7 +88,9 @@ export const PanelOverviewPage = () => {
         actions={<Mark tone={collecting ? 'neutral' : 'success'}>{data.state}</Mark>}
       />
 
-      {collecting ? <Gate traceCount={data.trace_count} /> : null}
+      {collecting ? (
+        <Gate traceCount={data.trace_count} panelSlug={panel.slug} orgSlug={orgSlug} />
+      ) : null}
 
       {/*
         TWO MODES, switched by DATA rather than by a dismiss button (Deviation 65).

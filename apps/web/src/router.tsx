@@ -1,3 +1,4 @@
+import { can } from '@labelloop/contracts'
 import type { QueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
@@ -14,6 +15,8 @@ import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
 import { MembersPage } from './routes/members.tsx'
 import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
+import { ReviewHomePage } from './routes/review.tsx'
+import { ReviewSessionPage } from './routes/review-session.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
 import { TracePage } from './routes/trace.tsx'
 import { TracesPage } from './routes/traces.tsx'
@@ -100,9 +103,30 @@ const consoleRoute = createRoute({
   component: ConsoleLayout,
 })
 
+/**
+ * Home, and the ANNOTATOR'S LANDING (plan decision 3).
+ *
+ * A role that cannot read panels has no console to land in — M4 drew that as "Nothing to
+ * review yet", which stopped being true the moment the review surface existed. The redirect
+ * asks the SAME capability map the server guards with (`can`), so the two cannot disagree
+ * about who belongs where, and it carries `?org=` so the surface opens in the org they asked
+ * for. Staff land in the console and reach review from a panel.
+ */
 const homeRoute = createRoute({
   getParentRoute: () => consoleRoute,
   path: '/',
+  beforeLoad: async ({ context, search }) => {
+    const session = await sessionOf(context)
+    if (session === null || session === undefined) return
+    const requested = (search as { org?: string }).org
+    const active =
+      session.memberships.find((membership) => membership.org_slug === requested) ??
+      session.memberships.find((membership) => membership.org_id === session.active_org_id) ??
+      session.memberships[0]
+    if (active !== undefined && !can(active.role, { panel: ['read'] })) {
+      throw redirect({ to: '/review', search: { org: requested } })
+    }
+  },
   component: HomePage,
 })
 
@@ -156,6 +180,35 @@ const settingsMembersRoute = createRoute({
  * Arriving here already signed in goes straight to that target: there is nothing to sign in
  * to, and showing the form would invite someone to type credentials nothing will check.
  */
+/**
+ * THE ANNOTATOR SURFACE, outside the console shell (M5 phase 5, ADR-0071).
+ *
+ * Pathless and its OWN frame: no sidebar, no panel switcher, `data-surface="annotator"`. The
+ * session guard is the same as the console's — signed out sends you to `/login` carrying where
+ * you were — because it is about the session, not about the surface.
+ */
+const reviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'review',
+  beforeLoad: async ({ context, location }) => {
+    if ((await sessionOf(context)) === null) {
+      throw redirect({ to: '/login', search: { redirect: location.href } })
+    }
+  },
+})
+
+const reviewHomeRoute = createRoute({
+  getParentRoute: () => reviewRoute,
+  path: '/review',
+  component: ReviewHomePage,
+})
+
+const reviewSessionRoute = createRoute({
+  getParentRoute: () => reviewRoute,
+  path: '/review/$panelSlug',
+  component: ReviewSessionPage,
+})
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
@@ -191,6 +244,7 @@ export const router = createRouter({
       panelKeysRoute,
       settingsMembersRoute,
     ]),
+    reviewRoute.addChildren([reviewHomeRoute, reviewSessionRoute]),
     loginRoute,
   ]),
   context: { queryClient },

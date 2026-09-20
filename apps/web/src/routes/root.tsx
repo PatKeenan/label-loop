@@ -105,7 +105,11 @@ export const ConsoleLayout = () => {
       memberships={org.memberships}
       activeOrgId={org.orgId}
       role={org.role}
-      panel={panel.state === 'ready' ? { slug: panel.slug, name: panel.name } : null}
+      panel={
+        panel.state === 'ready'
+          ? { slug: panel.slug, name: panel.name, traceCount: panel.traceCount }
+          : null
+      }
     >
       {notAMember ? (
         // It cannot name the org that was ASKED for: the console never had its name, and
@@ -124,12 +128,21 @@ export const ConsoleLayout = () => {
           </div>
         </Statement>
       ) : !readsPanels ? (
-        <Statement eyebrow={org.orgSlug} title="Nothing to review yet">
+        // Reached only by typing a console URL: `/` redirects this role to the review surface
+        // (M5 phase 5). It used to say annotation was not available yet, which stopped being
+        // true when that surface shipped.
+        <Statement eyebrow={org.orgSlug} title="Reviewing happens over here">
           <p className="m-0">
-            Your role in {org.orgName} is {org.role.replace('_', ' ')}. Reviewing traces will open
-            here once annotation is available in LabelLoop — until then there is nothing in the
-            console for this role.
+            Your role in {org.orgName} is {org.role.replace('_', ' ')}, so the console’s panels,
+            keys and traces aren’t yours — reviewing traces is.
           </p>
+          <div>
+            <Button asChild>
+              <Link to="/review" search={{ org: org.orgSlug }}>
+                Go to Review
+              </Link>
+            </Button>
+          </div>
           <p className="m-0 text-muted-foreground">
             If you work in another organisation, switch to it from the organisation menu at the top.
           </p>

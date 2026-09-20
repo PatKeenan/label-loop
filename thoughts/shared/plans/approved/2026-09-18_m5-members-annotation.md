@@ -232,14 +232,14 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 - Portalled overlays on this surface use `useSurface('annotator')` (Deviation 53 of M4).
 
 ### Steps
-- [ ] Review layout and routes, outside the console shell
-- [ ] Session screen from r5, keyboard-first
-- [ ] Annotator landing → `/review`
-- [ ] Staff "Review traces" section + gate-card link
-- [ ] `bun test apps/web` covers the pure parts (keyboard map, note rules)
+- [x] Review layout and routes, outside the console shell
+- [x] Session screen from r5, keyboard-first
+- [x] Annotator landing → `/review`
+- [x] Staff "Review traces" section + gate-card link
+- [x] `bun test apps/web` covers the pure parts (keyboard map, note rules)
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
 
 ### Manual verification
 - [ ] **The M5 demo moment**: as an annotator invited in phase 2, annotate 20 real traces in under
@@ -433,3 +433,31 @@ Recorded as they happen; decision provenance, not a changelog.
 24. **`item_id` is the trace id, and is never labelled as one.** The console cannot deep-link an
     annotator into the trace detail, and the write resolves the id under the session's org, so
     holding the value grants nothing the session did not already.
+
+### Phase 5 (2026-09-20)
+
+25. **Built from r6, not r5** — r5 drew the trace as an IN/OUT pair, which ADR-0073 replaced.
+    The session renders the trace with `ShapedTrace`, the SAME component the console's drawer
+    uses, so the two surfaces cannot give different accounts of what was judged. `metadata` is
+    not passed, because the payload does not carry it (ADR-0077).
+26. **Advancing the queue is a NONCE in the query key**, not a refetch. A refetch is a retry of
+    the same question; the queue is a sequence, and the server has just recorded an answer.
+    `staleTime: 0` and `gcTime: 0` on the next-item read, so nothing is ever served from cache.
+27. **The pure rules live in `components/review/answer-state.ts`** — the key map and `canSave` —
+    and are tested without a DOM (14 tests). They MIRROR the server's rules rather than being
+    the authority: the API refuses a noteless `not_acceptable` and a skip carrying a note, and
+    this is what stops a person meeting that refusal.
+28. **Enter inside the note saves; Shift+Enter writes a second line.** A note is prose, and the
+    keyboard-first promise is worth nothing if saving means reaching for the mouse.
+29. **The annotator's landing is a redirect in `homeRoute.beforeLoad`**, asking the same `can()`
+    map the server guards with. The console's old "Nothing to review yet" placeholder — now
+    reachable only by typing a console URL — became "Reviewing happens over here" with a link.
+30. **`usePanelContext` now carries `traceCount`**, so the sidebar's Review entry can unlock at
+    the floor. Locked below it, with the distance in the tooltip: a section that vanishes at 49
+    traces and reappears at 50 reads as a bug rather than as a threshold.
+31. **The gate card gained the way IN.** "Annotation lands at M5" is gone from it, replaced by a
+    Review traces button once the gate is open.
+32. **Not verified in a browser by Claude.** The surface needs a signed-in annotator, and
+    signing in means entering a password. Signed out, `/review` correctly redirects to `/login`;
+    everything past that is the stakeholder's manual verification — including the M5 demo
+    moment (20 traces in under 5 minutes, keyboard only).

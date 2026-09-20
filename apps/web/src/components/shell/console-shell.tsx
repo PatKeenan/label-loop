@@ -63,8 +63,11 @@ export const ConsoleShell = ({
   orgSlug: string
   memberships: readonly Membership[]
   activeOrgId: string
-  /** The open panel, or `null` anywhere at the organisation's level. */
-  panel: { slug: string; name: string } | null
+  /**
+   * The open panel, or `null` anywhere at the organisation's level. `traceCount` is here for
+   * the sidebar's Review entry, which unlocks at the annotation floor (M5 phase 5).
+   */
+  panel: { slug: string; name: string; traceCount: number } | null
   /**
    * This account's role in the ACTIVE org, which decides what the frame offers. An annotator
    * sees the bar and nothing else — there is nothing in the console for that role at M4, and
@@ -202,7 +205,12 @@ export const ConsoleShell = ({
               is what "Home is the list" means.
             */}
             <PanelSwitcher orgId={activeOrgId} orgSlug={orgSlug} activePanelSlug={panel.slug} />
-            <SectionNav panelSlug={panel.slug} panelName={panel.name} orgSlug={orgSlug} />
+            <SectionNav
+              panelSlug={panel.slug}
+              panelName={panel.name}
+              orgSlug={orgSlug}
+              traceCount={panel.traceCount}
+            />
           </aside>
         ) : null}
 

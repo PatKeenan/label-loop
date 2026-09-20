@@ -193,3 +193,46 @@ export const membersQuery = (orgId: string) =>
       return (await response.json()).data
     },
   })
+
+/**
+ * THE REVIEW SURFACE'S READS (ADR-0066, ADR-0067).
+ *
+ * Both are `annotation: [create]` on the server, which an annotator holds and staff hold too.
+ * Neither is cached beyond the moment: the queue is a SEQUENCE, and a cached "next item" is an
+ * item somebody else may already have answered. `staleTime: 0` and no structural sharing, so
+ * asking again always asks the server.
+ */
+export const reviewPanelsQuery = (orgId: string) =>
+  queryOptions({
+    queryKey: ['review-panels', orgId],
+    queryFn: async () => {
+      const response = await api.internal.review.panels.$get(undefined, asOrg(orgId))
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data.panels
+    },
+    staleTime: 0,
+  })
+
+/**
+ * The next item for this person in this panel, or why there is none.
+ *
+ * `nonce` is what advances the queue: answering increments it, which changes the key, which
+ * asks the server for a new item. A refetch of the same key would be a retry of the same
+ * question — and the server, which has just recorded an answer, would give a different answer
+ * to it anyway. Making the advance explicit keeps "what am I looking at" a value rather than
+ * a race between a mutation and a refetch.
+ */
+export const reviewNextQuery = (orgId: string, slug: string, nonce: number) =>
+  queryOptions({
+    queryKey: ['review-next', orgId, slug, nonce],
+    queryFn: async () => {
+      const response = await api.internal.review.panels[':slug'].next.$get(
+        { param: { slug } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    staleTime: 0,
+    gcTime: 0,
+  })

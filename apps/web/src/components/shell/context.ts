@@ -201,7 +201,8 @@ export type PanelContext =
   | { state: 'pending' }
   | { state: 'failed'; error: unknown }
   | { state: 'not-found' }
-  | { state: 'ready'; id: string; slug: string; name: string }
+  /** `traceCount` rides along because the sidebar's Review entry opens at the gate (M5 p5). */
+  | { state: 'ready'; id: string; slug: string; name: string; traceCount: number }
 
 export const usePanelContext = (orgId: string | null): PanelContext => {
   const params = useParams({ strict: false }) as { panelSlug?: string }
@@ -217,5 +218,11 @@ export const usePanelContext = (orgId: string | null): PanelContext => {
 
   const panel = panels.data.find((p) => p.slug === slug)
   if (panel === undefined) return { state: 'not-found' }
-  return { state: 'ready', id: panel.id, slug: panel.slug, name: panel.name }
+  return {
+    state: 'ready',
+    id: panel.id,
+    slug: panel.slug,
+    name: panel.name,
+    traceCount: panel.trace_count,
+  }
 }
