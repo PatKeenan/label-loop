@@ -1,7 +1,7 @@
 ---
 date: 2026-09-19T04:00:00Z
 author: claude-code
-status: approved
+status: complete
 approved_at: 2026-09-19T11:10:38Z
 approved_by: Pat Keenan
 milestone: M5
@@ -194,13 +194,13 @@ old columns go. **This is the one irreversible phase**, which is why it is last 
   typecheck proves it once the columns leave the schema).
 
 ### Steps
-- [ ] Confirm every row has `output` (`SELECT count(*) WHERE output IS NULL` = 0) before writing
+- [x] Confirm every row has `output` (`SELECT count(*) WHERE output IS NULL` = 0) before writing
       the migration
-- [ ] Migration, schema, dual-write removed
-- [ ] Row count unchanged
+- [x] Migration, schema, dual-write removed
+- [x] Row count unchanged
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
 
 ### Manual verification
 - [ ] Every trace — pre-migration, chat, tool-calling, proposal — still opens and reads correctly
@@ -352,3 +352,32 @@ the reply and cited the tool result as evidence.
     judge prompt recognise OpenAI and Anthropic tool calls; a framework's own step list is
     stored and judged identically and reads as fields. `docs/PARKING_LOT.md` records the
     proposal, the two files it touches, and its promotion condition.
+21. **The row-level backfill test could not survive the contraction, and was replaced rather
+    than deleted.** `packages/db/src/schema/native-shapes.test.ts` used to write a pre-0013 row
+    and run 0013's own `UPDATE` over it; 0014 removed the columns that statement reads, so the
+    replay is impossible, not merely weaker. It now asserts the same properties against the
+    migration FILES: 0013 adds the four roles and contains no `DROP`/`DELETE`/`TRUNCATE`, its
+    backfill maps `artifact`→`output` (via `to_jsonb`, never a parse) and `context`→`reference`
+    and touches neither `input` nor `metadata`, 0014 drops exactly two columns and no rows, and
+    `output` takes NOT NULL while `input` stays nullable for the legacy rows.
+22. **The 47 spike traces keep their content** (stakeholder chose to leave them, 2026-09-19).
+    Their encoded roles were copied into `reference` by 0013, so dropping `context` took nothing
+    with it: they still read as legacy traces whose reference holds the experiment's JSON.
+
+Phase 5 evidence (2026-09-19): `output IS NULL` = 0 across 4,610 rows before the migration was
+written. After it: 4,610 rows, `artifact` and `context` absent from `information_schema`, a live
+evaluate call stored its roles and made 4,611. The database now holds 4,593 legacy rows
+(including the 47 spike ones), and 18 in native shapes.
+
+## Shipped
+
+| Phase | PR | What landed |
+|---|---|---|
+| 1 | #77 | The four-role contract with a 64 KiB cap; migration 0013 (expand + backfill); dual-write |
+| 2 | #78 | `JudgeCall` takes the roles; `render-for-model.ts`; the prompt judges the OUTPUT |
+| 3 | #79 | The shaped view — transcript, tool steps, the judged surface; `markdown-to-jsx` (D18) |
+| 4 | #80 | Snippet, k6, README (with the roles table), CONVENTIONS, PRODUCT, CLAUDE.md, ADR-0037 note; all four spike agents on the real contract |
+| 5 | #81 | Migration 0014: `artifact` and `context` dropped, `output` NOT NULL, dual-write removed |
+
+**Parked from this work:** a neutral step format for framework-native agent traces
+(`docs/PARKING_LOT.md`), and panel-level reference material (decision 7).

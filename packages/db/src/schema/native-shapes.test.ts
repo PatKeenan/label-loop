@@ -1,117 +1,75 @@
-import { afterAll, describe, expect, test } from 'bun:test'
-import { newId } from '@labelloop/contracts'
-import { appClient } from '../test-support.ts'
+import { describe, expect, test } from 'bun:test'
+import { Glob } from 'bun'
 
 /**
- * Migration 0013 (ADR-0074): the four roles of ADR-0073 added BESIDE `artifact` and `context`,
- * with a backfill, and nothing removed.
+ * The two halves of the native-shapes change, asserted against the migration FILES: 0013
+ * expands and backfills, 0014 contracts (ADR-0073, ADR-0074).
  *
- * The local and CI databases are already past 0013 by the time a test runs, so the backfill
- * is proven the only way that stays honest afterwards: a row is written the way pre-0013 code
- * wrote it — `artifact` and `context`, no `output` — and the migration's OWN `UPDATE`, read
- * from the file, is run over it. All inside a transaction that is rolled back, so the
- * statement (which is unscoped by design) touches nothing but the fixture.
+ * File-level, because neither can be exercised against a database any more. Both have run
+ * everywhere by the time a test does, and 0014 removed the columns 0013's backfill reads — so
+ * a row-level replay of it, which this file held while the columns existed, is not a weaker
+ * test now but an impossible one. What remains is the property that mattered throughout and
+ * still can be checked: **the migration stream never removed a trace**, only columns, and only
+ * after their contents had been copied elsewhere.
  */
 
-const MIGRATION = new URL('../../migrations/0013_native_shapes.sql', import.meta.url).pathname
-const client = appClient()
+const MIGRATIONS = new URL('../../migrations', import.meta.url).pathname
+const read = (name: string) => Bun.file(`${MIGRATIONS}/${name}`).text()
 
-afterAll(async () => {
-  await client.close()
-})
+/** SQL with comment lines stripped — the prose below discusses `DELETE` and `DROP` freely. */
+const statements = async (name: string) =>
+  (await read(name))
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
 
-const backfillStatement = async (): Promise<string> => {
-  const sql = await Bun.file(MIGRATION).text()
-  const statement = sql
-    .split('--> statement-breakpoint')
-    .map((part) => part.trim())
-    .find((part) => part.includes('UPDATE "traces"'))
-  if (statement === undefined) throw new Error('0013 has no backfill UPDATE')
-  return statement
-}
-
-describe('migration 0013 expands and never contracts', () => {
-  test('it removes nothing — no DROP, DELETE or TRUNCATE, so every row survives it', async () => {
-    const sql = (await Bun.file(MIGRATION).text())
-      .split('\n')
-      .filter((line) => !line.trimStart().startsWith('--'))
-      .join('\n')
+describe('0013 expands and backfills, removing nothing', () => {
+  test('it adds the four roles and drops no column or row', async () => {
+    const sql = await statements('0013_native_shapes.sql')
+    for (const column of ['input', 'output', 'reference', 'metadata']) {
+      expect(sql).toContain(`ADD COLUMN "${column}" jsonb`)
+    }
     expect(sql).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b|\bDELETE\b|\bTRUNCATE\b/i)
   })
 
-  test('the backfill maps a pre-migration row exactly, and leaves a new row alone', async () => {
-    const connection = await client.pool.connect()
-    try {
-      await connection.query('BEGIN')
-      const orgId = newId('org_')
-      const panelId = newId('pnl_')
-      const panelVersionId = newId('pnv_')
-      const legacy = newId('tr_')
-      const current = newId('tr_')
-      await connection.query(`INSERT INTO orgs (id, slug, name) VALUES ($1, $1, 'backfill')`, [
-        orgId,
-      ])
-      await connection.query(
-        `INSERT INTO panels (id, org_id, slug, name) VALUES ($1, $2, 'backfill', 'Backfill')`,
-        [panelId, orgId],
-      )
-      await connection.query(
-        `INSERT INTO panel_versions (id, panel_id, version, threshold) VALUES ($1, $2, 1, 0.5)`,
-        [panelVersionId, panelId],
-      )
-      const insert = `
-        INSERT INTO traces (id, org_id, panel_id, panel_version_id, request_id, artifact,
-                            context, output, complete, threshold)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, true, 0.5)`
-      // Exactly what pre-0013 code wrote: text, a string map, and no output.
-      await connection.query(insert, [
-        legacy,
-        orgId,
-        panelId,
-        panelVersionId,
-        'a'.repeat(32),
-        '{"looks": "like json"} but is text',
-        JSON.stringify({ source: 'github', repo: 'acme/web' }),
-        null,
-      ])
-      // What post-0013 code writes: an output already, and no context.
-      await connection.query(insert, [
-        current,
-        orgId,
-        panelId,
-        panelVersionId,
-        'b'.repeat(32),
-        'the reply',
-        null,
-        JSON.stringify('the reply'),
-      ])
+  test('the backfill maps each retired column to the role that replaced it', async () => {
+    const sql = await statements('0013_native_shapes.sql')
+    // `to_jsonb(artifact)` and not a cast: a legacy artifact was text, so it becomes a JSON
+    // STRING — never parsed, even when it happens to look like JSON.
+    expect(sql).toContain('SET "output" = to_jsonb("artifact"), "reference" = "context"')
+    // Guarded, so it touched only rows written before it and re-running it changes nothing.
+    expect(sql).toContain('WHERE "output" IS NULL')
+    // `input` and `metadata` are absent from the backfill on purpose: a pre-0073 trace never
+    // recorded either, and inventing one from `context` would be a guess stored as a fact.
+    expect(sql).not.toContain('"input" =')
+    expect(sql).not.toContain('"metadata" =')
+  })
+})
 
-      await connection.query(await backfillStatement())
+describe('0014 contracts, and only after the copy', () => {
+  test('it drops exactly the two retired columns, and deletes no row', async () => {
+    const sql = await statements('0014_drop_artifact_context.sql')
+    expect(sql).toContain('DROP COLUMN "artifact"')
+    expect(sql).toContain('DROP COLUMN "context"')
+    expect(sql).toMatch(/DROP COLUMN/g)
+    expect(sql.match(/DROP COLUMN/g)).toHaveLength(2)
+    expect(sql).not.toMatch(/\bDELETE\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i)
+  })
 
-      const { rows } = await connection.query(
-        `SELECT id, jsonb_typeof(output) AS output_type, output #>> '{}' AS output_text,
-                reference, input, metadata
-         FROM traces WHERE id = ANY($1) ORDER BY id`,
-        [[legacy, current]],
-      )
-      expect(rows.find((row) => row.id === legacy)).toEqual({
-        id: legacy,
-        // A jsonb STRING holding the artifact byte for byte — never parsed, even when the
-        // text happens to look like JSON.
-        output_type: 'string',
-        output_text: '{"looks": "like json"} but is text',
-        reference: { source: 'github', repo: 'acme/web' },
-        // Not invented: a legacy trace never recorded what its agent was given.
-        input: null,
-        metadata: null,
-      })
-      expect(rows.find((row) => row.id === current)).toMatchObject({
-        output_text: 'the reply',
-        reference: null,
-      })
-    } finally {
-      await connection.query('ROLLBACK')
-      connection.release()
-    }
+  test('`output` becomes NOT NULL — the constraint the backfill earned', async () => {
+    const sql = await statements('0014_drop_artifact_context.sql')
+    expect(sql).toContain('ALTER COLUMN "output" SET NOT NULL')
+    // And `input` stays nullable: the legacy rows are still legacy, for good.
+    expect(sql).not.toContain('"input" SET NOT NULL')
+  })
+
+  test('the drop comes AFTER the migration that copied the data out', async () => {
+    const names: string[] = []
+    for await (const file of new Glob('*.sql').scan({ cwd: MIGRATIONS })) names.push(file)
+    const backfill = names.find((name) => name.startsWith('0013'))
+    const drop = names.find((name) => name.startsWith('0014'))
+    expect(backfill).toBeDefined()
+    expect(drop).toBeDefined()
+    expect((backfill ?? '') < (drop ?? '')).toBe(true)
   })
 })

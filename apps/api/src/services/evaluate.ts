@@ -1,7 +1,6 @@
 import {
   type EvaluateRequest,
   type Evaluation,
-  type JsonValue,
   newId,
   parseId,
   type TraceId,
@@ -70,25 +69,17 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, Math.round(va
 type JudgeResult = { judge: PanelJudge; outcome: JudgeCallOutcome }
 
 /**
- * The output as text: a string verbatim, anything else as JSON. Its one caller is the
- * `artifact` dual-write, and it leaves with that (ADR-0074).
- */
-const asText = (value: JsonValue): string =>
-  typeof value === 'string' ? value : JSON.stringify(value)
-
-/**
- * What a trace row stores from the request: the four roles as sent (ADR-0073), plus the
- * retired `artifact` DUAL-WRITTEN as the output's text (ADR-0074). The dual-write is what
- * makes reverting this change safe — the code it reverts to reads only `artifact`, and finds
- * every new row readable. `context` is written NULL: its values arrive as `reference` now.
+ * What a trace row stores from the request: the four roles, exactly as sent (ADR-0073).
+ *
+ * The `artifact` dual-write that stood here through phases 1–4 is gone with the column it
+ * fed (ADR-0074): its job was to keep a revert readable, and there is nothing left to revert
+ * to now that the contraction has run.
  */
 const storedRoles = (request: EvaluateRequest) => ({
   input: request.input,
   output: request.output,
   reference: request.reference ?? null,
   metadata: request.metadata ?? null,
-  artifact: asText(request.output),
-  context: null,
 })
 
 const statusOf = (outcome: JudgeCallOutcome): VerdictStatus => outcome.status

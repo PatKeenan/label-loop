@@ -32,7 +32,6 @@ const traceId = newId('tr_')
 
 const RAW = { provider: 'fake', model: 'fake:deterministic', usage: { input: 19, output: 47 } }
 const REASONS = ['missing-expected-behaviour', 'no-repro-steps']
-const CONTEXT = { source: 'github', repo: 'acme/web' }
 // The four roles of ADR-0073, each in a different native shape.
 const INPUT = [{ role: 'user', content: 'Was I charged twice?' }]
 const OUTPUT = { action: 'refund', amount: 49 }
@@ -75,8 +74,6 @@ beforeAll(async () => {
     output: OUTPUT,
     reference: REFERENCE,
     metadata: METADATA,
-    artifact: 'an artifact',
-    context: CONTEXT,
     passed: false,
     score: 0,
     complete: true,
@@ -103,7 +100,6 @@ afterAll(async () => {
 
 describe('jsonb columns hold JSON, not a string containing JSON', () => {
   test.each([
-    ['traces.context', 'SELECT jsonb_typeof(context) AS t FROM traces WHERE id = $1', 'object'],
     ['traces.input', 'SELECT jsonb_typeof(input) AS t FROM traces WHERE id = $1', 'array'],
     ['traces.output', 'SELECT jsonb_typeof(output) AS t FROM traces WHERE id = $1', 'object'],
     ['traces.reference', 'SELECT jsonb_typeof(reference) AS t FROM traces WHERE id = $1', 'object'],
@@ -173,7 +169,6 @@ describe('jsonb columns hold JSON, not a string containing JSON', () => {
     expect(verdict?.reasons).toEqual(REASONS)
 
     const trace = await db.query.traces.findFirst({ where: eq(schema.traces.id, traceId) })
-    expect(trace?.context).toEqual(CONTEXT)
     expect(trace).toMatchObject({
       input: INPUT,
       output: OUTPUT,
