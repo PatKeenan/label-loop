@@ -73,25 +73,51 @@ work that can be **completed** rather than an infinite stream.
   history and want a gate sooner. A set is what they would then point an annotator at, and the
   two together are "a team can start on Monday".
 
+## Decisions taken (stakeholder, 2026-09-20)
+
+1. **Membership is a SNAPSHOT at creation.** "Latest 200" resolves once and the rows are
+   written; the set does not re-evaluate. ADR-0003's posture, and what makes "this pass covered
+   these traces" reconstructible a year later.
+2. **Annotation becomes SET-ONLY.** The whole-panel queue stops being the unit of work — an
+   annotator works a set or there is nothing to work. Consequence to plan for: **every panel
+   that is annotated today needs a set**, and phases 4–5 as shipped serve from the panel, so
+   this is a replacement of that path rather than an addition beside it.
+3. **A set may have SEVERAL reviewers, with a designated tie-breaker.** This is the **arbiter**
+   the Phase A mockups already proposed — `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md`
+   §5 records that the screens cite "PRODUCT.md 5.5" for an arbiter role, an **overlap** setting
+   (how many annotators per trace), **split** verdicts and an **alignment session**, and that
+   **5.5 contains none of them**. That gap is now on the critical path: the vocabulary has to be
+   written into PRODUCT.md before it is built, which is a human act.
+4. **The 50-trace floor stays on the PANEL.** A set cannot route around ADR-0061; a small set
+   inside a gated panel is fine, a set inside an ungated one is not.
+
 ## Open questions for the human
-1. **Does a set belong to a panel, or to an org?** Per-panel is simpler and matches the queue;
-   org-wide would let one set span panels (useful for a taxonomy pass over everything).
-2. **Is membership frozen at creation?** "Latest 200" evaluated once (a snapshot, reconstructible)
-   versus a saved query that re-evaluates (always current, but what an annotation was part of
-   changes under it). ADR-0003's posture points at the snapshot.
-3. **Can several annotators share a set?** Today one person per trace, panel-wide. Within a set,
-   is it "divide the work" (current rule) or "everyone answers everything" (agreement data, which
-   is M6's question)?
-4. **What happens to traces in NO set** once sets exist — is the whole-panel queue still there as
-   a default, or does annotation become set-only? (The second is cleaner; it breaks the current
-   flow for a panel nobody has curated.)
-5. **Does the floor move to the set?** A 50-trace panel with a 10-trace set: allowed?
-6. **Who may curate — engineer and admin only, or an annotator too?** Capability map change either
-   way; "an annotator curating their own work" is a different product claim.
-7. **Does the annotator see the set's name and strategy, or only its name?** (ADR-0067's reasoning
-   argues for name only.)
-8. **Is "completed" a state?** A set that is finished is the thing that makes a pass legible —
-   and it is what a taxonomy session in M6 would actually read from.
+
+Answered above: snapshot, set-only, multi-reviewer with an arbiter, floor on the panel. What
+those answers RAISE:
+
+1. **Overlap is a number, and somebody sets it.** Is it per set ("every trace in this set gets 2
+   answers"), or per trace? The harvest's mockups put it at assignment time, with a bulk "send to
+   annotation queue" action setting it (§6a, Q4 there).
+2. **Who may be the arbiter?** The harvest asks whether the role needs restricted console access
+   (its Q5, recorded as possibly paranoia). A dictator who is also an annotator on the same set is
+   a different claim from one who only adjudicates.
+3. **When does adjudication happen** — as splits arise, or after the set is complete? The
+   mockups' alignment session is a discrete, reviewed-first object; M6 owns alignment sessions,
+   so the plan must say which half of this lands in M5.
+4. **What does an arbiter SEE?** ADR-0067 withholds operator signals from an annotator; an
+   arbiter necessarily sees both annotators' answers and notes, which is a different payload and
+   deserves its own decision rather than inheriting either surface's.
+5. **Does the set carry the overlap and arbiter, or does the PANEL?** A per-set choice is more
+   flexible; a per-panel default is fewer decisions per set.
+6. **Set-only means a migration story**: what happens to the 47 spike traces and the two panels
+   already being annotated — an implicit "everything so far" set, or nothing until someone
+   curates?
+7. **Is "completed" a state on the set**, and does it require every trace answered by the full
+   overlap, arbitration included?
+8. **`ds_` is reserved for datasets** (CONVENTIONS). A review set is not a dataset — it is what
+   annotation runs against, where a dataset is what training consumes — so it needs its own
+   prefix. `rvs_`? And does an M6 dataset then reference a set, or the annotations directly?
 
 ## Recommended approach (input to planning, not the plan)
 - **A new table, `review_sets` (`rvs_`), plus an append-only membership join** — following the
@@ -106,7 +132,13 @@ work that can be **completed** rather than an infinite stream.
   keeps ADR-0066 intact and the diff small.
 - **Manual selection reuses the console's trace table** (`listTraces`, already keyset-paginated)
   with row checkboxes and a "New review set" action — no second browsing surface.
-- **Land it as M5 phase 7**, after phase 6 (staff seeing annotations), because phase 6's read is
-  what makes a set's progress visible; M6 then adds its judge-backed pickers to the same seam.
+- **Multi-reviewer is a SECOND layer, and probably a second phase.** Sets with one reviewer each
+  is the same queue with a different pool; overlap + an arbiter changes what "answered" means
+  (the queue's rule 2 today is "anybody answered it"), adds a resolution object, and needs the
+  PRODUCT.md 5.5 vocabulary written first. Planning them as one phase would couple a small change
+  to an unwritten product concept.
+- **Land the set itself as M5 phase 7**, after phase 6 (staff seeing annotations), because phase
+  6's read is what makes a set's progress visible; M6 then adds its judge-backed pickers to the
+  same seam, and the arbiter arrives with — or just before — M6's alignment sessions.
 - **Do not** build low-confidence or disagreement pickers here (they need judges — M6), and do not
   let a set bypass the 50-trace gate.
