@@ -68,6 +68,20 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, Math.round(va
 
 type JudgeResult = { judge: PanelJudge; outcome: JudgeCallOutcome }
 
+/**
+ * What a trace row stores from the request: the four roles, exactly as sent (ADR-0073).
+ *
+ * The `artifact` dual-write that stood here through phases 1–4 is gone with the column it
+ * fed (ADR-0074): its job was to keep a revert readable, and there is nothing left to revert
+ * to now that the contraction has run.
+ */
+const storedRoles = (request: EvaluateRequest) => ({
+  input: request.input,
+  output: request.output,
+  reference: request.reference ?? null,
+  metadata: request.metadata ?? null,
+})
+
 const statusOf = (outcome: JudgeCallOutcome): VerdictStatus => outcome.status
 
 /**
@@ -103,8 +117,11 @@ const runJudge = async (
     {
       model: judge.model,
       question: judge.question,
-      artifact: request.artifact,
-      ...(request.context === undefined ? {} : { context: request.context }),
+      // The roles as sent (ADR-0073) — the judge renders them by shape. `metadata` is not
+      // passed and never will be: it is bookkeeping, not evidence.
+      input: request.input,
+      output: request.output,
+      ...(request.reference === undefined ? {} : { reference: request.reference }),
       // The frozen pin, onto the wire. Without this line the version's capability contract
       // would be a row nobody reads, and the judge's real capability would go back to being
       // decided by routing at call time — which is the whole defect ADR-0022 exists against.
@@ -331,7 +348,7 @@ export const evaluate = async (
    * their failure modes until an expert has read real traffic. This repository paid the cost
    * too, keeping a judge it knew was invalid just to satisfy the check.
    *
-   * **The trace is still captured in full** — artifact, context, the pinned panel version, the
+   * **The trace is still captured in full** — the four roles, the pinned panel version, the
    * key that authorised it — because the trace is the entire point of this state. What does
    * not happen is the fan-out, so no provider is called and no tokens are spent.
    *
@@ -366,8 +383,7 @@ export const evaluate = async (
         panelVersionId: panel.panelVersionId,
         apiKeyId: command.apiKey.id,
         requestId: command.requestId,
-        artifact: command.request.artifact,
-        context: command.request.context ?? null,
+        ...storedRoles(command.request),
         passed: null,
         score: null,
         complete: true,
@@ -415,8 +431,7 @@ export const evaluate = async (
       panelVersionId: panel.panelVersionId,
       apiKeyId: command.apiKey.id,
       requestId: command.requestId,
-      artifact: command.request.artifact,
-      context: command.request.context ?? null,
+      ...storedRoles(command.request),
       passed: evaluation.passed,
       score: evaluation.score,
       complete: evaluation.complete,

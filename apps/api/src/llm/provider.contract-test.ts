@@ -49,7 +49,8 @@ export type ProviderContractOptions = {
 
 const CALL = {
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17. Repro: click it. Nothing happens.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17. Repro: click it. Nothing happens.',
   context: { source: 'github' },
 }
 

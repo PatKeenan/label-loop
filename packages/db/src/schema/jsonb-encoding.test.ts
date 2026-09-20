@@ -32,7 +32,11 @@ const traceId = newId('tr_')
 
 const RAW = { provider: 'fake', model: 'fake:deterministic', usage: { input: 19, output: 47 } }
 const REASONS = ['missing-expected-behaviour', 'no-repro-steps']
-const CONTEXT = { source: 'github', repo: 'acme/web' }
+// The four roles of ADR-0073, each in a different native shape.
+const INPUT = [{ role: 'user', content: 'Was I charged twice?' }]
+const OUTPUT = { action: 'refund', amount: 49 }
+const REFERENCE = { account: { plan: 'pro' } }
+const METADATA = { conversation_id: 'c_1' }
 
 beforeAll(async () => {
   await client`INSERT INTO orgs (id, slug, name) VALUES (${orgId}, ${orgId}, 'jsonb fixtures')`
@@ -66,8 +70,10 @@ beforeAll(async () => {
     panelId,
     panelVersionId,
     requestId: 'a'.repeat(32),
-    artifact: 'an artifact',
-    context: CONTEXT,
+    input: INPUT,
+    output: OUTPUT,
+    reference: REFERENCE,
+    metadata: METADATA,
     passed: false,
     score: 0,
     complete: true,
@@ -94,7 +100,10 @@ afterAll(async () => {
 
 describe('jsonb columns hold JSON, not a string containing JSON', () => {
   test.each([
-    ['traces.context', 'SELECT jsonb_typeof(context) AS t FROM traces WHERE id = $1', 'object'],
+    ['traces.input', 'SELECT jsonb_typeof(input) AS t FROM traces WHERE id = $1', 'array'],
+    ['traces.output', 'SELECT jsonb_typeof(output) AS t FROM traces WHERE id = $1', 'object'],
+    ['traces.reference', 'SELECT jsonb_typeof(reference) AS t FROM traces WHERE id = $1', 'object'],
+    ['traces.metadata', 'SELECT jsonb_typeof(metadata) AS t FROM traces WHERE id = $1', 'object'],
     [
       'trace_verdicts.raw_response',
       'SELECT jsonb_typeof(raw_response) AS t FROM trace_verdicts WHERE trace_id = $1',
@@ -160,6 +169,23 @@ describe('jsonb columns hold JSON, not a string containing JSON', () => {
     expect(verdict?.reasons).toEqual(REASONS)
 
     const trace = await db.query.traces.findFirst({ where: eq(schema.traces.id, traceId) })
-    expect(trace?.context).toEqual(CONTEXT)
+    expect(trace).toMatchObject({
+      input: INPUT,
+      output: OUTPUT,
+      reference: REFERENCE,
+      metadata: METADATA,
+    })
+  })
+
+  test('a STRING output is a jsonb string, not text that happens to be JSON', async () => {
+    // The chat case: the reply is plain text, and it must come back as the same string —
+    // not as a parsed value if it happens to look like JSON ("42", "true").
+    for (const text of ['I refunded the duplicate charge.', '42', 'true']) {
+      await db.update(schema.traces).set({ output: text }).where(eq(schema.traces.id, traceId))
+      const [row] = await client`
+        SELECT jsonb_typeof(output) AS t, output #>> '{}' AS text FROM traces WHERE id = ${traceId}
+      `
+      expect(row).toEqual({ t: 'string', text })
+    }
   })
 })

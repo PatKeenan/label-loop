@@ -1,3 +1,4 @@
+import type { JsonValue } from '@labelloop/contracts'
 import { boolean, index, pgTable, real, text } from 'drizzle-orm/pg-core'
 import { apiKeys } from './api-keys.ts'
 import { createdAt, id, idCheck, jsonbColumn, timestampAt } from './columns.ts'
@@ -43,10 +44,24 @@ export const traces = pgTable(
      * what lets a permanent business record join to its spans for as long as they last.
      */
     requestId: text('request_id').notNull(),
-    /** The caller's artifact. We never generated it — their agent did (ADR-0019). */
-    artifact: text('artifact').notNull(),
-    /** Caller-supplied context. Their metadata, opaque to us. */
-    context: jsonbColumn<Record<string, string>>('context'),
+    /**
+     * **The four roles, in the caller's own shapes** (ADR-0073). We never generated any of
+     * them — their agent did (ADR-0019).
+     *
+     * `output` is the final answer or proposal, the ONE thing judged, and is never null: the
+     * contract requires it, and migration 0013 backfilled every row written before it existed.
+     * `input` is everything that led to it — nullable ONLY for those pre-0073 rows, which never
+     * recorded one and whose view says so rather than inventing it (ADR-0074).
+     *
+     * The retired `artifact` and `context` were dropped in 0014, once the new shape had been
+     * lived with: `output` carries what `artifact` held and `reference` what `context` did.
+     */
+    input: jsonbColumn<JsonValue>('input'),
+    output: jsonbColumn<JsonValue>('output').notNull(),
+    /** Per-call facts the judges need (an account record). */
+    reference: jsonbColumn<Record<string, JsonValue>>('reference'),
+    /** Bookkeeping (a conversation id): for filtering and grouping, never shown to judges. */
+    metadata: jsonbColumn<Record<string, string>>('metadata'),
     /**
      * The panel decision, denormalised so the common read needs no fan-in.
      *

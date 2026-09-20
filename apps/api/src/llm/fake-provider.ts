@@ -1,6 +1,7 @@
 import type { JudgeOutput } from '@labelloop/contracts'
 import type { JudgeCall, ModelProvider, ProviderResult } from './provider.port.ts'
 import { ProviderError } from './provider.port.ts'
+import { renderForModel } from './render-for-model.ts'
 
 /**
  * The deterministic fake, and a *peer* of the real adapter rather than a stub of it: it
@@ -22,7 +23,7 @@ const FAKE_MODEL_PREFIX = 'fake:'
 
 /**
  * Sentinels, and the reason they exist: the resilience path has to be demonstrable BY
- * HAND, not only from a test. An artifact beginning with one of these drives the fake
+ * HAND, not only from a test. A STRING output beginning with one of these drives the fake
  * into a specific failure, so `curl` can show backoff, a tripped breaker, or a timeout
  * on a running system (plan P4's manual verification).
  *
@@ -106,14 +107,28 @@ export type FakeProviderOptions = {
 const sha256 = (value: string): Uint8Array =>
   new Uint8Array(new Bun.CryptoHasher('sha256').update(value).digest().buffer)
 
-/** Context is a record, so its key order is not meaningful — sort it or lose determinism. */
+/**
+ * The call as one string, seeded from the RENDERED roles — the text a real judge would read,
+ * so two calls that would prompt a model identically get the identical verdict. Reference is
+ * a record, so its key order is not meaningful: sort it or lose determinism.
+ */
 const canonical = (call: JudgeCall): string => {
-  const context = Object.entries(call.context ?? {})
+  const reference = Object.entries(call.reference ?? {})
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => `${key}=${renderForModel(value)}`)
     .join(' ')
-  return [call.model, call.question, call.artifact, context].join(' ')
+  return [
+    call.model,
+    call.question,
+    renderForModel(call.input),
+    renderForModel(call.output),
+    reference,
+  ].join(' ')
 }
+
+/** Sentinels read the start of a STRING output — the one thing judged. */
+const outputStartsWith = (call: JudgeCall, sentinel: string): boolean =>
+  typeof call.output === 'string' && call.output.startsWith(sentinel)
 
 const byte = (digest: Uint8Array, index: number): number => digest[index] ?? 0
 
@@ -173,7 +188,7 @@ const derive = (
     output: {
       rationale:
         'Deterministic stand-in for a judge: this verdict is a hash of the call, not a ' +
-        'reading of the artifact. No model was asked anything.',
+        'reading of the output. No model was asked anything.',
       // Only a `true` verdict carries reasons, mirroring how a real judge behaves: the
       // codes name what was found, and finding nothing has nothing to name.
       reasons: verdict ? [reason] : [],
@@ -183,7 +198,7 @@ const derive = (
     usage: {
       // Roughly four characters to a token, which is the usual English approximation and
       // close enough for a number nothing is billed against.
-      input: Math.max(1, Math.ceil((call.question.length + call.artifact.length) / 4)),
+      input: Math.max(1, Math.ceil(canonical(call).length / 4)),
       output: 20 + (byte(digest, 3) % 40),
     },
   }
@@ -214,10 +229,10 @@ export const createFakeProvider = ({
         throw new ProviderError(failWith, `fake failure ${calls} of ${failFirst}`)
       }
 
-      if (call.artifact.startsWith(FAKE_SENTINELS.unavailable)) {
+      if (outputStartsWith(call, FAKE_SENTINELS.unavailable)) {
         throw new ProviderError('unavailable', 'fake provider sentinel: unavailable')
       }
-      if (call.artifact.startsWith(FAKE_SENTINELS.misconfigured)) {
+      if (outputStartsWith(call, FAKE_SENTINELS.misconfigured)) {
         // `raw` carries a payload exactly as the real adapter's does, so the path that
         // deliberately keeps a provider's body OUT of the logs is the path this exercises
         // too (`llm/index.ts` sets no `err` on this branch).
@@ -225,12 +240,12 @@ export const createFakeProvider = ({
           raw: { sentinel: FAKE_SENTINELS.misconfigured },
         })
       }
-      if (call.artifact.startsWith(FAKE_SENTINELS.invalidOutput)) {
+      if (outputStartsWith(call, FAKE_SENTINELS.invalidOutput)) {
         throw new ProviderError('invalid_output', 'fake provider sentinel: unusable answer', {
           raw: { sentinel: FAKE_SENTINELS.invalidOutput },
         })
       }
-      if (call.artifact.startsWith(FAKE_SENTINELS.slow)) {
+      if (outputStartsWith(call, FAKE_SENTINELS.slow)) {
         // Never settles on its own. Whatever ends this call comes from outside it, which
         // is the point: it is the gateway's timeout under test, not the fake's patience.
         await (call.signal === undefined

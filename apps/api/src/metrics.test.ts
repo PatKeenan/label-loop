@@ -65,7 +65,8 @@ beforeEach(() => {
 const CALL = {
   model: FAKE_MODEL,
   question: 'Does this issue report something behaving incorrectly?',
-  artifact: 'Login button does nothing on Safari 17.',
+  input: [{ role: 'user', content: 'Triage this bug report.' }],
+  output: 'Login button does nothing on Safari 17.',
 }
 
 /** Capacity 1, so the second request is a refusal and nothing has to sleep. */
@@ -202,7 +203,7 @@ describe('the judge funnel', () => {
     // rule fires on a condition that never self-heals and never on a flaky afternoon, and
     // this label is what makes those two different series.
     await gateway().judge(
-      { ...CALL, artifact: `${FAKE_SENTINELS.misconfigured} no key` },
+      { ...CALL, output: `${FAKE_SENTINELS.misconfigured} no key` },
       { slug: 'is-fine' },
     )
 
@@ -215,8 +216,8 @@ describe('the judge funnel', () => {
 
   test('an unreachable provider is a DIFFERENT series from a misconfigured one', async () => {
     const gw = gateway()
-    await gw.judge({ ...CALL, artifact: `${FAKE_SENTINELS.misconfigured} x` }, { slug: 's' })
-    await gw.judge({ ...CALL, artifact: `${FAKE_SENTINELS.unavailable} x` }, { slug: 's' })
+    await gw.judge({ ...CALL, output: `${FAKE_SENTINELS.misconfigured} x` }, { slug: 's' })
+    await gw.judge({ ...CALL, output: `${FAKE_SENTINELS.unavailable} x` }, { slug: 's' })
 
     const kinds = (await recorded.named(METRIC_JUDGE_CALLS))?.series
       .map((series) => series.attributes['labelloop.failure_kind'])
@@ -243,7 +244,7 @@ describe('the judge funnel', () => {
     // The trap this guards: five ways out of `judge()`, and a metric recorded only on the
     // happy path makes a broken provider look like an idle one.
     const outcome = await gateway().judge(
-      { ...CALL, artifact: `${FAKE_SENTINELS.invalidOutput} garbage` },
+      { ...CALL, output: `${FAKE_SENTINELS.invalidOutput} garbage` },
       { slug: 'is-fine' },
     )
     expect(outcome.status).not.toBe('evaluated')

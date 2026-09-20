@@ -1,4 +1,4 @@
-import type { VerdictStatus } from '@labelloop/contracts'
+import type { JsonValue, VerdictStatus } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
@@ -19,8 +19,11 @@ export type TraceRow = {
   apiKeyId: string | null
   /** The W3C id of the HTTP execution, so a permanent row joins to its spans (ADR-0010). */
   requestId: string
-  artifact: string
-  context: Record<string, string> | null
+  /** The four roles, as the caller's agent sent them (ADR-0073). */
+  input: JsonValue
+  output: JsonValue
+  reference: Record<string, JsonValue> | null
+  metadata: Record<string, string> | null
   /** Both null for a COLLECTING panel — no judges, so no verdict and no score (ADR-0060). */
   passed: boolean | null
   score: number | null
@@ -100,8 +103,8 @@ export const markTraceRecorded = async (
 
 /**
  * One row of the console's trace list. Deliberately NOT the whole trace: the list renders
- * a table, and `artifact` is unbounded caller text while `context` is an arbitrary object,
- * so selecting them would put the largest two columns on the page that reads the most rows.
+ * a table, and the four roles (ADR-0073) are unbounded caller JSON, so selecting them would
+ * put the largest columns on the page that reads the most rows.
  * A detail view would fetch those by id, for the one trace being looked at — it is
  * UNSCHEDULED (`docs/PARKING_LOT.md`), not M4's, and the read does not exist yet.
  */
@@ -203,8 +206,10 @@ export const listTraces = async (
 /**
  * ONE trace, whole — what went in and what each judge said — for the console's trace drawer.
  *
- * Unlike the list, this DOES select `artifact` and `context`: it reads one row, so the two
- * unbounded columns cost one row's worth. It does NOT select `raw_response`, the provider's
+ * Unlike the list, this DOES select the four roles (ADR-0073): it reads one row, so the
+ * unbounded columns cost one row's worth. A LEGACY row — written before the roles existed —
+ * comes back with `input` NULL (never recorded) and `output`/`reference` as migration 0013
+ * backfilled them from the retired `artifact`/`context`, which 0014 then dropped (ADR-0074). It does NOT select `raw_response`, the provider's
  * untouched payload; nothing on the drawer renders it, and it is the largest thing stored.
  *
  * Org-scoped by signature exactly as `listTraces` is: a trace id from another org is `null`,
@@ -222,8 +227,10 @@ export const getTraceDetail = async (
       panelVersion: schema.panelVersions.version,
       keyName: schema.apiKeys.name,
       requestId: schema.traces.requestId,
-      artifact: schema.traces.artifact,
-      context: schema.traces.context,
+      input: schema.traces.input,
+      output: schema.traces.output,
+      reference: schema.traces.reference,
+      metadata: schema.traces.metadata,
       passed: schema.traces.passed,
       score: schema.traces.score,
       complete: schema.traces.complete,

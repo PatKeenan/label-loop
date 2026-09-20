@@ -58,8 +58,10 @@ export type PinValidation =
  * because it is sent to a model whose moderation behaviour is unknown, and tripping a
  * guardrail during validation would report a routing failure that is nothing of the kind.
  */
-const PROBE_QUESTION = 'Does this text describe something behaving incorrectly?'
-const PROBE_ARTIFACT =
+const PROBE_QUESTION = 'Does this report describe something behaving incorrectly?'
+/** In the shape the probe's roles take on a real call (ADR-0073): a turn in, a report out. */
+const PROBE_INPUT = [{ role: 'user', content: 'Write up the bug I just hit on the reports page.' }]
+const PROBE_OUTPUT =
   'The export button on the reports page does nothing when clicked. Expected a CSV download; ' +
   'no file appears and no network request is issued. Reproduced on two machines.'
 
@@ -97,7 +99,8 @@ export const validatePin = async ({
     const result = await provider.evaluate({
       model,
       question: PROBE_QUESTION,
-      artifact: PROBE_ARTIFACT,
+      input: PROBE_INPUT,
+      output: PROBE_OUTPUT,
       pin,
     })
 

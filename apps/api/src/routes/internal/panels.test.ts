@@ -192,7 +192,10 @@ describe('M4’s demo moment, with no seed', () => {
       {
         method: 'POST',
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ artifact: 'Login button does nothing on Safari 17.' }),
+        body: JSON.stringify({
+          input: 'the task',
+          output: 'Login button does nothing on Safari 17.',
+        }),
       },
     )
 
@@ -369,7 +372,7 @@ describe('a panel created with no judges', () => {
     const response = await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
       method: 'POST',
       headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ artifact: 'the agent’s output' }),
+      body: JSON.stringify({ input: 'the task', output: 'the agent’s output' }),
     })
 
     expect(response.status).toBe(200)
@@ -439,7 +442,7 @@ describe('reading one panel', () => {
     await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
       method: 'POST',
       headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ artifact: 'one' }),
+      body: JSON.stringify({ input: 'the task', output: 'one' }),
     })
 
     const read = (await (await getPanel(cookie, 'counts')).json()) as {
@@ -497,7 +500,7 @@ describe('the panel list', () => {
       await app().request(`http://localhost/v1/panels/${data.panel_id}/evaluate`, {
         method: 'POST',
         headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ artifact }),
+        body: JSON.stringify({ input: 'the task', output: artifact }),
       })
     }
     await postPanel(cookie, panelBody('listed-judged'))

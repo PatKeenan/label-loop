@@ -3,7 +3,7 @@
 ## What this project is
 **Judge-as-a-service with an eval-to-fine-tune flywheel** (ADR-0019). Solo-built, public portfolio project proving senior AI-engineering competency end to end. Working title: LabelLoop.
 
-The domain model, in one paragraph, because everything else follows from it: a customer creates a **panel** (`pnl_`, immutably versioned `pnv_`) containing **judges** (`jud_`/`jdv_`), one per failure category, each a single binary question answered with reasoning *before* the verdict. **Every judge declares a two-valued polarity** — answering `true` either passes or fails (ADR-0034) — because `is-missing-repro: true` is a failure and `on-brand: true` is a success; without it the panel score is uncomputable, since summing raw booleans across judges pointing in opposite directions is meaningless. Their agent sends an artifact to the panel — **we never generate the artifact** — and gets back a decision (`passed`, `score`, `threshold`) plus one verdict per judge, so a deterministic step can read the summary while an agent reads the reasoning. We *are* the inference path for the judge calls, which is what makes server-side trace capture and later model-swapping ours. SMEs annotate traces, axial coding turns free-text notes into a versioned **taxonomy** (`tax_`) while triaging each category into a deterministic `code` check or an `llm` judge, and the fine-tune distils expensive frontier judges into one cheap aligned model. `cls_`/`clv_` are retired.
+The domain model, in one paragraph, because everything else follows from it: a customer creates a **panel** (`pnl_`, immutably versioned `pnv_`) containing **judges** (`jud_`/`jdv_`), one per failure category, each a single binary question answered with reasoning *before* the verdict. **Every judge declares a two-valued polarity** — answering `true` either passes or fails (ADR-0034) — because `is-missing-repro: true` is a failure and `on-brand: true` is a success; without it the panel score is uncomputable, since summing raw booleans across judges pointing in opposite directions is meaningless. Their agent sends its **output** to the panel, with the **input** that led to it (ADR-0073: four roles — `input`, `output`, `reference`, `metadata` — each in the caller's own shape, and only the output is judged) — **we never generate the output** — and gets back a decision (`passed`, `score`, `threshold`) plus one verdict per judge, so a deterministic step can read the summary while an agent reads the reasoning. We *are* the inference path for the judge calls, which is what makes server-side trace capture and later model-swapping ours. SMEs annotate traces, axial coding turns free-text notes into a versioned **taxonomy** (`tax_`) while triaging each category into a deterministic `code` check or an `llm` judge, and the fine-tune distils expensive frontier judges into one cheap aligned model. `cls_`/`clv_` are retired.
 
 ## Source-of-truth documents (read before any work)
 - `docs/PRODUCT.md` — what we are building (features, scope, non-goals, future directions)
@@ -55,25 +55,40 @@ the driver: when in doubt, stop and ask rather than proceed autonomously. The
 thoughts/ directory is decision provenance for the public writeup — write accordingly.
 
 ## Current phase
-**M4 is COMPLETE on its branch; M5 is being planned.** M4 — console, auth, and the interviewer
-flow — finished with phase 8's console half, **PR #70** on `feat/m4-p8-console-screens`,
-verified by the stakeholder 2026-09-18. **Merging #70 closes M4.** Its plan is in
-`thoughts/shared/plans/complete/2026-09-11_m4-console-auth.md`, and Deviations 55–75 there are
-the record of what phase 8 became: org creation for a member of no organisation (ADR-0063),
-shared name/slug rules in `@labelloop/contracts` `names.ts`, trace pagination with live
-polling, and trace detail as a drawer and a page.
+**M5 is mid-flight, and the evaluate contract underneath it has been replaced.** M5's plan
+(`thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`) shipped phases 1–3:
+capabilities in place of role lists (#72, ADR-0064), invitations claimed on a verified sign-in
+(#73, ADR-0065), and phase 3's `annotator-session` r5 redraw, which is **still open as #74 and
+held for a redraw against the transcript layout** the shaped view now uses.
 
-**Next: members and annotation — the start of M5.** Decided in conversation on 2026-09-18
-(see the decision log): **a role says what you may DO; which surface you land on is a
-preference.** A developer may annotate; an annotator still cannot touch keys or panels. Two
-things M5 needs that no plan owns yet: **adding a person to an org with a role** (member
-management was "named by PRODUCT.md, scheduled by nothing"), and **the annotation loop**
-itself. Flow: `/log_decision` → `/research` → `/create_plan`, approved by the human before any
-code. better-auth's standalone `createAccessControl` (`better-auth/plugins/access`, pure, no
-tables) is the candidate for permissions; its organization plugin was declined by ADR-0048 and
-would collide with ADR-0014 and ADR-0047.
+**ADR-0073 landed in between, and it is the thing to read first.** `POST /v1/…/evaluate` takes
+**four roles** — `input` and `output` (required, any JSON), `reference` and `metadata`
+(optional) — instead of `artifact` + `context`, which are **gone from the database**. Shipped
+2026-09-20 as #77–#81 from
+`thoughts/shared/plans/complete/2026-09-19_evaluate-native-shapes.md`; ADR-0074 (expand,
+dual-write, contract), ADR-0075 (64 KiB cap), ADR-0076, ADR-0077, ADR-0078 (markdown).
 
-**What M4 leaves behind that M5 must know:**
+**What that leaves for the rest of M5:**
+
+- **`output` is the ONE thing judged** — the agent's final answer or proposal. Everything that
+  led to it is `input`: evidence, never on trial. `reference` is facts only the judge needs;
+  `metadata` is bookkeeping and **is withheld from the annotator payload** (ADR-0077).
+- **Migrations 0013 and 0014 are TAKEN.** M5 phase 4's annotations migration is **0015**.
+- **One renderer for a trace, and phase 5 reuses it**: `apps/web/src/components/shaped/`
+  (`to-steps.ts` pure, `markdown.tsx`, `shaped-trace.tsx`), token-only so the annotator surface
+  gets it unchanged under `data-surface="annotator"`. Do not write a second one.
+- **Markdown is `markdown-to-jsx`, configured once** in `shaped/markdown.tsx`: raw HTML off,
+  http(s)/mailto links only, images never fetched (STACK_DECISIONS D18, ADR-0078).
+- **Tool calls are recognised in OpenAI and Anthropic formats only.** A framework's own step
+  list is stored and judged identically and reads as fields — parked, with its promotion
+  condition, in `docs/PARKING_LOT.md`.
+- **A LEGACY trace has `input` NULL** (4,593 of them locally, including 47 from the spike whose
+  encoded roles live on in `reference`). The view says "recorded before inputs were captured"
+  rather than inventing one. Phase 4's queue and review payload must expect it.
+- **`apps/api/src/llm/render-for-model.ts`** is the judge-side twin of `to-steps.ts`: one pure
+  function, every adapter. A judge never formats its own prompt.
+
+**What M4 left behind that still holds:**
 
 - **The frame is ADR-0062's**: a persistent top bar, a sidebar only inside a panel, Home as panel
   cards, Create panel as a `?new` dialog. `mockups/console-shell.html` r3 no longer describes it.
@@ -91,12 +106,11 @@ would collide with ADR-0014 and ADR-0047.
   gets decided.
 - **Two `relations.test.ts` failures locally are seed-state, not regressions** (Deviation 64).
 
-**Phase A:** `annotator-session` and `console-dashboard` stay PAUSED until the M5 plan decides
-otherwise; M5's annotator surface is exactly `annotator-session`, so that plan must say whether
-Phase A resumes for it (ADR-0055 is the precedent). The six product decisions in
+**Phase A:** `annotator-session` is M5 phase 3's redraw (#74, open); `console-dashboard` stays
+PAUSED. The six product decisions in
 `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open. `mockups/tokens.css`
 (approved) and `tokens-preview.html` are retained; the Phase A hard rules above still apply.
 
 (This section has been stale four times — a fresh session reads it first and treats it as
 overriding. It is updated as part of closing a phase, not remembered afterwards: last on
-2026-09-18, when M4 phase 8 was verified.)
+2026-09-20, when the native-shapes plan completed and #77–#81 merged.)
