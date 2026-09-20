@@ -5,7 +5,12 @@ import type { z } from 'zod'
 import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
 import { requirePermission } from '../../middleware/require-permission.ts'
-import { listReviewPanels, nextItem, recordAnnotation } from '../../services/annotation-queue.ts'
+import {
+  listReviewPanels,
+  nextItem,
+  previousItem,
+  recordAnnotation,
+} from '../../services/annotation-queue.ts'
 
 /**
  * THE REVIEW SURFACE — what an annotator is served, and what they send back (ADR-0066).
@@ -110,7 +115,10 @@ export const createReviewRoutes = () =>
         })
       }
       if (result.state === 'drained') {
-        return c.json({ data: { state: 'drained' as const }, request_id: c.var.requestId })
+        return c.json({
+          data: { state: 'drained' as const, reviewed: result.reviewed },
+          request_id: c.var.requestId,
+        })
       }
       return c.json({
         data: {
@@ -128,6 +136,42 @@ export const createReviewRoutes = () =>
         request_id: c.var.requestId,
       })
     })
+    /**
+     * ONE STEP BACK: the last thing this person answered here, served again so a mis-key is
+     * recoverable. `state: 'none'` when there is nothing behind them — the surface draws the
+     * control only when there is.
+     *
+     * It carries `previous_outcome`, which is the ONE operator-ish signal on this surface and
+     * is this person's OWN answer rather than a machine's (ADR-0067 withholds what a judge or
+     * the platform thinks; it does not withhold what you yourself said a moment ago).
+     */
+    .get(
+      '/review/panels/:slug/previous',
+      requirePermission({ annotation: ['create'] }),
+      async (c) => {
+        const result = await previousItem(c.var.deps.db, {
+          orgId: c.var.session.orgId,
+          panelSlug: c.req.param('slug'),
+          annotatorId: c.var.session.userId,
+        })
+        if (result === null) {
+          return c.json({ data: { state: 'none' as const }, request_id: c.var.requestId })
+        }
+        return c.json({
+          data: {
+            state: 'item' as const,
+            item_id: result.item.traceId,
+            input: result.item.input,
+            output: result.item.output,
+            reference: result.item.reference,
+            remaining: result.item.remaining,
+            reviewed: result.item.reviewed,
+            previous_outcome: result.previousOutcome,
+          },
+          request_id: c.var.requestId,
+        })
+      },
+    )
     /**
      * The answer. Append-only: this always INSERTS, including when the same person answers the
      * same trace twice — a changed mind is a new row, and the sequence is the evidence.

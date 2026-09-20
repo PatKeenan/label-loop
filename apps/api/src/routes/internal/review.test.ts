@@ -153,11 +153,17 @@ type Item = {
   remaining?: number
   reviewed?: number
   trace_count?: number
+  previous_outcome?: string
 }
 
 const next = async (email: string, slug = `open-${tag}`, org = ORG) => {
   const { status, body } = await call(email, 'GET', `/review/panels/${slug}/next`, { org })
   return { status, data: (body as { data?: Item }).data, body }
+}
+
+const stepBack = async (email: string, slug = `open-${tag}`) => {
+  const { status, body } = await call(email, 'GET', `/review/panels/${slug}/previous`)
+  return { status, data: (body as { data?: Item }).data }
 }
 
 const answer = (email: string, itemId: string, outcome: string, note?: string) =>
@@ -167,8 +173,25 @@ const answer = (email: string, itemId: string, outcome: string, note?: string) =
 
 const codeOf = (body: Record<string, unknown>) => errorEnvelopeSchema.safeParse(body).data?.error
 
-const annotationsOf = (traceId: string) =>
-  db.select().from(schema.annotations).where(eq(schema.annotations.traceId, traceId))
+/**
+ * One person's rows on one trace, oldest first.
+ *
+ * SCOPED TO THE PERSON, and that is not tidiness: the queue can serve ANNOTATOR a trace that
+ * SECOND skipped, so an unscoped read returns their row too. Three assertions here counted all
+ * of them and failed roughly one run in ten, which read as flakiness in the queue rather than
+ * in the test.
+ */
+const annotationsOf = async (traceId: string, email: string) =>
+  db
+    .select()
+    .from(schema.annotations)
+    .where(
+      and(
+        eq(schema.annotations.traceId, traceId),
+        eq(schema.annotations.annotatorId, await userId(email)),
+      ),
+    )
+    .orderBy(schema.annotations.createdAt, schema.annotations.id)
 
 const traceRows = (panelId: string, panelVersionId: string, count: number, prefix: string) =>
   Array.from({ length: count }, (_, index) => ({
@@ -336,7 +359,12 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
 
     expect(await drawUntil(SECOND, itemId, 300)).toBe(false)
     // "Not me" is not "not this": it is still somebody else's to answer.
-    expect(await drawUntil(ANNOTATOR, itemId, 300)).toBe(true)
+    //
+    // 600 draws rather than 300 for the POSITIVE case: over a pool of ~50 the chance of a
+    // shuffle never landing on one trace in 300 tries is about 1 in 500, which is a test that
+    // fails for nobody's benefit a few times a year. The negative cases above stay at 300,
+    // where more draws only strengthen them.
+    expect(await drawUntil(ANNOTATOR, itemId, 600)).toBe(true)
   })
 
   test('`remaining` counts what is left AFTER this item, and drops as answers land', async () => {
@@ -377,6 +405,54 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
   })
 })
 
+describe('one step back (stakeholder, 2026-09-20)', () => {
+  test('nothing behind you is `none`, not an error', async () => {
+    const { status, data } = await stepBack(SECOND, `locked-${tag}`)
+    expect(status).toBe(200)
+    expect(data).toEqual({ state: 'none' } as never)
+  })
+
+  test('serves the LAST thing you answered, with what you said', async () => {
+    const first = (await next(ANNOTATOR)).data?.item_id ?? ''
+    expect((await answer(ANNOTATOR, first, 'acceptable')).status).toBe(201)
+    const second = (await next(ANNOTATOR)).data?.item_id ?? ''
+    expect((await answer(ANNOTATOR, second, 'skipped')).status).toBe(201)
+
+    const back = await stepBack(ANNOTATOR)
+    // The skip, not the acceptable: one step, and a skip is a last answer like any other.
+    expect(back.data?.item_id).toBe(second)
+    expect(back.data?.previous_outcome).toBe('skipped')
+    // The roles come with it, so the screen draws the same trace rather than an id.
+    expect(back.data?.output).toBeDefined()
+  })
+
+  test('answering again APPENDS — the first answer is still there, and the latest is last', async () => {
+    const itemId = (await next(ANNOTATOR)).data?.item_id ?? ''
+    expect((await answer(ANNOTATOR, itemId, 'acceptable')).status).toBe(201)
+    expect((await stepBack(ANNOTATOR)).data?.item_id).toBe(itemId)
+    expect(
+      (await answer(ANNOTATOR, itemId, 'not_acceptable', 'Caught it on the second read.')).status,
+    ).toBe(201)
+
+    const rows = await annotationsOf(itemId, ANNOTATOR)
+    expect(rows.map((row) => row.outcome)).toEqual(['acceptable', 'not_acceptable'])
+    // And stepping back now serves the SAME trace with the corrected answer on it.
+    const again = await stepBack(ANNOTATOR)
+    expect(again.data?.item_id).toBe(itemId)
+    expect(again.data?.previous_outcome).toBe('not_acceptable')
+  })
+
+  test('it is YOUR last answer — another annotator’s does not surface here', async () => {
+    const mine = (await next(ANNOTATOR)).data?.item_id ?? ''
+    expect((await answer(ANNOTATOR, mine, 'acceptable')).status).toBe(201)
+    const theirs = (await next(SECOND)).data?.item_id ?? ''
+    expect((await answer(SECOND, theirs, 'acceptable')).status).toBe(201)
+
+    expect((await stepBack(ANNOTATOR)).data?.item_id).toBe(mine)
+    expect((await stepBack(SECOND)).data?.item_id).toBe(theirs)
+  })
+})
+
 describe('the row that gets written', () => {
   test('carries the annotator, the trace’s pinned version, the sampler, and its note', async () => {
     const item = (await next(ANNOTATOR)).data
@@ -385,7 +461,7 @@ describe('the row that gets written', () => {
     const created = await answer(ANNOTATOR, itemId, 'not_acceptable', note)
     expect(created.status).toBe(201)
 
-    const [row] = await annotationsOf(itemId)
+    const [row] = await annotationsOf(itemId, ANNOTATOR)
     expect(row).toMatchObject({
       orgId: ORG,
       panelId: OPEN_PANEL,
@@ -419,8 +495,8 @@ describe('the row that gets written', () => {
     expect(
       (await answer(ANNOTATOR, itemId, 'not_acceptable', 'On reflection, wrong.')).status,
     ).toBe(201)
-    const rows = await annotationsOf(itemId)
-    expect(rows.map((row) => row.outcome).sort()).toEqual(['acceptable', 'not_acceptable'])
+    const rows = await annotationsOf(itemId, ANNOTATOR)
+    expect(rows.map((row) => row.outcome)).toEqual(['acceptable', 'not_acceptable'])
   })
 
   test('an item in another org is NOT_FOUND, and writes nothing', async () => {
@@ -433,7 +509,7 @@ describe('the row that gets written', () => {
     const { status, body } = await answer(ANNOTATOR, itemId, 'acceptable')
     expect(status).toBe(404)
     expect(codeOf(body)?.code).toBe('NOT_FOUND')
-    expect(await annotationsOf(itemId)).toEqual([])
+    expect(await annotationsOf(itemId, ANNOTATOR)).toEqual([])
   })
 })
 
@@ -445,7 +521,7 @@ describe('the note rules (ADR-0066)', () => {
       expect(status).toBe(422)
       expect(codeOf(body)?.issues?.[0]?.path).toBe('note')
     }
-    expect(await annotationsOf(itemId)).toEqual([])
+    expect(await annotationsOf(itemId, ANNOTATOR)).toEqual([])
   })
 
   test('a note over 280 characters is refused, and a skip may not carry one', async () => {
@@ -461,7 +537,7 @@ describe('the note rules (ADR-0066)', () => {
   test('a skip stores no note at all', async () => {
     const itemId = (await next(ANNOTATOR)).data?.item_id ?? ''
     expect((await answer(ANNOTATOR, itemId, 'skipped')).status).toBe(201)
-    const [row] = await annotationsOf(itemId)
+    const [row] = await annotationsOf(itemId, ANNOTATOR)
     expect(row?.note).toBeNull()
   })
 })
@@ -491,7 +567,7 @@ describe('append-only, by grant rather than by convention', () => {
     expect(sqlState(deleted)).toBe('42501')
 
     // And the row is still exactly as it was written.
-    const [row] = await annotationsOf(itemId)
+    const [row] = await annotationsOf(itemId, ANNOTATOR)
     expect(row?.outcome).toBe('acceptable')
   })
 

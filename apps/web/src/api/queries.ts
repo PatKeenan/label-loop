@@ -236,3 +236,24 @@ export const reviewNextQuery = (orgId: string, slug: string, nonce: number) =>
     staleTime: 0,
     gcTime: 0,
   })
+
+/**
+ * The last thing this person answered in this panel, for the one step back.
+ *
+ * Asked only when the Back control is used, and never cached: the answer behind you changes
+ * every time you save. `enabled: false` at the call site, fetched on demand.
+ */
+export const reviewPreviousQuery = (orgId: string, slug: string) =>
+  queryOptions({
+    queryKey: ['review-previous', orgId, slug],
+    queryFn: async () => {
+      const response = await api.internal.review.panels[':slug'].previous.$get(
+        { param: { slug } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    staleTime: 0,
+    gcTime: 0,
+  })

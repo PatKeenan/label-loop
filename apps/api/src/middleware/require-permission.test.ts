@@ -140,6 +140,11 @@ const MATRIX: readonly RouteCase[] = [
     url: '/review/panels/some-panel/next',
     admitted: ANNOTATORS,
   },
+  {
+    route: 'GET /review/panels/:slug/previous',
+    url: '/review/panels/some-panel/previous',
+    admitted: ANNOTATORS,
+  },
   { route: 'POST /review/annotations', url: '/review/annotations', admitted: ANNOTATORS },
 ]
 

@@ -473,3 +473,15 @@ Recorded as they happen; decision provenance, not a changelog.
     work had been lost. `GET /review/panels` and `…/next` now return `reviewed`: this person's
     non-skip answers in this panel, ever. A skip is stored but is not a review, so pressing S
     cannot run the counter up. r6's decision 11 stands — a count, never a history.
+35. **ONE step back, not a history** (stakeholder, 2026-09-20). `GET /review/panels/:slug/previous`
+    serves the last thing THIS person answered here, with `previous_outcome` — their own answer,
+    which ADR-0067 does not withhold; it withholds what a judge or the platform thinks. Answering
+    again APPENDS, so the correction is a second row and the first stays: reading "what does this
+    person think of this trace" is therefore the LATEST row for the pair, which M6 must do. A skip
+    counts as a last answer, since "actually, I can judge this" is the case it exists for. r6's
+    decision 11 still stands against a full history.
+36. **Two test flakes found and fixed while adding it.** `annotationsOf(traceId)` was unscoped, so
+    a trace another annotator had skipped put their row in three assertions — roughly one run in
+    ten, reading as flakiness in the queue rather than in the test. The helper now takes the
+    person. And the positive draw loop went from 300 to 600 attempts: over a pool of ~50, a
+    shuffle missing one trace in 300 tries is about 1 in 500.

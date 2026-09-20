@@ -4,7 +4,7 @@ import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.ts'
-import { reviewNextQuery } from '../api/queries.ts'
+import { reviewNextQuery, reviewPreviousQuery } from '../api/queries.ts'
 import {
   type Answer,
   answerBody,
@@ -33,6 +33,18 @@ import { apiErrorFrom } from '../errors/api-error.ts'
  * Keyboard-first: Y / N / S choose, Enter saves. The answer is SELECTED and then saved rather
  * than saved on the first key (r6 Q3), so a mis-key is recoverable before it becomes a row.
  */
+type PreviousItem = Extract<
+  NonNullable<Awaited<ReturnType<NonNullable<ReturnType<typeof reviewPreviousQuery>['queryFn']>>>>,
+  { state: 'item' }
+>
+
+/** The words a person used, not the enum they landed in. */
+const OUTCOME_WORDS: Record<string, string> = {
+  acceptable: 'acceptable',
+  not_acceptable: 'not acceptable',
+  skipped: 'skip',
+}
+
 export const ReviewSessionPage = () => {
   const context = useConsoleContext()
   const search = useSearch({ strict: false }) as ConsoleSearch
@@ -41,6 +53,13 @@ export const ReviewSessionPage = () => {
 
   /** Advancing the queue is an explicit step, not a refetch — see `reviewNextQuery`. */
   const [nonce, setNonce] = useState(0)
+  /**
+   * ONE STEP BACK, and only one (stakeholder, 2026-09-20). Holding the item rather than a flag
+   * because the queue has already moved on: this is the trace you just answered, fetched back.
+   * Answering it again writes a NEW row — the table is append-only, and the latest row for the
+   * pair is what a reader takes.
+   */
+  const [undo, setUndo] = useState<PreviousItem | null>(null)
   const [answer, setAnswer] = useState<Answer>(null)
   const [note, setNote] = useState('')
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -50,8 +69,12 @@ export const ReviewSessionPage = () => {
     enabled: context.state === 'ready',
   })
 
+  const previous = useQuery({ ...reviewPreviousQuery(orgId, panelSlug), enabled: false })
+
   const data = item.data
-  const itemId = data?.state === 'item' ? data.item_id : undefined
+  /** What is on screen: the step-back item if there is one, otherwise the queue's. */
+  const shownItem = undo ?? (data?.state === 'item' ? data : null)
+  const itemId = shownItem?.item_id
 
   const save = useMutation({
     mutationFn: async (body: ReturnType<typeof answerBody>) => {
@@ -65,6 +88,9 @@ export const ReviewSessionPage = () => {
     onSuccess: () => {
       setAnswer(null)
       setNote('')
+      // Back to the live queue either way: answering the previous item again is a correction,
+      // not a place to stay.
+      setUndo(null)
       setNonce((value) => value + 1)
     },
   })
@@ -81,6 +107,15 @@ export const ReviewSessionPage = () => {
     // The note is the whole point of "not acceptable", so the cursor goes there without asking.
     requestAnimationFrame(() => noteRef.current?.focus())
   }, [])
+
+  const stepBack = useCallback(async () => {
+    const result = await previous.refetch()
+    const last = result.data
+    if (last === undefined || last.state !== 'item') return
+    setUndo(last)
+    setAnswer(null)
+    setNote('')
+  }, [previous])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -124,33 +159,50 @@ export const ReviewSessionPage = () => {
     )
   }
 
-  if (data.state === 'locked') {
-    return (
-      <ReviewFrame>
-        <Stage title="Almost ready">
-          <p className="m-0 text-muted-foreground">
-            This panel has collected {data.trace_count} traces. Reviewing opens at 50.
-          </p>
-          <BackToPanels org={search.org} />
-        </Stage>
-      </ReviewFrame>
-    )
+  // The step-back item OUTLIVES these states: finishing a panel and then spotting a mis-key
+  // is exactly when a person wants it back, and `drained` would otherwise swallow the screen.
+  if (undo === null) {
+    if (data.state === 'locked') {
+      return (
+        <ReviewFrame>
+          <Stage title="Almost ready">
+            <p className="m-0 text-muted-foreground">
+              This panel has collected {data.trace_count} traces. Reviewing opens at 50.
+            </p>
+            <BackToPanels org={search.org} />
+          </Stage>
+        </ReviewFrame>
+      )
+    }
+
+    if (data.state === 'drained') {
+      return (
+        <ReviewFrame>
+          <Stage title="All caught up">
+            <p className="m-0 text-muted-foreground">
+              {data.reviewed} reviewed here. New traces appear as the panel collects them.
+            </p>
+            <div className="flex flex-wrap justify-center gap-[var(--gap-inline)]">
+              {data.reviewed > 0 ? (
+                <Button type="button" variant="outline" onClick={() => void stepBack()}>
+                  Back to the last one
+                </Button>
+              ) : null}
+              <Button asChild>
+                <Link to="/review" search={{ org: search.org }}>
+                  All panels
+                </Link>
+              </Button>
+            </div>
+          </Stage>
+        </ReviewFrame>
+      )
+    }
   }
 
-  if (data.state === 'drained') {
-    return (
-      <ReviewFrame>
-        <Stage title="All caught up">
-          <p className="m-0 text-muted-foreground">
-            Nothing left to review here. New traces appear as the panel collects them.
-          </p>
-          <BackToPanels org={search.org} />
-        </Stage>
-      </ReviewFrame>
-    )
-  }
+  if (shownItem === null) return null
 
-  const remaining = data.remaining
+  const remaining = shownItem.remaining
   const overCap = note.length > ANNOTATION_NOTE_MAX_LENGTH
 
   return (
@@ -172,8 +224,33 @@ export const ReviewSessionPage = () => {
             It was a `useState` that reset on every navigation, so leaving and coming back read
             as the work having been lost.
           */}
-          <span className="font-mono text-data text-muted-foreground tabular-nums">
-            {data.reviewed} reviewed · {remaining} left
+          <span className="flex items-baseline gap-[var(--gap-inline)]">
+            {/*
+              ONE STEP BACK, and only when there is one. A full history was declined with r6
+              (decision 11): a list of past answers invites second-guessing, where a mis-key
+              needs exactly one door.
+            */}
+            {undo === null && shownItem.reviewed > 0 ? (
+              <button
+                type="button"
+                onClick={() => void stepBack()}
+                className="text-data text-muted-foreground hover:text-foreground"
+              >
+                ← Back to the last one
+              </button>
+            ) : null}
+            {undo === null ? null : (
+              <button
+                type="button"
+                onClick={() => setUndo(null)}
+                className="text-data text-muted-foreground hover:text-foreground"
+              >
+                Back to the queue
+              </button>
+            )}
+            <span className="font-mono text-data text-muted-foreground tabular-nums">
+              {shownItem.reviewed} reviewed · {remaining} left
+            </span>
           </span>
         </div>
 
@@ -186,10 +263,19 @@ export const ReviewSessionPage = () => {
             One of the traces this panel collected.
           </p>
 
+          {undo === null ? null : (
+            // Your OWN last answer, not a machine's opinion: ADR-0067 withholds what a judge
+            // or the platform thinks, which is not the same as what you said a moment ago.
+            <p className="m-0 mb-[var(--space-5)] rounded-[var(--radius-field)] border bg-muted px-[var(--pad-field-x)] py-[var(--pad-field-y)] text-data text-muted-foreground">
+              You answered <b className="text-foreground">{OUTCOME_WORDS[undo.previous_outcome]}</b>
+              . Answering again records a new answer; the first one stays.
+            </p>
+          )}
+
           <ShapedTrace
-            input={data.input}
-            output={data.output}
-            reference={data.reference}
+            input={shownItem.input}
+            output={shownItem.output}
+            reference={shownItem.reference}
             metadata={null}
           />
 
