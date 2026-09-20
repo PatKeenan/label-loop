@@ -10,7 +10,7 @@
 
 **Judge-as-a-service with a built-in eval-to-fine-tune flywheel:** teams create a *panel of judges* that an expert's judgment is distilled into, call it as one step inside their own agentic workflow, annotate real traffic, align each judge against that expert, and graduate to a cheaper fine-tuned open-weights judge served from the same endpoint.
 
-> **Positioning, stated once so nothing downstream drifts (ADR-0019).** We are **one call inside someone else's loop**, not an orchestration layer. Their agent generates the artifact; we judge it. We *are* the inference path for the judge calls — the customer picks the model, we route it — which is what lets us capture every trace server-side and swap the model out later without them changing a line. **We evaluate a caller's system; we do not perform steps inside it (ADR-0034).** A judge is one binary question, never a bundled multi-criteria call — but answering `true` has to pass or fail something the caller's system produced or decided. Bug triage and taste validation are still the same operation, provided triage arrives as a gate on the triage bot's own routing decision rather than as a label we manufacture for it (ADR-0036, ADR-0037).
+> **Positioning, stated once so nothing downstream drifts (ADR-0019).** We are **one call inside someone else's loop**, not an orchestration layer. Their agent generates the output; we judge it. We *are* the inference path for the judge calls — the customer picks the model, we route it — which is what lets us capture every trace server-side and swap the model out later without them changing a line. **We evaluate a caller's system; we do not perform steps inside it (ADR-0034).** A judge is one binary question, never a bundled multi-criteria call — but answering `true` has to pass or fail something the caller's system produced or decided. Bug triage and taste validation are still the same operation, provided triage arrives as a gate on the triage bot's own routing decision rather than as a label we manufacture for it (ADR-0036, ADR-0037).
 
 ## 2. Problem
 
@@ -24,17 +24,17 @@ Teams bolt LLM judgment onto agentic and automated workflows — bug triage, tic
 
 Small-to-mid engineering teams embedding judgment into agentic or automated systems, with at least one subject-matter expert (SME) willing to annotate. Two running personas:
 
-- **Triage.** A platform team gating their triage bot's own routing decisions: the inbound issue is the artifact, the route the bot chose travels in `context`, and `mis-routed` asks whether that decision misjudges the issue. `true` means their agent got it wrong. One judge, because one is what clears the bar — a panel that labelled the issue instead would be doing the bot's work rather than evaluating it (ADR-0036, ADR-0037).
+- **Triage.** A platform team gating their triage bot's own routing decisions: the route the bot chose is the `output`, the inbound issue is the `input`, and `mis-routed` asks whether that decision misjudges the issue (ADR-0073; the decision used to travel in `context`). `true` means their agent got it wrong. One judge, because one is what clears the bar — a panel that labelled the issue instead would be doing the bot's work rather than evaluating it (ADR-0036, ADR-0037).
 - **Taste.** A marketing team gating generated assets on a designer's judgment — `on-brand`, `composition-acceptable`, `colour-balanced` — called from inside their generation agent before an asset ships.
 
-Both send an artifact and receive per-judge verdicts. Where the artifact itself originated still does not matter — an inbound issue is as good as a generated asset — but what the panel *judges* has to be something the caller's system produced or decided, which is why the triage panel judges the routing decision carried in `context` rather than the issue (ADR-0034).
+Both send their agent's `output` with the `input` that led to it, and receive per-judge verdicts. Where the material itself originated still does not matter — an inbound issue is as good as a generated asset — but what the panel *judges* has to be something the caller's system produced or decided, which is why the triage panel judges the routing decision as its `output` rather than the issue (ADR-0034, ADR-0073).
 
 ## 4. Core product loop
 
-1. **Create panel** — Team defines a panel in the UI: name, description, and the artifact it judges. **A panel can start in a collecting state, with no judges at all (ADR-0060):** it accepts calls, captures traces and judges nothing, because steps 5–7 below are where judges actually come from. Inventing them here, before any traffic has been seen, is guessing at failure modes. A judge is one binary question with a definition and optional few-shot examples, never a bundled multi-criteria call.
+1. **Create panel** — Team defines a panel in the UI: name, description, and the agent output it judges. **A panel can start in a collecting state, with no judges at all (ADR-0060):** it accepts calls, captures traces and judges nothing, because steps 5–7 below are where judges actually come from. Inventing them here, before any traffic has been seen, is guessing at failure modes. A judge is one binary question with a definition and optional few-shot examples, never a bundled multi-criteria call.
 2. **Choose the model** — Team selects which model their judges run on, globally or per judge. We route those calls, which is what makes trace capture and later model-swapping ours to do.
 3. **Get scoped token** — Team receives an API key scoped to that panel, and calls it as one step inside their own workflow.
-4. **Judge + trace** — Every call runs each judge independently and is fully traced: artifact, per-judge verdict and reasoning, latency, tokens, cost, model version. Judges are never bundled into one prompt — a bundled verdict cannot be attributed, measured, or paid against.
+4. **Judge + trace** — Every call runs each judge independently and is fully traced: the roles sent, per-judge verdict and reasoning, latency, tokens, cost, model version. Judges are never bundled into one prompt — a bundled verdict cannot be attributed, measured, or paid against.
 5. **Annotate (open coding)** — SMEs review traces in a surface built for them: agree/correct each verdict, add free-text failure notes. Deliberately taxonomy-blind on the first pass, because showing categories up front anchors the expert and caps the taxonomy at whatever was already imagined.
 6. **Axial coding** — The platform assists in clustering free-text notes into a versioned failure taxonomy (programmatic clustering + LLM-assisted theming, human-confirmed). **This step is triage, not just grouping:** each category is tagged as a deterministic `code` check or an `llm` judge, which is why an engineer belongs on this screen alongside the expert.
 7. **Judge alignment** — Each category's judge is configured from the taxonomy + rubric and versioned. Judge-vs-human agreement is tracked per judge against a held-out set; drift is surfaced. Later annotation passes label *against* the taxonomy, since per-category labels are what make agreement measurable — with a free-text escape hatch so new failure modes can still emerge.
@@ -64,19 +64,19 @@ Both send an artifact and receive per-judge verdicts. Where the artifact itself 
 - Model selection per panel or per judge, and prompt/config versioning (`pnv_`, `jdv_`).
 
 ### 5.3 Evaluation API
-- `POST /v1/panels/{panel_id}/evaluate` — send an artifact plus any context the judges need; receive a decision at the top (`passed`, `score`, `threshold`) and one verdict per judge underneath, each with its reasoning. Reasoning is generated *before* the verdict, always.
+- `POST /v1/panels/{panel_id}/evaluate` — send your agent's `output`, the `input` that led to it, and any `reference` the judges need (ADR-0073); receive a decision at the top (`passed`, `score`, `threshold`) and one verdict per judge underneath, each with its reasoning. Reasoning is generated *before* the verdict, always.
 - **Both halves are deliberate.** A deterministic workflow step reads `passed` and moves on; an agent deciding what to do next reads the per-judge detail, because "which judge failed and why" is the part it can act on. Weights and the threshold are panel configuration; each verdict publishes its normalised weight so a caller can recompute the score rather than trust it.
 - **Verdicts carry taxonomy codes, not just prose.** `reasons[]` comes from the panel's versioned failure taxonomy, so an agent can map a failure to a remediation instead of parsing a sentence — this is what makes a propose → judge → revise loop directed rather than random. A one-line `rationale` carries the human explanation, deliberately capped, because every character lands in the caller's context window.
 - Each verdict also reports `confidence` (which drives low-confidence sampling in 5.5), `served_by` — `frontier:sonnet` or `finetune:acme-tone-v3`, so graduation is visible in every payload — plus `latency_ms` and `attempts`.
 - Aggregation is one mechanism, `weighted_threshold`, with named presets in the console: *unanimous* is a threshold of 1, *quorum(n)* is equal weights, *veto* is a required judge. Every response echoes `aggregation { policy, panel_version }` so the decision is auditable without a config lookup.
 - A judge's raw `verdict` is not the same as `passed` — `is-missing-repro: true` is a failure, `on-brand: true` is a success — so each judge declares which answer counts as a pass, and both fields are returned.
 - `POST /v1/judges/{judge_id}/evaluate` — call a single judge directly, so a developer can run exactly the check they need at exactly the point they need it. The panel is a convenience over this primitive, not the only door.
-- We never generate the artifact. The caller's agent does that and hands us the result, along with whatever context the judges require.
+- We never generate the output. The caller's agent does that and hands us the result, along with the input that led to it and whatever reference the judges require.
 - Routing flag per judge: `frontier | finetune | shadow` (shadow runs both, returns the selected one).
 - Rate limiting, retries with backoff+jitter guidance in client docs, circuit breaking on upstream providers.
 
 ### 5.4 Tracing & observability (user-facing)
-- Every judge call captured: artifact, verdict, reasoning, model, tokens, cost, latency.
+- Every judge call captured: the roles sent, verdict, reasoning, model, tokens, cost, latency.
 - Trace explorer with filtering (verdict, judge, date, judge-vs-human disagreement).
 
 ### 5.5 Annotation
@@ -154,7 +154,7 @@ Alignment is a **discrete, repeatable event with its own surface**, not a backgr
 
 ## 6. Non-goals (V1)
 
-- **Generating anything on the caller's behalf.** Their agent produces the artifact; we judge it. This is the boundary that keeps us a component rather than a competitor to the orchestration layer (ADR-0019).
+- **Generating anything on the caller's behalf.** Their agent produces the output; we judge it. This is the boundary that keeps us a component rather than a competitor to the orchestration layer (ADR-0019).
 - Gathering context, calling tools, or orchestrating any part of the caller's workflow.
 - Multi-region deployment; bring-your-own-model uploads; on-prem.
 - More than one open-weights base family; full-parameter fine-tuning.

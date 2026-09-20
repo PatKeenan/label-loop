@@ -25,7 +25,8 @@ export const mountDocs = (v1: OpenAPIHono<AppEnv>, config: Config): void => {
       title: 'LabelLoop API',
       version: config.APP_VERSION,
       description:
-        'Judge-as-a-service: send an artifact to a panel of judges and get back a ' +
+        'Judge-as-a-service: send your agent’s output — with the input that led to it — to a ' +
+        'panel of judges and get back a ' +
         'decision plus one verdict per judge, each with its reasoning (ADR-0019). Every ' +
         'response is enveloped: `{ data, request_id }` on success, ' +
         '`{ error: { code, message }, request_id }` on failure.',

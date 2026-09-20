@@ -121,12 +121,12 @@ export function setup() {
 }
 
 export default function () {
-  // A per-VU artifact, so the fake's deterministic latency spreads across the population
+  // A per-VU output, so the fake's deterministic latency spreads across the population
   // rather than every virtual user drawing the same delay from the same hash — which would
   // turn a distribution into a single value and make the p95 meaningless.
-  const artifact = `ramp artifact for vu ${__VU} iteration ${__ITER}`
+  const output = `ramp output for vu ${__VU} iteration ${__ITER}`
 
-  const res = evaluate(artifact)
+  const res = evaluate(output)
 
   const body = json(res)
 

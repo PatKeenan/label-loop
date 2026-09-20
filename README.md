@@ -9,7 +9,7 @@ open-weights judge served from the same endpoint — without changing a line of 
 code.
 
 We are one call inside someone else's loop, never the orchestration layer. Your agent
-generates the artifact; we judge it.
+generates the output; we judge it.
 
 > **Status: early — the walking skeleton is complete.** One command boots the whole
 > system (see [Running it locally](#running-it-locally)): the API against a real Postgres
@@ -60,19 +60,20 @@ Small-to-mid engineering teams embedding judgement into automated or agentic sys
 with at least one subject-matter expert willing to review outputs. The shape we design
 against, in two shapes that are the same operation:
 
-- **Triage** — a platform team gating their triage bot's own routing decisions: the
-  inbound issue is the artifact, the route the bot chose travels in `context`, and
-  `mis-routed` asks whether that decision misjudges the issue. `true` means their agent
-  got it wrong.
+- **Triage** — a platform team gating their triage bot's own routing decisions: the route
+  the bot chose is the `output`, the inbound issue and anything the bot read to decide are
+  the `input`, and `mis-routed` asks whether that decision misjudges the issue. `true` means
+  their agent got it wrong (ADR-0073 put the decision in the field that is judged; it used to
+  travel in `context`, which taught the ambiguity).
 - **Taste** — a marketing team gating generated assets on a designer's judgement with
   `on-brand`, `composition-acceptable`, `colour-balanced`, called from inside their
   generation agent before an asset ships.
 
-Both send an artifact and receive per-judge verdicts. Where the artifact itself originated
-still does not matter — an inbound issue is as good as a generated asset — but what the
-panel *judges* has to be something the caller's system produced or decided, which is why the
-triage panel judges the routing decision carried in `context` rather than the issue
-(ADR-0034).
+Both send their agent's `output` — with the `input` that led to it — and receive per-judge
+verdicts. Where the material itself originated still does not matter — an inbound issue is as
+good as a generated asset — but what the panel *judges* has to be something the caller's
+system produced or decided, which is why the triage panel judges the routing decision as its
+`output` rather than the issue (ADR-0034, ADR-0073).
 
 ---
 
@@ -96,7 +97,7 @@ flowchart LR
    is version 1.
 2. **Choose the model** your judges run on, and **get a scoped key**. Your agent calls the
    panel as one step in its own workflow.
-3. **Every judge runs independently and is traced** — artifact, per-judge verdict and
+3. **Every judge runs independently and is traced** — the roles sent, per-judge verdict and
    reasoning, latency, tokens, cost, model, judge version.
 4. **SMEs annotate real traffic** in a focused review surface: agree, correct, and leave a
    free-text failure note.
@@ -314,7 +315,10 @@ one-command claim would quietly have stopped being true.
 curl -s -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate \
   -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" \
   -H 'content-type: application/json' \
-  -d '{"artifact":"the login button does nothing on Safari 17"}' | jq
+  -d '{
+    "input": [{"role":"user","content":"The login button does nothing on Safari 17."}],
+    "output": "Filed as a P2 bug against the web app."
+  }' | jq
 ```
 
 You get a decision (`passed`, `score`, `threshold`) and one verdict per judge, reasoning
@@ -447,7 +451,7 @@ That is the seeded key, valid and active, and it works on `/v1` — see
 direction: sign in for a cookie, then present it where it does not belong.
 
 ```bash
-curl -s -c cookies.txt -X POST localhost:3000/internal/auth/sign-in/email -H 'content-type: application/json' -d '{"email":"demo@labelloop.test","password":"localdev-password"}' > /dev/null && curl -si -b cookies.txt -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate -H 'content-type: application/json' -d '{"artifact":"x"}' | head -1
+curl -s -c cookies.txt -X POST localhost:3000/internal/auth/sign-in/email -H 'content-type: application/json' -d '{"email":"demo@labelloop.test","password":"localdev-password"}' > /dev/null && curl -si -b cookies.txt -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate -H 'content-type: application/json' -d '{"input":"x","output":"x"}' | head -1
 ```
 
 Neither middleware can see the other's credential — the API-key path reads only
@@ -482,7 +486,7 @@ weakening the guard, and both are worse than saying what this is.
 
 | Endpoint | What it is for |
 |---|---|
-| `POST /v1/panels/{panel_id}/evaluate` | The product: run a panel of judges over one artifact. Authenticated by a panel-scoped API key |
+| `POST /v1/panels/{panel_id}/evaluate` | The product: run a panel of judges over one agent output. Authenticated by a panel-scoped API key |
 | `GET /healthz` | Liveness, plus the version and git SHA of the running build. Touches no dependency, deliberately |
 | `GET /readyz` | Readiness: is Postgres reachable, are migrations current, and is the queue answering. `503` naming the failing check when not |
 | `GET /v1/openapi.json` | The OpenAPI document, generated from the same schemas that validate |
@@ -547,7 +551,10 @@ Point the key at the panel and it answers:
 curl -s -X POST localhost:3000/v1/panels/pnl_000000000000000000SEEDPANE/evaluate \
   -H "Authorization: Bearer llk_test_$(printf '0%.0s' {1..64})" \
   -H 'content-type: application/json' \
-  -d '{"artifact":"the build is broken"}' | jq
+  -d '{
+    "input": {"issue": "the build is broken"},
+    "output": "Filed as a P1 against the build pipeline."
+  }' | jq
 ```
 
 The reply carries a decision and the reasoning behind it: `passed`, `score` and
@@ -563,7 +570,7 @@ a stub of it: both implement the same `ModelProvider` port and pass the same con
 suite, which is what makes M1 an adapter swap rather than a rewrite. Its rationale says
 so in every response, on purpose.
 
-Three artifact prefixes drive the fake into a specific failure, so the resilience path can
+Three `output` prefixes drive the fake into a specific failure, so the resilience path can
 be watched by hand rather than only in a test. They belong to the fake and disappear with
 it at M1.
 
@@ -578,7 +585,7 @@ PANEL=pnl_000000000000000000SEEDPANE
 KEY="llk_test_$(printf '0%.0s' {1..64})"
 send () { curl -s -i -X POST "localhost:3000/v1/panels/$PANEL/evaluate" \
   -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -d "{\"artifact\":\"$1\"}"; }
+  -d "{\"input\":\"triage this\",\"output\":\"$1\"}"; }
 
 send 'the build is broken'   # 200 — every judge evaluated, complete: true
 send '__invalid__ x'         # 200 — every judge failed, complete: false
@@ -717,7 +724,7 @@ the circuit breaker refused produces no child span at all, because nobody was ca
 `__unavailable__` and look at the `judge` span: `labelloop.failure_kind: circuit_open`,
 `labelloop.attempts: 0`.
 
-What is deliberately **not** on a span: the question, the artifact, the context, the query
+What is deliberately **not** on a span: the question, the caller's roles, the query
 string, or any header. Telemetry is metadata, not content — the payloads live in the
 access-controlled `traces` table.
 

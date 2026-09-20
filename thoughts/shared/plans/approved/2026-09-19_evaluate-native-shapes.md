@@ -166,13 +166,13 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
   JSON-in-strings encoding to the real contract, run clean against this API. Still throwaway.
 
 ### Steps
-- [ ] Snippet in the new shape
-- [ ] k6 and seed moved; the k6 smoke passes in CI
-- [ ] README, ADR-0037 note, CONVENTIONS, PRODUCT, CLAUDE.md, docs.ts
-- [ ] The three spike agents run against the real contract
+- [x] Snippet in the new shape
+- [x] k6 and seed moved; the k6 smoke passes in CI
+- [x] README, ADR-0037 note, CONVENTIONS, PRODUCT, CLAUDE.md, docs.ts
+- [x] The three spike agents run against the real contract
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`; CI's
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`; CI's
       compose + k6 smoke job green
 
 ### Manual verification
@@ -326,3 +326,20 @@ the reply and cited the tool result as evidence.
     signing in means entering a password. The page rendered the real `ShapedTrace` on the console
     surface with a chat, a tool-calling turn, a proposal and a legacy trace, and was deleted
     before commit. The signed-in check is the stakeholder's manual verification.
+14. **The seed makes no evaluate call**, so there was nothing to move: its traces come from
+    `scripts/seed-judges.ts` and the walkthrough's curl, both of which are in the new shape.
+15. **FOUR spike scripts, not three.** `support-chat/run-tools.ts` — the tool-calling bot, the
+    one that produced the tool-call traces the experiment settled `output` on — is a fourth
+    entry point and was moved with the others. The `--shape` fork is gone from all of them:
+    there is one way to send a conversation now. Committed on `spike/github-triage-agent`
+    (`12aaef6`), still throwaway and still unpushed.
+16. **The agents ran against the support-chat panel** (stakeholder's choice, 2026-09-19):
+    triage 3 issues, ops 2 tickets, chat 2 conversations × 2 turns, tool-calling chat 1
+    conversation. Every call accepted; `psql` shows `input` stored as a real messages array with
+    `tool_calls`, `output` as a string, `reference` as an object. One turn returned an empty
+    reply, which is the view's "No reply was sent." case arriving from a real agent.
+17. **`docs/PRODUCT.md`'s triage persona and ADR-0037 now put the DECISION in `output`.** The
+    prose said the issue was the artifact and the route travelled in `context` — the exact
+    ambiguity ADR-0073 removes. ADR-0037 keeps its decision and carries an amendment note.
+18. **CONVENTIONS records the `/v1` exception directly under the rule it excepts**, rather than
+    beside the evaluate bullet, so nobody reads "breaking change = new version" without it.
