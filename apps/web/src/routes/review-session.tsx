@@ -43,8 +43,6 @@ export const ReviewSessionPage = () => {
   const [nonce, setNonce] = useState(0)
   const [answer, setAnswer] = useState<Answer>(null)
   const [note, setNote] = useState('')
-  /** Answered in THIS session, which is the only progress a person needs (r6 decision 11). */
-  const [done, setDone] = useState(0)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   const item = useQuery({
@@ -65,7 +63,6 @@ export const ReviewSessionPage = () => {
       return (await response.json()).data
     },
     onSuccess: () => {
-      setDone((count) => count + 1)
       setAnswer(null)
       setNote('')
       setNonce((value) => value + 1)
@@ -145,9 +142,7 @@ export const ReviewSessionPage = () => {
       <ReviewFrame>
         <Stage title="All caught up">
           <p className="m-0 text-muted-foreground">
-            {done === 0
-              ? 'Nothing left to review here. New traces appear as the panel collects them.'
-              : `${done} reviewed. New traces appear here as the panel collects them.`}
+            Nothing left to review here. New traces appear as the panel collects them.
           </p>
           <BackToPanels org={search.org} />
         </Stage>
@@ -172,8 +167,13 @@ export const ReviewSessionPage = () => {
             </Link>
             <b className="font-semibold">{panelSlug}</b>
           </span>
+          {/*
+            REVIEWED, ever — counted by the server from the rows themselves, not by this page.
+            It was a `useState` that reset on every navigation, so leaving and coming back read
+            as the work having been lost.
+          */}
           <span className="font-mono text-data text-muted-foreground tabular-nums">
-            {done} this session · {remaining} left
+            {data.reviewed} reviewed · {remaining} left
           </span>
         </div>
 

@@ -468,3 +468,8 @@ Recorded as they happen; decision provenance, not a changelog.
     now owns the trigger, the sign-out mutation and the order that matters (forget the one-time
     key plaintext, clear the cache, then navigate), and the console passes its Organisation
     settings item into it. Two implementations of signing out is one of them being forgotten.
+34. **Progress is the SERVER's count, not the page's** (stakeholder, 2026-09-20). "7 this
+    session" was `useState`, so leaving the panel and coming back read as zero — as though the
+    work had been lost. `GET /review/panels` and `…/next` now return `reviewed`: this person's
+    non-skip answers in this panel, ever. A skip is stored but is not a review, so pressing S
+    cannot run the counter up. r6's decision 11 stands — a count, never a history.

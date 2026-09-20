@@ -37,6 +37,8 @@ export type QueuePanel = {
   open: boolean
   /** How many traces are still answerable BY THIS PERSON. Zero while locked. */
   remaining: number
+  /** How many this person has reviewed here, across every visit — not this session's count. */
+  reviewed: number
 }
 
 /**
@@ -67,6 +69,12 @@ export const listReviewPanels = async (
         WHERE traces.panel_id = "panels"."id"
           AND ${answerableWhere(annotatorId)}
       )`,
+      reviewed: sql<number>`(
+        SELECT count(*)::int FROM annotations
+        WHERE annotations.panel_id = "panels"."id"
+          AND annotations.annotator_id = ${annotatorId}
+          AND annotations.outcome <> 'skipped'
+      )`,
     })
     .from(schema.panels)
     .where(eq(schema.panels.orgId, orgId))
@@ -77,6 +85,19 @@ export const listReviewPanels = async (
     return { ...row, open, remaining: open ? row.remaining : 0 }
   })
 }
+
+/**
+ * How many this person has REVIEWED in this panel — for good, not for this visit.
+ *
+ * Skips are excluded: a skip is an answer we store ("I cannot judge this") but it is not a
+ * review, and counting it would let someone run the counter up by pressing S.
+ */
+const reviewedWhere = (panelId: string, annotatorId: string) => sql`(
+  SELECT count(*)::int FROM annotations
+  WHERE annotations.panel_id = ${panelId}
+    AND annotations.annotator_id = ${annotatorId}
+    AND annotations.outcome <> 'skipped'
+)`
 
 /**
  * The two rules that decide whether a trace is still answerable by this person, as one SQL
@@ -105,6 +126,8 @@ export type QueueItem = {
   reference: unknown
   /** What is left AFTER this one, so the surface can say "44 left" honestly. */
   remaining: number
+  /** Reviewed by this person in this panel, ever. Survives leaving and coming back. */
+  reviewed: number
 }
 
 export type NextResult =
@@ -153,6 +176,7 @@ export const nextItem = async (
         WHERE traces.panel_id = ${panel.id}
           AND ${answerableWhere(annotatorId)}
       )`,
+      reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number),
     })
     .from(schema.traces)
     .where(and(eq(schema.traces.panelId, panel.id), answerableWhere(annotatorId)))

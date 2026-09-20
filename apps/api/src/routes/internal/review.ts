@@ -77,6 +77,7 @@ export const createReviewRoutes = () =>
             trace_count: panel.traceCount,
             open: panel.open,
             remaining: panel.remaining,
+            reviewed: panel.reviewed,
           })),
         },
         request_id: c.var.requestId,
@@ -120,6 +121,9 @@ export const createReviewRoutes = () =>
           output: result.item.output,
           reference: result.item.reference,
           remaining: result.item.remaining,
+          // Reviewed by this person in this panel, EVER (not this visit): the count was local
+          // state and reset to zero on every return, which read as work having been lost.
+          reviewed: result.item.reviewed,
         },
         request_id: c.var.requestId,
       })

@@ -151,6 +151,7 @@ type Item = {
   output?: unknown
   reference?: unknown
   remaining?: number
+  reviewed?: number
   trace_count?: number
 }
 
@@ -242,6 +243,7 @@ describe('what an annotator is served (ADR-0067, ADR-0077)', () => {
       'output',
       'reference',
       'remaining',
+      'reviewed',
       'state',
     ])
     // Named individually as well, because a future field would have to be added to the list
@@ -346,6 +348,26 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
     ).toBe(201)
     const after = (await next(ANNOTATOR)).data
     expect(after?.remaining).toBe((before?.remaining ?? 0) - 1)
+  })
+
+  test('`reviewed` counts this person’s answers here for good, and a skip is not a review', async () => {
+    const before = (await next(ENGINEER)).data?.reviewed ?? 0
+
+    const first = (await next(ENGINEER)).data?.item_id ?? ''
+    expect((await answer(ENGINEER, first, 'acceptable')).status).toBe(201)
+    expect((await next(ENGINEER)).data?.reviewed).toBe(before + 1)
+
+    // A skip is an answer we store, but it is not a review: pressing S must not run it up.
+    const skipped = (await next(ENGINEER)).data?.item_id ?? ''
+    expect((await answer(ENGINEER, skipped, 'skipped')).status).toBe(201)
+    expect((await next(ENGINEER)).data?.reviewed).toBe(before + 1)
+
+    // And it is the SERVER's count, so a fresh request — a person coming back tomorrow —
+    // sees it rather than zero. (The page held this in component state until 2026-09-20.)
+    const panels = await call(ENGINEER, 'GET', '/review/panels')
+    const rows = (panels.body as { data: { panels: { slug: string; reviewed: number }[] } }).data
+      .panels
+    expect(rows.find((row) => row.slug === `open-${tag}`)?.reviewed).toBe(before + 1)
   })
 
   test('an engineer may annotate — a role says what you may DO (ADR-0064)', async () => {

@@ -90,6 +90,7 @@ type Panel = {
   trace_count: number
   open: boolean
   remaining: number
+  reviewed: number
 }
 
 const PanelRow = ({ panel, org }: { panel: Panel; org?: string | undefined }) => {
@@ -102,6 +103,7 @@ const PanelRow = ({ panel, org }: { panel: Panel; org?: string | undefined }) =>
       {ready ? (
         <span className="flex items-center gap-[var(--gap-inline)]">
           <span className="font-mono text-data text-muted-foreground tabular-nums">
+            {panel.reviewed > 0 ? `${panel.reviewed} reviewed · ` : ''}
             {panel.remaining} waiting
           </span>
           <Button asChild>
