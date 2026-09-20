@@ -58,8 +58,9 @@ thoughts/ directory is decision provenance for the public writeup — write acco
 **M5 is mid-flight, and the evaluate contract underneath it has been replaced.** M5's plan
 (`thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`) shipped phases 1–3:
 capabilities in place of role lists (#72, ADR-0064), invitations claimed on a verified sign-in
-(#73, ADR-0065), and phase 3's `annotator-session` r5 redraw, which is **still open as #74 and
-held for a redraw against the transcript layout** the shaped view now uses.
+(#73, ADR-0065), and phase 3's `annotator-session` mockup — **r6, approved and merged (#74,
+2026-09-20)**, redrawn against the transcript layout the shaped view uses. **M5 resumes at
+phase 4**: the `annotations` table (migration 0015) and the review queue.
 
 **ADR-0073 landed in between, and it is the thing to read first.** `POST /v1/…/evaluate` takes
 **four roles** — `input` and `output` (required, any JSON), `reference` and `metadata`
@@ -106,11 +107,13 @@ dual-write, contract), ADR-0075 (64 KiB cap), ADR-0076, ADR-0077, ADR-0078 (mark
   gets decided.
 - **Two `relations.test.ts` failures locally are seed-state, not regressions** (Deviation 64).
 
-**Phase A:** `annotator-session` is M5 phase 3's redraw (#74, open); `console-dashboard` stays
-PAUSED. The six product decisions in
+**Phase A:** `annotator-session` r6 is drawn and APPROVED (#74) — phase 5 builds from it, and
+its two open questions (Q5 long outputs, Q6 whether an annotator sees tool steps) are decided
+there, in code. `console-dashboard` stays PAUSED. The six product decisions in
 `thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open. `mockups/tokens.css`
 (approved) and `tokens-preview.html` are retained; the Phase A hard rules above still apply.
 
 (This section has been stale four times — a fresh session reads it first and treats it as
 overriding. It is updated as part of closing a phase, not remembered afterwards: last on
-2026-09-20, when the native-shapes plan completed and #77–#81 merged.)
+2026-09-20, when M5 phase 3's r6 mockup was approved and merged (#74), after the native-shapes
+plan completed in #77–#81.)
