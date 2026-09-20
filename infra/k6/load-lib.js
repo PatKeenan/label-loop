@@ -44,8 +44,14 @@ export const json = (response) => {
   }
 }
 
-export const evaluate = (artifact) =>
-  http.post(`${BASE}/v1/panels/${PANEL}/evaluate`, JSON.stringify({ artifact }), authed)
+/**
+ * One evaluation in the four roles of ADR-0073. `output` is what the judges read, so the fake's
+ * sentinels go there; `input` is a one-turn chat, the shape most integrators hold.
+ */
+const INPUT = [{ role: 'user', content: 'Triage this bug report.' }]
+
+export const evaluate = (output) =>
+  http.post(`${BASE}/v1/panels/${PANEL}/evaluate`, JSON.stringify({ input: INPUT, output }), authed)
 
 /** Below this, the fake is answering from a hash rather than impersonating a judge. */
 const PLAUSIBLE_JUDGE_MS = 500

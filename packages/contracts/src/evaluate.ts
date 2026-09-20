@@ -3,25 +3,74 @@ import { errorCodeSchema, successEnvelope } from './envelope.ts'
 import { idSchema } from './ids.ts'
 
 /**
- * The evaluation contract (ADR-0019). A caller sends an artifact to a panel and receives
- * one verdict per judge, each with its reasoning.
+ * The evaluation contract (ADR-0019). A caller sends its agent's output — with the input
+ * that led to it (ADR-0073) — to a panel and receives one verdict per judge, each with its
+ * reasoning.
  *
  * Two endpoints share these shapes:
  *   POST /v1/panels/{panel_id}/evaluate   — run every judge on the panel
  *   POST /v1/judges/{judge_id}/evaluate   — run one judge directly
  *
- * We never generate the artifact; the caller's agent does that and hands us the result
+ * We never generate the output; the caller's agent does that and hands us the result
  * (ADR-0019). We *are* the inference path for the judge calls, which is what keeps
  * ADR-0001's server-side trace capture true.
  *
- * A judge's polarity is part of its configuration, not of the artifact: each judge
+ * A judge's polarity is part of its configuration, not of the output: each judge
  * declares whether answering `true` is a pass or a fail. Without that, the panel score is
  * uncomputable, because summing raw booleans across judges that point in opposite
  * directions is meaningless. There is no third option — every judge scores, participates
  * in the score, and can fail the panel (ADR-0034).
  */
 
-export const EVALUATE_ARTIFACT_MAX_LENGTH = 32_000
+/**
+ * A JSON value, as the caller's agent already holds it: a string, a messages array, a
+ * proposal object. The four evaluate roles are all of this shape (ADR-0073).
+ */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+/**
+ * The cap on one evaluation, in bytes: the four roles, each serialised as JSON, summed
+ * (ADR-0075). It replaces a 32,000-character limit on `artifact` — with any-JSON roles a
+ * per-field string length bounds nothing, and a long conversation is the real growth risk.
+ *
+ * 64 KiB rather than more because everything under it goes into EVERY judge's prompt (~16k
+ * tokens here against ~25k at 100 KiB), so the cap bounds judge cost as well as storage. And
+ * raising a cap later breaks no caller, while lowering one does: raise it when a real
+ * integration hits it.
+ */
+export const EVALUATE_MAX_BYTES = 64 * 1024
+
+const utf8 = new TextEncoder()
+
+/** The size an evaluation is measured by: each present role's JSON, in UTF-8 bytes. */
+export const evaluateRolesBytes = (roles: Record<string, unknown>): number =>
+  Object.values(roles).reduce<number>(
+    (sum, value) => (value === undefined ? sum : sum + utf8.encode(JSON.stringify(value)).length),
+    0,
+  )
+
+/**
+ * Any JSON value, required.
+ *
+ * `z.custom` rather than Zod's own `z.json()`, and the reason is the OpenAPI document:
+ * `z.json()` is recursive, and generating the spec from it overflows the stack. The check
+ * itself loses nothing — a request body has already been through `JSON.parse`, so every
+ * value in it IS JSON, and the only thing left to refuse is absence. The OpenAPI `type` is
+ * stated by hand because the generator cannot infer anything from a custom check.
+ */
+const jsonValue = (role: string, openapi: { description: string; example: JsonValue }) =>
+  z
+    .custom<JsonValue>((value) => value !== undefined, { error: `${role} is required` })
+    .openapi({
+      type: ['string', 'number', 'boolean', 'object', 'array', 'null'],
+      ...openapi,
+    })
 
 /**
  * What we ASK a judge for: one line for a human, not an essay. Judges are called from
@@ -63,31 +112,81 @@ export const judgeIdParamSchema = z.object({
   judge_id: idSchema('jud_', 'A single judge to run directly, without its panel.'),
 })
 
+/**
+ * **Four roles, in the caller's own shapes** (ADR-0073) — not one string plus a flat map.
+ *
+ * `output` is the agent's FINAL answer or proposal and nothing else; it is what the judges
+ * judge. Everything the agent was given or did on the way there — earlier turns, this turn's
+ * tool calls, an investigation — is `input`: evidence, never on trial. LabelLoop, not the
+ * integrator, decides how each renders, by its shape.
+ *
+ * STRICT, so the retired `artifact` and `context` are a 422 naming their replacements rather
+ * than being silently dropped — a caller still sending them would otherwise get an error
+ * about a missing `output` and no idea why. Changing `/v1` in place is ADR-0073's recorded
+ * exception: on 2026-09-19 no caller existed outside this repository.
+ */
 export const evaluateRequestSchema = z
-  .object({
-    artifact: z
-      .string()
-      .min(1, 'artifact must not be empty')
-      .max(
-        EVALUATE_ARTIFACT_MAX_LENGTH,
-        `artifact must be at most ${EVALUATE_ARTIFACT_MAX_LENGTH} characters`,
-      )
-      .openapi({
+  .strictObject(
+    {
+      input: jsonValue('input', {
         description:
-          'The thing to be judged — a generated asset, a bug report, a model output. ' +
-          'Produced by your system, not ours.',
-        example: 'Login button does nothing on Safari 17. Repro: click it. Nothing happens.',
+          'Everything your agent was given or did to get to its output — for a chat, the ' +
+          'messages array; for an agent that acts, its investigation and tool calls. Any ' +
+          'JSON. The judges read it as evidence; it is never itself judged.',
+        example: [
+          { role: 'user', content: 'I was charged twice for March. Can I get one refunded?' },
+        ],
       }),
-    context: z
-      .record(z.string(), z.string())
-      .optional()
-      .openapi({
+      output: jsonValue('output', {
         description:
-          'Anything else the judges need in order to decide — brand guidelines, the ' +
-          'originating prompt, the ticket’s reporter. Assembling this is the caller’s ' +
-          'job; we do not gather context or call tools.',
-        example: { source: 'github', repo: 'acme/web' },
+          'Your agent’s final answer or proposal — the one thing judged. A reply, or an ' +
+          'action it proposes before taking it. Any JSON. Produced by your system, not ours.',
+        example: 'I’ve refunded the duplicate March charge; it will reach your card in 5 days.',
       }),
+      reference: z
+        .record(
+          z.string(),
+          jsonValue('each reference value', { description: 'Any JSON.', example: 'pro' }),
+        )
+        .optional()
+        .openapi({
+          description:
+            'Facts the judges need to decide, which change per call — an account record, the ' +
+            'order in question. Assembling it is your job; we do not gather context or call tools.',
+          example: { account: { plan: 'pro', charges_in_march: 2 } },
+        }),
+      metadata: z
+        .record(z.string(), z.string())
+        .optional()
+        .openapi({
+          description:
+            'Bookkeeping — a conversation id, a release. Stored for filtering and grouping, ' +
+            'never shown to the judges.',
+          example: { conversation_id: 'c_8812' },
+        }),
+    },
+    {
+      error: (issue) =>
+        issue.code === 'unrecognized_keys'
+          ? `Unrecognised field(s): ${issue.keys.join(', ')}. \`artifact\` and \`context\` were ` +
+            'replaced by `input`, `output`, `reference` and `metadata`.'
+          : undefined,
+    },
+  )
+  .superRefine((roles, ctx) => {
+    const bytes = evaluateRolesBytes(roles)
+    if (bytes <= EVALUATE_MAX_BYTES) return
+    // Field-level: the issue names the LARGEST role, which is where the caller has to cut.
+    const largest = (['input', 'output', 'reference', 'metadata'] as const).reduce((a, b) =>
+      evaluateRolesBytes({ b: roles[b] }) > evaluateRolesBytes({ a: roles[a] }) ? b : a,
+    )
+    ctx.addIssue({
+      code: 'custom',
+      path: [largest],
+      message:
+        `The evaluation is ${bytes} bytes of JSON; the limit is ${EVALUATE_MAX_BYTES} ` +
+        `across input, output, reference and metadata. \`${largest}\` is the largest.`,
+    })
   })
   .openapi('EvaluateRequest')
 
