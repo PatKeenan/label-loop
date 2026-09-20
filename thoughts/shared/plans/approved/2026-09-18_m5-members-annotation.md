@@ -200,13 +200,13 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
   org's trace is NOT_FOUND.
 
 ### Steps
-- [ ] Migration + schema + grant + `ann_` prefix
-- [ ] Queue service
-- [ ] Review routes and payload shape
-- [ ] Tests above, with a mutation check on "no non-skip annotation from anyone"
+- [x] Migration + schema + grant + `ann_` prefix
+- [x] Queue service
+- [x] Review routes and payload shape
+- [x] Tests above, with a mutation check on "no non-skip annotation from anyone"
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`
 
 ### Manual verification
 - [ ] `curl` as an annotator session: `next` on the 51-trace panel returns an item with only
@@ -400,3 +400,36 @@ Recorded as they happen; decision provenance, not a changelog.
     — a person with no GitHub account cannot join at all — stays open until an email provider or
     a second verifying sign-in provider is decided.
 
+### Phase 4 (2026-09-20)
+
+16. **The review payload is the four roles, not `artifact` + `context`.** The plan predates
+    ADR-0073, which landed between phases 3 and 4 (#77–#81). `GET /review/panels/:slug/next`
+    returns `{ state, item_id, input, output, reference, remaining }`; `metadata` is withheld
+    (ADR-0077) by never being SELECTED, so no route can leak what the query does not read.
+17. **`state` is named, not inferred.** Three values — `locked` (with `trace_count`, so the
+    landing can draw progress toward 50), `drained`, `item` — rather than an empty body the
+    client has to interpret. The same reasoning as `collecting` on the evaluate response.
+18. **`ANNOTATION_FLOOR` and `ANNOTATION_TARGET` moved to `@labelloop/contracts`** from
+    `apps/web/src/components/shell/gate.tsx`, now that the API enforces the floor: the bar the
+    console fills must be the number the server checks.
+19. **A correlated subquery bug the repo had already recorded.** A Drizzle column inside a
+    `sql` template renders UNQUALIFIED, so `traces.panel_id = ${schema.panels.id}` became
+    `traces.panel_id = traces.id` — every count zero, no error. Qualified by hand, with the
+    comment naming Deviation 60 of the M4 plan, which fell into the same trap.
+20. **The queue's two rules live in ONE SQL fragment** (`answerableWhere`), shared by the count
+    and the pick, because a queue that reports "12 left" and then serves nothing is a bug
+    invisible from either query alone. Mutation-checked: deleting the "anybody answered" clause
+    fails `an answered trace leaves the queue for EVERYONE`.
+21. **Two queue tests draw through the SERVICE, not the route.** Three hundred draws prove a
+    rule rather than a shuffle, and through HTTP they would be measuring better-auth's password
+    hashing. The routes are covered by every other test in the file; sign-in cookies are cached
+    for the same reason.
+22. **A LEGACY trace stays in the queue** (the open question phase 4 had to settle). Its `input`
+    is null and the surface says so (r6's sixth state); "is this output acceptable" needs only
+    the output, and filtering them out would silently shrink every pre-ADR-0073 panel's queue.
+23. **Confidence was never in question** (the other open question): ADR-0067 withholds it, and
+    the payload test asserts its ABSENCE by key, along with `metadata`, `trace_id`, `passed`,
+    `score`, `verdict`, `model`, `served_by`, `cost_usd` and `key_name`.
+24. **`item_id` is the trace id, and is never labelled as one.** The console cannot deep-link an
+    annotator into the trace detail, and the write resolves the id under the session's org, so
+    holding the value grants nothing the session did not already.

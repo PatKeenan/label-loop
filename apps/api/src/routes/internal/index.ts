@@ -10,6 +10,7 @@ import { createMemberRoutes } from './members.ts'
 import { createModelRoutes } from './models.ts'
 import { createOrgRoutes } from './orgs.ts'
 import { createPanelRoutes } from './panels.ts'
+import { createReviewRoutes } from './review.ts'
 import { createSignInMethodRoutes } from './sign-in-methods.ts'
 import { createTraceRoutes } from './traces.ts'
 
@@ -95,4 +96,5 @@ export const createInternalRoutes = () => {
     .route('/', createJudgeRoutes())
     .route('/', createPanelRoutes())
     .route('/', createMemberRoutes())
+    .route('/', createReviewRoutes())
 }

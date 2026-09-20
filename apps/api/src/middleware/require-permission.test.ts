@@ -14,6 +14,7 @@ import { createKeyRoutes } from '../routes/internal/keys.ts'
 import { createMemberRoutes } from '../routes/internal/members.ts'
 import { createModelRoutes } from '../routes/internal/models.ts'
 import { createPanelRoutes } from '../routes/internal/panels.ts'
+import { createReviewRoutes } from '../routes/internal/review.ts'
 import { createTraceRoutes } from '../routes/internal/traces.ts'
 import { fakeAuth } from '../testing/fake-auth.ts'
 import { fakeCatalogue } from '../testing/fake-catalogue.ts'
@@ -51,6 +52,7 @@ const guardedRoutes = () =>
     .route('/', createJudgeRoutes())
     .route('/', createTraceRoutes())
     .route('/', createMemberRoutes())
+    .route('/', createReviewRoutes())
 
 /** The real app, with the console routes mounted behind a stand-in for the session. */
 const hostWith = (role: OrgRole) => {
@@ -94,6 +96,12 @@ const hostWith = (role: OrgRole) => {
 
 const STAFF: readonly OrgRole[] = ['admin', 'engineer']
 const ADMIN: readonly OrgRole[] = ['admin']
+/**
+ * The review surface is the one place an annotator is admitted — and staff are admitted too,
+ * because a role says what you may DO and the surface is a preference (ADR-0064). A
+ * `guest_expert` holds nothing until M8 (ADR-0072), so they are refused here like everywhere.
+ */
+const ANNOTATORS: readonly OrgRole[] = ['admin', 'engineer', 'annotator']
 
 type RouteCase = {
   /** As Hono registers it — what the coverage check below compares against. */
@@ -126,6 +134,13 @@ const MATRIX: readonly RouteCase[] = [
   { route: 'DELETE /invitations/:id', url: '/invitations/inv_x', admitted: ADMIN },
   { route: 'PATCH /members/:userId', url: '/members/user_x', admitted: ADMIN },
   { route: 'DELETE /members/:userId', url: '/members/user_x', admitted: ADMIN },
+  { route: 'GET /review/panels', url: '/review/panels', admitted: ANNOTATORS },
+  {
+    route: 'GET /review/panels/:slug/next',
+    url: '/review/panels/some-panel/next',
+    admitted: ANNOTATORS,
+  },
+  { route: 'POST /review/annotations', url: '/review/annotations', admitted: ANNOTATORS },
 ]
 
 const send = (role: OrgRole, { route, url }: RouteCase) => {
