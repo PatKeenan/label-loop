@@ -24,13 +24,6 @@ export type TraceRow = {
   output: JsonValue
   reference: Record<string, JsonValue> | null
   metadata: Record<string, string> | null
-  /**
-   * RETIRED, and still written (ADR-0074): the output as text, so code that reads only this
-   * column — what a revert would restore — finds every new row readable.
-   */
-  artifact: string
-  /** RETIRED: always NULL on a new row; its values arrive as `reference`. */
-  context: null
   /** Both null for a COLLECTING panel — no judges, so no verdict and no score (ADR-0060). */
   passed: boolean | null
   score: number | null
@@ -215,8 +208,8 @@ export const listTraces = async (
  *
  * Unlike the list, this DOES select the four roles (ADR-0073): it reads one row, so the
  * unbounded columns cost one row's worth. A LEGACY row — written before the roles existed —
- * comes back with `input` NULL (never recorded) and `output`/`reference` backfilled from its
- * `artifact`/`context` by migration 0013 (ADR-0074). The retired columns are not selected. It does NOT select `raw_response`, the provider's
+ * comes back with `input` NULL (never recorded) and `output`/`reference` as migration 0013
+ * backfilled them from the retired `artifact`/`context`, which 0014 then dropped (ADR-0074). It does NOT select `raw_response`, the provider's
  * untouched payload; nothing on the drawer renders it, and it is the largest thing stored.
  *
  * Org-scoped by signature exactly as `listTraces` is: a trace id from another org is `null`,

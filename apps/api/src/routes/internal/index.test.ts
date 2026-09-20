@@ -141,7 +141,6 @@ const seedFixtures = async () => {
       output: 'Login button does nothing on Safari 17.',
       reference: { browser: { name: 'Safari', version: 17 } },
       metadata: { ticket: 'T-1' },
-      artifact: 'Login button does nothing on Safari 17.',
       passed: true,
       score: 1,
       complete: true,
@@ -172,16 +171,14 @@ const seedFixtures = async () => {
       threshold: 0.5,
     },
     {
-      // A trace written BEFORE the four roles existed, as migration 0013 left it (ADR-0074):
-      // `output` and `reference` backfilled from `artifact` and `context`, `input` never
-      // recorded. Written in that shape here because the migration has already run.
+      // A trace written BEFORE the four roles existed, as the migrations left it (ADR-0074):
+      // `output` and `reference` backfilled by 0013 from the `artifact` and `context` that
+      // 0014 then dropped, and `input` never recorded — which is what makes it legacy.
       id: LEGACY_TRACE,
       orgId: ORG,
       panelId: PANEL,
       panelVersionId: PANEL_VERSION,
       requestId: 'd'.repeat(32),
-      artifact: 'P2 — the export button is misaligned.',
-      context: { your_agent_decision: 'p2' },
       output: 'P2 — the export button is misaligned.',
       reference: { your_agent_decision: 'p2' },
       passed: null,

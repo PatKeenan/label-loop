@@ -428,14 +428,10 @@ describe('the trace that gets written (ADR-0001)', () => {
     expect(trace?.output).toBe(ARTIFACT)
     expect(trace?.reference).toEqual({ repo: { name: 'acme/web', default_branch: 'main' } })
     expect(trace?.metadata).toEqual({ source: 'github' })
-    // And the dual-write (ADR-0074): code that reads only `artifact` — what a revert would
-    // restore — still finds this row readable. `context` is retired: NULL on every new row.
-    expect(trace?.artifact).toBe(ARTIFACT)
-    expect(trace?.context).toBeNull()
     expect(trace?.passed).toBe(data.passed)
   })
 
-  test('a non-string output is dual-written to artifact as its JSON', async () => {
+  test('a non-string output is stored as the JSON it is, not as text', async () => {
     const proposal = { action: 'label', labels: ['bug', 'p2'] }
     const res = await appWith().request(evaluateRequest({ input: INPUT, output: proposal }))
     const { data } = (await res.json()) as { data: Evaluation }
@@ -444,7 +440,6 @@ describe('the trace that gets written (ADR-0001)', () => {
       where: eq(schema.traces.id, data.trace_id),
     })
     expect(trace?.output).toEqual(proposal)
-    expect(trace?.artifact).toBe(JSON.stringify(proposal))
     expect(trace?.complete).toBe(data.complete)
   })
 
@@ -874,7 +869,6 @@ describe('a collecting panel', () => {
     expect(row?.input).toEqual(INPUT)
     expect(row?.output).toEqual({ priority: 'p2' })
     expect(row?.reference).toEqual(reference)
-    expect(row?.artifact).toBe('{"priority":"p2"}')
     expect(row?.panelVersionId).toBe(COLLECTING_PANEL_VERSION)
     expect(row?.apiKeyId).toBe(COLLECTING_KEY)
     expect(row?.passed).toBeNull()

@@ -48,29 +48,20 @@ export const traces = pgTable(
      * **The four roles, in the caller's own shapes** (ADR-0073). We never generated any of
      * them — their agent did (ADR-0019).
      *
-     * `output` is the final answer or proposal, the one thing judged; `input` is everything
-     * that led to it. Both are nullable only because of the rows written BEFORE they existed
-     * (ADR-0074): migration 0013 backfilled `output` from `artifact` for every one of those,
-     * and left `input` NULL, because a pre-migration trace never recorded one and inventing it
-     * from the old `context` would be a guess stored as a fact. Phase 5 makes `output` NOT
-     * NULL; `input` stays nullable for the legacy rows for good.
+     * `output` is the final answer or proposal, the ONE thing judged, and is never null: the
+     * contract requires it, and migration 0013 backfilled every row written before it existed.
+     * `input` is everything that led to it — nullable ONLY for those pre-0073 rows, which never
+     * recorded one and whose view says so rather than inventing it (ADR-0074).
+     *
+     * The retired `artifact` and `context` were dropped in 0014, once the new shape had been
+     * lived with: `output` carries what `artifact` held and `reference` what `context` did.
      */
     input: jsonbColumn<JsonValue>('input'),
-    output: jsonbColumn<JsonValue>('output'),
-    /** Per-call facts the judges need (an account record). Backfilled from `context`. */
+    output: jsonbColumn<JsonValue>('output').notNull(),
+    /** Per-call facts the judges need (an account record). */
     reference: jsonbColumn<Record<string, JsonValue>>('reference'),
     /** Bookkeeping (a conversation id): for filtering and grouping, never shown to judges. */
     metadata: jsonbColumn<Record<string, string>>('metadata'),
-    /**
-     * RETIRED by ADR-0073, and still written (ADR-0074). Every new row dual-writes its
-     * output here as text — a string verbatim, anything else as JSON — so reverting to code
-     * that reads only this column still finds every trace readable. Nullable so that a later
-     * contraction is the only change left; dropped with `context` once the new shape has been
-     * lived with (the plan's phase 5).
-     */
-    artifact: text('artifact'),
-    /** RETIRED by ADR-0073: new rows write NULL. Its values live on in `reference`. */
-    context: jsonbColumn<Record<string, string>>('context'),
     /**
      * The panel decision, denormalised so the common read needs no fan-in.
      *
