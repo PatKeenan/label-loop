@@ -24,6 +24,13 @@
               agree with. The question becomes "is this acceptable?", the
               correction branch becomes a required note, and the landing and
               waiting states are drawn for the first time.
+              r6 (2026-09-20) — redrawn for ADR-0073, which landed between r5
+              and its review (#77-#81). A call is no longer an artifact plus a
+              string map: it is four roles, and the console already reads them
+              as ONE FLOW IN TIME ORDER with only the output on the judged
+              surface. This screen now shows the same flow, from the same
+              rules, so an annotator and an engineer are looking at one thing.
+              The IN/OUT pair is gone, and with it open question Q1.
   ============================================================================
 
   REVIEW CONTROLS. The strip at the very top switches between the five states.
@@ -33,10 +40,10 @@
   Disposable with the rest of the mockup (CLAUDE.md Phase C).
 
   KEPT FROM r4 (still true without a judge)
-  1. THE PAIR IS PRESENTED AS A PAIR. What the agent was given (IN) and what it
-     produced (OUT) carry matched header bars and role badges, stacked with a
-     connector, because the annotator is judging whether the output fits its
-     input. OUT keeps the violet "a machine wrote this" tint (tokens.css §2).
+  1. THE OUTPUT IS SHOWN AGAINST WHAT LED TO IT, and carries the violet "a
+     machine wrote this" tint (tokens.css §2). r4 and r5 drew that as an IN/OUT
+     PAIR; r6 draws it as the flow below, which is the same claim made in the
+     shape the caller actually sent (decision 16).
   2. THE TWO ANSWERS CARRY EQUAL WEIGHT UNTIL ONE IS CHOSEN. Neither is styled
      as the primary action; a button fills when SELECTED, never by default. A
      dominant "Acceptable" would manufacture the agreement M6 exists to measure.
@@ -60,10 +67,7 @@
   9. THE QUESTION IS "IS THIS ACCEPTABLE?" (ADR-0066). A collecting panel has
      no judge, so there is nothing to agree with; the binary is what M6 aligns
      judges against and the note is what axial coding clusters.
- 10. CONTEXT IS SHOWN AS ITS OWN FIELDS. `context` is an optional map of
-     string to string (evaluate contract), so IN renders each key as a labelled
-     row, humanised (`customer_message` → "Customer message"). With no context,
-     IN is absent and OUT stands alone — never an empty IN panel.
+ 10. [SUPERSEDED IN r6 — `context` no longer exists. See decisions 16-19.]
  11. A PROGRESS LINE, NOT A HISTORY (decision 16). "7 this session · 44 left".
      A list of past answers invites second-guessing, and a changed mind is a
      new row anyway.
@@ -82,13 +86,35 @@
      and the account menu. Staff also get "Console" (plan phase 5: the console
      is one click away); an annotator does not see it.
 
+  NEW IN r6 (ADR-0073)
+ 16. ONE FLOW, IN TIME ORDER, NOT A PAIR OF PANELS. A chat reads as a
+     conversation whose last turn is the thing being reviewed; a proposal
+     reads as the investigation, then the proposal. Same rules as the console's
+     view (apps/web/src/components/shaped/), so the two cannot drift.
+ 17. ONLY THE FINAL REPLY OR PROPOSAL IS ON THE VIOLET SURFACE. Tool calls are
+     evidence and sit OUTSIDE it as single lines that open — the experiment's
+     finding: a judge handed a turn's tool calls beside its reply read the tool
+     calls as on trial too. The annotator is answering about one thing, and the
+     tint says which.
+ 18. REFERENCE IS COLLAPSED, AND IT IS THE ONLY THING THAT IS. Policies and
+     account records are what the answer is checked AGAINST; they are long, and
+     they are the same on every item in a session. Open on demand, shut by
+     default, never in the reading path.
+ 19. METADATA IS NOT ON THIS SCREEN AT ALL (ADR-0077). Not collapsed, not
+     faint: the annotator payload does not carry it, because it can hold
+     customer ids. The console shows it; this surface never receives it.
+ 20. SPEAKERS ARE NEUTRAL — "User" and "Agent". The experiment labelled an
+     operations ticket "Customer", which is wrong for every panel that is not a
+     support chat.
+ 21. A LEGACY TRACE SAYS SO. A trace recorded before inputs were captured
+     (4,593 of them, ADR-0074) shows its output with one faint line and no
+     empty input block. Reviewing one is legitimate; pretending it had an input
+     is not.
+
   OPEN QUESTIONS FOR REVIEW
-  - Q1. IN/OUT does not fit every panel. For the triage persona (ADR-0037) the
-        ARTIFACT is the inbound issue and the agent's decision — the route —
-        is in CONTEXT, so "OUT" would badge the customer's issue as machine
-        output. Options: (a) keep IN/OUT and accept the mislabel; (b) neutral
-        badges, CONTEXT and SUBJECT; (c) a per-panel setting for which side is
-        the agent's output. Drawn as (a), per the plan; (b) is the cheap fix.
+  - Q1. CLOSED by ADR-0073. IN/OUT could not name the triage persona's sides
+        (the issue is not machine output); the four roles name them by what
+        they are, and the flow renders them by shape.
   - Q2. Should "Acceptable" accept an OPTIONAL note? The schema allows one.
         It would be useful input, but any field on the fast path slows the
         common case. Drawn without.
@@ -98,8 +124,15 @@
   - Q4. The question is generic. Should a panel carry one line of guidance
         ("Would you send this reply to a paying customer?") that replaces the
         default? Not in the schema; would be a panel-version field.
-  - Q5. Long artifacts. OUT is shown in full here. A 20k-character artifact
-        needs a cap with "show all" — not drawn.
+  - Q5. Long outputs. Shown in full, as the console's view shows them: the
+        page scrolls, tool results and reference collapse. A 20k-character
+        reply is still a wall. Options: cap the reviewed turn with "show all",
+        or leave it and let the session be slower on rare items. Drawn as-is.
+  - Q6. NEW. A trace whose input is a tool-calling turn puts steps between the
+        turns. Should an annotator see them at all, or only the conversation?
+        Drawn as visible-but-collapsed: they are often the evidence that the
+        reply is wrong (a refund the account record forbids), and hiding them
+        would make some items unanswerable.
 
   NOT DRAWN (deliberate): notifications, help, settings, a history of past
   answers, scores, streaks, consensus — M5 "Not now".
@@ -207,50 +240,78 @@
   }
   .why { font-size: var(--type-data); color: var(--color-text-muted); margin: 0 0 var(--space-6); }
 
-  .exchange { display: grid; margin-bottom: var(--space-8); }
-  .side {
-    background: var(--color-raised);
+  /* --- the flow: one trace, in time order (ADR-0073) ------------------------- */
+  .flow { display: grid; gap: var(--gap-inline); margin-bottom: var(--space-8); }
+
+  /* Reference: shut by default, and the only collapsed thing in the reading path. */
+  .reference {
     border: var(--border-hair) solid var(--color-line);
     border-radius: var(--radius-field);
-    padding: var(--space-5) var(--space-6);
+    background: var(--color-surface);
   }
-  .side-head {
-    display: flex; align-items: center; gap: var(--gap-inline);
-    padding-bottom: var(--space-3); margin-bottom: var(--space-4);
-    border-bottom: var(--border-hair) solid var(--color-line);
+  .reference > summary {
+    cursor: pointer; list-style: none;
+    padding: var(--pad-field-y) var(--pad-field-x);
+    font-size: var(--type-data); color: var(--color-text-muted);
   }
-  .eyebrow {
-    font-family: var(--font-mono); font-size: var(--type-micro);
-    letter-spacing: var(--tracking-micro); text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
-  .role {
-    font-family: var(--font-mono); font-size: var(--type-micro);
-    letter-spacing: var(--tracking-micro); text-transform: uppercase;
-    font-weight: var(--weight-semibold);
-    border: var(--border-hair) solid; border-radius: var(--radius-mark);
-    padding: var(--pad-mark-y) var(--pad-mark-x);
-  }
-  .role-in { color: var(--color-text); border-color: var(--color-line-strong); background: var(--color-surface); }
-  .role-out { color: var(--state-info-fg); border-color: var(--state-info-line); background: var(--state-info-tint); }
-  .side-in { border-left: var(--border-thick) solid var(--color-line-strong); }
-  .side-out { border-left: var(--border-thick) solid var(--state-info-line); background: var(--state-info-tint); }
+  .reference > summary::-webkit-details-marker { display: none; }
+  .reference > summary::before { content: '▸ '; }
+  .reference[open] > summary::before { content: '▾ '; }
+  .reference[open] > summary { border-bottom: var(--border-hair) solid var(--color-line); }
+  .reference .body { padding: var(--space-4) var(--pad-field-x) var(--space-5); }
 
   .fields { display: grid; gap: var(--space-4); margin: 0; }
   .fields dt { font-size: var(--type-data); color: var(--color-text-muted); margin-bottom: var(--space-1); }
   .fields dd { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
 
-  .artifact { font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); margin: 0; }
-  .artifact + .artifact { margin-top: var(--space-3); }
-
-  .flow { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-3) 0; }
-  .flow i { display: block; width: var(--border-hair); height: var(--space-4); background: var(--color-line-strong); }
-  .flow b {
-    display: block; width: var(--space-2); height: var(--space-2);
-    border-right: var(--border-hair) solid var(--color-line-strong);
-    border-bottom: var(--border-hair) solid var(--color-line-strong);
-    transform: rotate(45deg); margin-top: calc(var(--space-1) * -1);
+  /* A turn. The reviewed one carries the violet edge and tint — and nothing else does. */
+  .turn {
+    background: var(--color-raised);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field);
+    padding: var(--space-4) var(--space-5);
   }
+  .turn-head { display: flex; align-items: center; gap: var(--gap-inline); margin-bottom: var(--space-2); }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--type-micro);
+    letter-spacing: var(--tracking-micro); text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .turn p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
+  .turn p + p { margin-top: var(--space-3); }
+
+  .reviewed {
+    background: var(--state-info-tint);
+    border-color: var(--state-info-line);
+    box-shadow: inset var(--border-thick) 0 0 var(--state-info-mark);
+  }
+  .reviewed .tag { margin-left: auto; color: var(--state-info-fg); }
+
+  /* A tool call: one line, OUTSIDE the reviewed turn, opening to the whole thing. */
+  .step { padding-left: var(--space-4); }
+  .step > summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: baseline; gap: var(--gap-inline);
+    font-family: var(--font-mono); font-size: var(--type-data);
+    color: var(--color-text-muted);
+  }
+  .step > summary::-webkit-details-marker { display: none; }
+  /* One line, always: a step is a glance, and the detail is one click below it. */
+  .step .name, .step .result { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step .name { color: var(--color-text); flex: 0 1 auto; }
+  .step .result { flex: 1 1 auto; }
+  .step pre {
+    margin: var(--space-2) 0 0 var(--space-5);
+    padding: var(--pad-field-y) var(--pad-field-x);
+    border: var(--border-hair) solid var(--color-line);
+    border-radius: var(--radius-field);
+    background: var(--color-surface);
+    font-family: var(--font-mono); font-size: var(--type-data);
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+
+  /* A trace older than the four roles (ADR-0074): say so, do not fake an input. */
+  .legacy { font-size: var(--type-data); color: var(--color-text-faint); margin: 0; }
 
   .actions { display: flex; gap: var(--gap-inline); flex-wrap: wrap; align-items: center; }
   .btn {
@@ -305,7 +366,7 @@
     .bar { flex-wrap: wrap; padding-left: var(--space-4); padding-right: var(--space-4); }
     .shell, .stage { padding-left: var(--space-4); padding-right: var(--space-4); }
     .card { padding: var(--space-5) var(--space-4); }
-    .side { padding: var(--space-4); }
+    .turn { padding: var(--space-4); }
     .actions .btn { flex: 1 1 auto; justify-content: center; }
     .btn.plain { margin-left: 0; }
   }
@@ -320,6 +381,7 @@
   <button type="button" data-show="session">3 · Session</button>
   <button type="button" data-show="session-no">4 · Not acceptable</button>
   <button type="button" data-show="drained">5 · All caught up</button>
+  <button type="button" data-show="legacy">6 · Older trace</button>
 </nav>
 
 <header class="bar">
@@ -391,20 +453,48 @@
     <!-- Generic on purpose (decision 4): true for every sampler M6 will add. -->
     <p class="why">One of the traces this panel collected.</p>
 
-    <div class="exchange">
-      <section class="side side-in" aria-label="What the agent was given">
-        <div class="side-head"><span class="role role-in">In</span><span class="eyebrow">What the agent was given</span></div>
-        <dl class="fields">
-          <div><dt>Customer message</dt><dd>Hi — I was charged $588 this morning for the annual renewal. I meant to cancel last week and forgot. We haven’t used the product since March. Can I get this refunded?</dd></div>
-          <div><dt>Plan</dt><dd>Team, annual</dd></div>
-          <div><dt>Days since renewal</dt><dd>0</dd></div>
-        </dl>
+    <!--
+      THE FLOW (ADR-0073, decisions 16-21). Reference collapsed, then the trace in time
+      order, then nothing: no metadata on this surface at all. The same rules the console
+      renders by, so the two views cannot drift apart.
+    -->
+    <div class="flow">
+      <details class="reference">
+        <summary>Reference</summary>
+        <div class="body">
+          <dl class="fields">
+            <div><dt>Account</dt><dd>Team annual · renewed today · United States</dd></div>
+            <div><dt>Policy</dt><dd>Annual plans: full refund if requested within 14 days of the renewal date. Duplicate or erroneous charges are always refunded in full.</dd></div>
+          </dl>
+        </div>
+      </details>
+
+      <section class="turn">
+        <div class="turn-head"><span class="eyebrow">User</span></div>
+        <p>Hi — I was charged $588 this morning for the annual renewal. I meant to cancel last week and forgot. We haven’t used the product since March. Can I get this refunded?</p>
       </section>
-      <div class="flow" aria-hidden="true"><i></i><b></b></div>
-      <section class="side side-out" aria-label="What the agent produced">
-        <div class="side-head"><span class="role role-out">Out</span><span class="eyebrow">What the agent produced</span></div>
-        <p class="artifact">Thanks for reaching out! Annual plans are non-refundable once the renewal has processed, as outlined in our Terms of Service.</p>
-        <p class="artifact">To avoid future charges, you can turn off auto-renew under Settings → Billing. Is there anything else I can help with?</p>
+
+      <!-- Evidence, OUTSIDE the reviewed turn (decision 17). Often the reason an answer is
+           wrong — here, the account record the reply contradicts. -->
+      <details class="step">
+        <summary>
+          <span aria-hidden="true">↳</span>
+          <span class="name">lookup_account(store: "Weber Fahrräder")</span>
+          <span class="result">→ plan: "Team annual", renewed_days_ago: 0</span>
+        </summary>
+        <pre>{
+  "arguments": { "store": "Weber Fahrräder" },
+  "result": { "plan": "Team annual", "renewed_days_ago": 0, "country": "US" }
+}</pre>
+      </details>
+
+      <section class="turn reviewed" aria-label="The reply you are reviewing">
+        <div class="turn-head">
+          <span class="eyebrow">Agent</span>
+          <span class="eyebrow tag">You’re reviewing this</span>
+        </div>
+        <p>Thanks for reaching out! Annual plans are non-refundable once the renewal has processed, as outlined in our Terms of Service.</p>
+        <p>To avoid future charges, you can turn off auto-renew under Settings → Billing. Is there anything else I can help with?</p>
       </section>
     </div>
 
@@ -424,6 +514,51 @@
     <div class="save-row">
       <span class="save-aside">Skipping is always fine.</span>
       <button type="button" class="btn" data-save disabled>Save and next <kbd>↵</kbd></button>
+    </div>
+  </article>
+</main>
+
+<!-- ============ 6 · AN OLDER TRACE — recorded before inputs were captured ============ -->
+<main class="shell" data-state="legacy" hidden>
+  <div class="session-head">
+    <div class="session-title">
+      <a class="link" href="#">← All panels</a>
+      <b>support-reply-gate</b>
+    </div>
+    <span class="progress-line">7 this session · 44 left</span>
+  </div>
+
+  <article class="card">
+    <h1 class="question">Is this output acceptable?</h1>
+    <p class="why">One of the traces this panel collected.</p>
+
+    <!--
+      A trace older than the four roles (ADR-0074, decision 21). Its input was never
+      recorded, so there is no flow to draw: one faint line says why, and the output stands
+      alone on the reviewed surface. Never an empty input block, and never an invented one.
+      Still answerable — "is this acceptable" needs the output — which is why these stay in
+      the queue rather than being filtered out of it.
+    -->
+    <div class="flow">
+      <p class="legacy">Recorded before inputs were captured.</p>
+      <section class="turn reviewed" aria-label="The output you are reviewing">
+        <div class="turn-head">
+          <span class="eyebrow">Agent</span>
+          <span class="eyebrow tag">You’re reviewing this</span>
+        </div>
+        <p>P2 — the export button on the reports page is misaligned on Safari.</p>
+      </section>
+    </div>
+
+    <div class="actions" role="group" aria-label="Your answer">
+      <button type="button" class="btn choice" aria-pressed="false">Acceptable <kbd>Y</kbd></button>
+      <button type="button" class="btn choice" aria-pressed="false">Not acceptable <kbd>N</kbd></button>
+      <button type="button" class="btn plain">Skip <kbd>S</kbd></button>
+    </div>
+
+    <div class="save-row">
+      <span class="save-aside">Skipping is always fine.</span>
+      <button type="button" class="btn" disabled>Save and next <kbd>↵</kbd></button>
     </div>
   </article>
 </main>
