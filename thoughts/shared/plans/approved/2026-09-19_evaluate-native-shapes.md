@@ -132,14 +132,14 @@ One branch and PR per phase (`feat/shapes-p1-contract`, …), per CLAUDE.md "Bra
   the wrapper's safety settings.
 
 ### Steps
-- [ ] `to-steps.ts` + tests (both formats, pairing by id, an unpaired call, the last-reply rule)
-- [ ] `markdown-to-jsx` added, STACK_DECISIONS row; `markdown.tsx` + tests (`<img onerror>` and
+- [x] `to-steps.ts` + tests (both formats, pairing by id, an unpaired call, the last-reply rule)
+- [x] `markdown-to-jsx` added, STACK_DECISIONS row; `markdown.tsx` + tests (`<img onerror>` and
       `<script>` stay text; a `javascript:` link is not rendered as a link)
-- [ ] `shaped-trace.tsx`; drawer and trace page use it; legacy rows handled
-- [ ] Neutral speaker labels
+- [x] `shaped-trace.tsx`; drawer and trace page use it; legacy rows handled
+- [x] Neutral speaker labels
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
 
 ### Manual verification
 - [ ] In the console: a chat trace reads top to bottom with only the final reply purple; a
@@ -313,3 +313,16 @@ verdict → confidence, 2,795 tokens in, and a verdict of true @ 0.95. A direct 
 Haiku 4.5 judge used an outage chat whose tool result showed a 98% error rate. A "low-priority
 cosmetic" reply was judged false and a "paging on-call, SEV-1" reply true. Both rationales judged
 the reply and cited the tool result as evidence.
+10. **Markdown safety goes beyond "raw HTML disabled"**. HTML blocks are ignored as well, link
+    URLs are limited to http(s) and mailto, and images are never fetched: a remote image is a
+    beacon the caller controls, and the plan renders no non-text output. `forceBlock` is on, so
+    a one-line reply with **bold** stays one paragraph. STACK_DECISIONS row D18 records all of it.
+11. **The drawer's clamping is gone with the stopgap.** The shaped view reads top to bottom and
+    the drawer scrolls. Tool-call results and system prompts are collapsed by default instead,
+    which is where the length actually was in the spike's traces.
+12. **A system message is a collapsed "System prompt" row**, not a turn. The spike dropped system
+    messages altogether, and dropping evidence would be worse than collapsing it.
+13. **Visual check was done on a throwaway preview page**, not the signed-in console, because
+    signing in means entering a password. The page rendered the real `ShapedTrace` on the console
+    surface with a chat, a tool-calling turn, a proposal and a legacy trace, and was deleted
+    before commit. The signed-in check is the stakeholder's manual verification.
