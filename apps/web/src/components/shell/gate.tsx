@@ -18,19 +18,32 @@ import { Mark } from './mark.tsx'
  * The two numbers moved to `@labelloop/contracts` when the API began enforcing the floor
  * (M5 phase 4): the server refuses a queue below it, and this bar fills toward the number the
  * server is checking.
+ *
+ * **The card measures ONE thing at a time, and which thing changes when the gate opens**
+ * (M5 phase 6). Below the floor the work is collecting traces, so it counts traces toward 50.
+ * Above it, collecting is no longer the job — reading them is — so it counts ANNOTATED traces
+ * toward the target, and the trace count moves to the line underneath. Two bars would ask the
+ * reader to work out which one is theirs; the card's job is to name the next thing to do.
  */
 export const Gate = ({
   traceCount,
+  annotatedTraceCount,
   panelSlug,
   orgSlug,
 }: {
   traceCount: number
+  /** Traces somebody has answered — coverage, so one trace counts once however many did. */
+  annotatedTraceCount: number
   panelSlug: string
   orgSlug: string
 }) => {
   const open = traceCount >= ANNOTATION_FLOOR
-  // Against the FLOOR, not the target: the bar this fills is the one that unlocks something.
-  const pct = Math.min(100, Math.round((traceCount / ANNOTATION_FLOOR) * 100))
+  // Whichever measure the card is on: traces toward the floor, then annotations toward the
+  // target. The bar always fills toward the number the headline is counting against.
+  const [value, goal] = open
+    ? ([annotatedTraceCount, ANNOTATION_TARGET] as const)
+    : ([traceCount, ANNOTATION_FLOOR] as const)
+  const pct = Math.min(100, Math.round((value / goal) * 100))
 
   // Deliberately short. It was a headline, two paragraphs and a mark repeating the one in the
   // page head; the count and the bar are the content, and one line says what they lead to.
@@ -39,9 +52,11 @@ export const Gate = ({
     <section className="flex flex-col gap-[var(--gap-stack)] rounded-lg border bg-card px-[var(--pad-panel-x)] py-[var(--pad-panel-y)]">
       <div className="flex flex-col gap-[var(--gap-inline)]">
         <div className="flex flex-wrap items-baseline gap-[var(--gap-tight)]">
-          <strong className="font-mono text-display tabular-nums">{traceCount}</strong>
+          <strong className="font-mono text-display tabular-nums">{value}</strong>
           <span className="text-muted-foreground">
-            {open ? 'traces collected' : `of ${ANNOTATION_FLOOR} traces before annotation opens`}
+            {open
+              ? `of ${ANNOTATION_TARGET} traces annotated`
+              : `of ${ANNOTATION_FLOOR} traces before annotation opens`}
           </span>
           {open ? (
             <Mark tone="success" className="ml-auto">
@@ -52,10 +67,14 @@ export const Gate = ({
         <div
           className="h-[var(--space-2)] overflow-hidden rounded-[var(--radius-pill)] bg-muted"
           role="progressbar"
-          aria-valuenow={traceCount}
+          aria-valuenow={value}
           aria-valuemin={0}
-          aria-valuemax={ANNOTATION_FLOOR}
-          aria-label="Traces collected toward the annotation gate"
+          aria-valuemax={goal}
+          aria-label={
+            open
+              ? 'Traces annotated toward the target'
+              : 'Traces collected toward the annotation gate'
+          }
         >
           <span className="block h-full bg-muted-foreground" style={{ width: `${pct}%` }} />
         </div>
@@ -64,8 +83,12 @@ export const Gate = ({
       <p className="m-0 text-body text-muted-foreground">
         {open ? (
           <>
-            An expert can now review these and say what went wrong in their own words; judges are
-            written from those notes.
+            {/* The trace count keeps its place on the card, demoted to a clause: it is still
+                the denominator of everything above, and dropping it would leave "12 of 100
+                annotated" with nothing saying how much there is to annotate. */}
+            <strong className="text-foreground">{traceCount}</strong> traces collected. An expert
+            reviews these and says what went wrong in their own words; judges are written from those
+            notes.
           </>
         ) : (
           <>

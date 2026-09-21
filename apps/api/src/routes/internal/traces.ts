@@ -136,6 +136,10 @@ export const createTraceRoutes = () =>
             score: trace.score,
             complete: trace.complete,
             threshold: trace.threshold,
+            // Whether somebody has answered it (M5 phase 6) — a boolean, not a count. What
+            // the table shows is that a human has been here; WHO and what they said is the
+            // detail read, which is one trace's worth of rows rather than a page's.
+            annotated: trace.annotated,
             recorded_at: trace.recordedAt?.toISOString() ?? null,
             created_at: trace.createdAt.toISOString(),
           })),
@@ -217,6 +221,27 @@ export const createTraceRoutes = () =>
             // A decimal STRING (ADR-0027) — never parsed into a float on the way out.
             cost_usd: verdict.costUsd,
             cost_priced: verdict.costPriced,
+          })),
+          /**
+           * WHAT PEOPLE SAID (M5 phase 6) — one entry per annotator, their latest answer,
+           * newest first. Empty when nobody has looked at it yet.
+           *
+           * The NOTE crosses the wire here and never reaches the audit log, which is the
+           * opposite of how the two are usually weighted and is deliberate (ADR-0066): a
+           * note is free text an annotator may have put a customer's words in, so it lives
+           * in a table an erasure request can reach rather than in an append-only log.
+           */
+          annotations: trace.annotations.map((annotation) => ({
+            id: annotation.id,
+            annotator_id: annotation.annotatorId,
+            annotator_name: annotation.annotatorName,
+            annotator_email: annotation.annotatorEmail,
+            outcome: annotation.outcome,
+            note: annotation.note,
+            // How many EARLIER answers this person gave on this trace. Zero normally; above
+            // zero is a changed mind, and the screen says so rather than hiding the first.
+            revisions: annotation.revisions,
+            created_at: annotation.createdAt.toISOString(),
           })),
         },
         request_id: c.var.requestId,

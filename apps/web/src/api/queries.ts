@@ -176,7 +176,10 @@ export const traceDetailQuery = (orgId: string, traceId: string) =>
       if (!response.ok) throw await apiErrorFrom(response)
       return (await response.json()).data
     },
-    // A trace never changes after it is written, except `recorded_at` being stamped once.
+    // The trace itself never changes after it is written — `recorded_at` is stamped once.
+    // Its ANNOTATIONS do, whenever somebody reviews it (M5 phase 6), and a minute-stale
+    // answer to "who has looked at this" is the right trade for a drawer opened off a list:
+    // the annotator is on another surface, so nobody is watching this for their own write.
     staleTime: 60_000,
   })
 
