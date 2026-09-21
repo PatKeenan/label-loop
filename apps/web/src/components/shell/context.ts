@@ -48,6 +48,16 @@ export type ConsoleSearch = {
    * is shareable — which is most of the point of being able to look at one.
    */
   trace?: string | undefined
+  /**
+   * The new-annotation-set dialog, open (M5 phase 7). Its own key rather than reusing `new`,
+   * which is the panel dialog's: two dialogs sharing a flag would both open on one URL.
+   */
+  newSet?: true | undefined
+  /**
+   * Whether the Annotations list shows archived sets. In the URL because it is a view somebody
+   * shares — "look at the pass we put away" is a link, not a click somebody has to repeat.
+   */
+  archived?: true | undefined
 }
 
 /**
@@ -58,11 +68,23 @@ export type ConsoleSearch = {
  * the not-a-member state the comment below exists to prevent. Found in phase 8, when the login
  * route's redirect check turned out to be a no-op for the same reason.
  */
+/** Truthy in any hand-typed spelling — `?x`, `?x=1`, `?x=true` — or absent. */
+const flag = (value: unknown): true | undefined =>
+  value === true || value === 'true' || value === 1 || value === '1' || value === ''
+    ? true
+    : undefined
+
 export const validateConsoleSearch = ({
   org,
   new: isNew,
   trace,
+  newSet,
+  archived,
 }: Record<string, unknown>): ConsoleSearch => ({
+  // EVERY key, `undefined` when absent — see the note above. These two were added in M5
+  // phase 7 and are as load-bearing as the rest: an omitted key keeps whatever the URL said.
+  newSet: flag(newSet),
+  archived: flag(archived),
   // A trace id or nothing — anything else would only produce a not-found drawer.
   trace: typeof trace === 'string' && trace.startsWith('tr_') ? trace : undefined,
   // An empty `?org=` is treated as absent rather than as a slug nothing matches, so a client
@@ -72,10 +94,7 @@ export const validateConsoleSearch = ({
   // Present in any truthy spelling — `?new`, `?new=1`, `?new=true` — because a hand-typed URL
   // should do the obvious thing. (The router's parser turns `?new=true` into a boolean and
   // `?new=1` into a number, so the checks cover both forms.)
-  new:
-    isNew === true || isNew === 'true' || isNew === 1 || isNew === '1' || isNew === ''
-      ? true
-      : undefined,
+  new: flag(isNew),
 })
 
 /**

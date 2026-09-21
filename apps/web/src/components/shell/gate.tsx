@@ -1,4 +1,6 @@
 import { ANNOTATION_FLOOR, ANNOTATION_TARGET } from '@labelloop/contracts'
+import { Link } from '@tanstack/react-router'
+import { Button } from '../ui/button.tsx'
 import { Mark } from './mark.tsx'
 
 /**
@@ -23,18 +25,27 @@ import { Mark } from './mark.tsx'
  * toward the target, and the trace count moves to the line underneath. Two bars would ask the
  * reader to work out which one is theirs; the card's job is to name the next thing to do.
  *
- * **It offers no button, and that is deliberate** (ADR-0084). Phase 5 gave it a "Review traces"
- * action that left the console for the annotator surface; staff are no longer routed there, and
- * the section that replaces it arrives with phase 7. A card with no door beats a door into the
- * wrong room — so this states what happens next and names who does it.
+ * **ITS DOOR LEADS INTO THE CONSOLE, and that is the whole of ADR-0084.** Phase 5 gave this
+ * card a "Review traces" action that threw a developer out of the console and onto the
+ * annotator surface, which answers none of their questions — it cannot, because it deliberately
+ * shows an annotator no history (ADR-0066). The card then had no button at all, because no door
+ * beats a door into the wrong room. Phase 7 built the right room, so the door is back and it
+ * stays here: **Annotations**, where a developer assigns the work and reads what came of it.
+ *
+ * Shown only once the gate is open, because below it the next thing to do is collect traces,
+ * and a section with nothing in it is not the next thing to do.
  */
 export const Gate = ({
   traceCount,
   annotatedTraceCount,
+  panelSlug,
+  orgSlug,
 }: {
   traceCount: number
   /** Traces somebody has answered — coverage, so one trace counts once however many did. */
   annotatedTraceCount: number
+  panelSlug: string
+  orgSlug: string
 }) => {
   const open = traceCount >= ANNOTATION_FLOOR
   // Whichever measure the card is on: traces toward the floor, then annotations toward the
@@ -97,6 +108,16 @@ export const Gate = ({
           </>
         )}
       </p>
+
+      {open ? (
+        <div>
+          <Button asChild>
+            <Link to="/p/$panelSlug/annotations" params={{ panelSlug }} search={{ org: orgSlug }}>
+              Annotations
+            </Link>
+          </Button>
+        </div>
+      ) : null}
     </section>
   )
 }

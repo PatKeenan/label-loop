@@ -184,6 +184,46 @@ export const traceDetailQuery = (orgId: string, traceId: string) =>
   })
 
 /**
+ * THE CONSOLE'S ANNOTATION READS (ADR-0084). Staff only — `annotation: ['curate']` on the
+ * server — and READ-ONLY with respect to answers: there is no query here that could change one,
+ * because nobody annotates somebody else's work.
+ */
+export const annotationSetsQuery = (orgId: string, panelSlug: string) =>
+  queryOptions({
+    queryKey: ['annotation-sets', orgId, panelSlug],
+    queryFn: async () => {
+      const response = await api.internal.panels[':slug']['annotation-sets'].$get(
+        { param: { slug: panelSlug } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data.sets
+    },
+  })
+
+/**
+ * One set: its annotators with their progress, and its traces with every annotator's answer.
+ *
+ * Not cached for long, and for a different reason from the queue's reads: this is a view of
+ * work somebody ELSE is doing right now, so a minute-stale answer is the wrong thing to show a
+ * developer watching progress. The trace's own detail (`traceDetailQuery`) stays at a minute,
+ * because the annotator is not watching that.
+ */
+export const annotationSetQuery = (orgId: string, setId: string) =>
+  queryOptions({
+    queryKey: ['annotation-set', orgId, setId],
+    queryFn: async () => {
+      const response = await api.internal['annotation-sets'][':id'].$get(
+        { param: { id: setId } },
+        asOrg(orgId),
+      )
+      if (!response.ok) throw await apiErrorFrom(response)
+      return (await response.json()).data
+    },
+    staleTime: 10_000,
+  })
+
+/**
  * The active org's members and open invitations — Organisation settings → Members (ADR-0070).
  * Asked only from an admin's screen; the server guards the read with `member: [read]`.
  */

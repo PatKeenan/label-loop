@@ -11,10 +11,12 @@ import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
 import { requirePermission } from '../../middleware/require-permission.ts'
 import { findPanelBySlug } from '../../repositories/panels.ts'
+import { setProgress } from '../../services/annotation-queue.ts'
 import {
   archiveAnnotationSet,
   assignAnnotators,
   createAnnotationSet,
+  getAnnotationSetDetail,
   listAnnotationSets,
   topUpAnnotationSet,
 } from '../../services/annotation-sets.ts'
@@ -116,12 +118,21 @@ export const createAnnotationSetRoutes = () =>
         const panel = await findPanelBySlug(c.var.deps.db, c.var.session.orgId, c.req.param('slug'))
         if (panel === undefined) notFoundPanel()
         const sets = await listAnnotationSets(c.var.deps.db, { panelId: panel.id })
+        // DONE comes from `setProgress`, the same function the annotator's own list uses and
+        // the set detail uses (ADR-0086). One definition, asked once for the whole page — a
+        // per-row read would be one query per set, and a second definition would be worse.
+        const progress = await setProgress(
+          c.var.deps.db,
+          sets.map((set) => set.id),
+        )
         return c.json({
           data: {
             sets: sets.map((set) => ({
               id: set.id,
               name: set.name,
               size: set.size,
+              done: progress.get(set.id)?.done ?? false,
+              annotator_count: progress.get(set.id)?.annotators.length ?? 0,
               created_at: set.createdAt.toISOString(),
               created_by_email: set.createdByEmail,
               archived_at: set.archivedAt?.toISOString() ?? null,
@@ -131,6 +142,58 @@ export const createAnnotationSetRoutes = () =>
         })
       },
     )
+    /**
+     * ONE SET: who is assigned, where each of them is, and what each of them selected on every
+     * trace (ADR-0084). There is NO write beside it that touches an answer, and there never
+     * will be — nobody annotates somebody else's work.
+     *
+     * This is the one place ADR-0067's withholding does not apply. That ADR is about what
+     * reaches the ANNOTATOR; reading a panel's traces is `trace: ['read']` territory, which
+     * staff have and annotators do not.
+     */
+    .get('/annotation-sets/:id', requirePermission({ annotation: ['curate'] }), async (c) => {
+      const detail = await getAnnotationSetDetail(c.var.deps.db, {
+        orgId: c.var.session.orgId,
+        setId: c.req.param('id'),
+      })
+      if (detail === undefined) notFoundSet()
+      return c.json({
+        data: {
+          id: detail.id,
+          name: detail.name,
+          panel_slug: detail.panelSlug,
+          size: detail.size,
+          done: detail.done,
+          created_at: detail.createdAt.toISOString(),
+          created_by_email: detail.createdByEmail,
+          archived_at: detail.archivedAt?.toISOString() ?? null,
+          annotators: detail.annotators.map((annotator) => ({
+            user_id: annotator.userId,
+            email: annotator.email,
+            name: annotator.name,
+            is_dictator: annotator.isDictator,
+            assigned_at: annotator.assignedAt.toISOString(),
+            unassigned_at: annotator.unassignedAt?.toISOString() ?? null,
+            answered: annotator.answered,
+            annotated: annotator.annotated,
+          })),
+          traces: detail.traces.map((trace) => ({
+            trace_id: trace.traceId,
+            added_at: trace.addedAt.toISOString(),
+            strategy: trace.strategy,
+            counting: trace.counting,
+            answers: trace.answers.map((answer) => ({
+              annotator_id: answer.annotatorId,
+              outcome: answer.outcome,
+              note: answer.note,
+              created_at: answer.createdAt.toISOString(),
+              revisions: answer.revisions,
+            })),
+          })),
+        },
+        request_id: c.var.requestId,
+      })
+    })
     /**
      * Create one, resolving its picker ONCE (ADR-0080). The set arrives with its traces or not
      * at all — one transaction — because a named set holding nothing is a thing somebody would
