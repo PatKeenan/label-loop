@@ -181,8 +181,20 @@ and a section's name in the trail loses the title's size as the page's main land
 ## Panel-scoped access for internal members (raised 2026-09-18, M5)
 
 Membership is org-wide: an admin, engineer or annotator holds their role across **every** panel
-in the organisation, and M5's annotator will see every panel's review queue. That is a real
-limitation, not a hypothetical one. An **agency serving clients with competing brands** runs
+in the organisation. That is a real limitation, not a hypothetical one.
+
+**Partly, and accidentally, addressed by assignment (2026-09-21).** M5 phase 7 replaces the
+panel-wide queue with assigned annotation sets (ADR-0079), so an annotator now reaches only the
+sets given to them — the sentence above used to end "and M5's annotator will see every panel's
+review queue", which stopped being true. **Assignment is therefore the only thing narrowing an
+annotator to a panel**, confirmed as the deferral arriving early rather than an accident, and
+assigning somebody a set GRANTS read access to those traces in a panel they can otherwise reach
+nothing of.
+
+**It does not close this item.** Assignment is a positive grant with no negative: nothing stops
+one person being assigned sets from two competing brands' panels, and there is still no way to
+say "this person may NEVER see Brand B". An agency's requirement is the second kind. The design
+below is unchanged. An **agency serving clients with competing brands** runs
 each client as a panel in one org, and must be able to keep a member to the panels they work on
 — a person annotating Brand A's traces must not see Brand B's.
 
