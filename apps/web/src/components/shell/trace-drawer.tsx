@@ -227,7 +227,7 @@ type Annotation = Detail['annotations'][number]
  * THE ANNOTATIONS BLOCK (M5 phase 6) — one entry per person who has answered this trace.
  *
  * **It is rendered even when empty**, saying so in a line. An absent section would leave a
- * reader unable to tell "nobody has reviewed this" from "this console does not show that",
+ * reader unable to tell "nobody has annotated this" from "this console does not show that",
  * and the first is a fact worth knowing while a panel is collecting.
  *
  * The OUTCOME earns the colour and the NOTE is the body, the same shape as a judge's verdict
@@ -240,7 +240,7 @@ export const Annotations = ({ annotations }: { annotations: readonly Annotation[
       {annotations.length === 0 ? 'Annotations' : `Annotations · ${annotations.length}`}
     </Eyebrow>
     {annotations.length === 0 ? (
-      <p className="m-0 text-body text-muted-foreground">Nobody has reviewed this trace yet.</p>
+      <p className="m-0 text-body text-muted-foreground">Nobody has annotated this trace yet.</p>
     ) : (
       <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
         {annotations.map((annotation) => (

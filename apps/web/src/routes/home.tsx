@@ -217,8 +217,8 @@ const EmptyState = ({ action }: { action: React.ReactNode }) => (
         <Step n={2} title="Send traffic">
           One <code>POST</code> from your agent. The snippet is on the panel’s page.
         </Step>
-        <Step n={3} title="Review">
-          At {ANNOTATION_FLOOR} traces an expert can start reviewing. Judges are written from that.
+        <Step n={3} title="Annotate">
+          At {ANNOTATION_FLOOR} traces an expert can start annotating. Judges are written from that.
         </Step>
       </ol>
     </div>

@@ -72,7 +72,7 @@ const decodeCursor = (value: string): TraceCursor | undefined => {
 
 /**
  * Both reads are `trace: [read]` — staff only (ADR-0068). The list was left open through M4
- * (Deviation 32); an annotator now reads traces only through their review queue, which serves
+ * (Deviation 32); an annotator now reads traces only through their annotation queue, which serves
  * the trace's roles and nothing an operator sees.
  */
 export const createTraceRoutes = () =>

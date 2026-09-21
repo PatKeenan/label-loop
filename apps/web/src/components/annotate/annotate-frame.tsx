@@ -14,7 +14,7 @@ import { useSurface } from '../shell/surface.ts'
  * `useSurface` mirrors the preset onto `<html>` so portalled overlays resolve these tokens
  * rather than `:root`'s defaults (Deviation 53 of M4: the white-menu-on-dark bug, in reverse).
  */
-export const ReviewFrame = ({ children }: { children: React.ReactNode }) => {
+export const AnnotateFrame = ({ children }: { children: React.ReactNode }) => {
   useSurface('annotator')
   const context = useConsoleContext()
   const org = context.state === 'ready' ? context : null
@@ -26,7 +26,7 @@ export const ReviewFrame = ({ children }: { children: React.ReactNode }) => {
     <div data-surface="annotator" className="min-h-screen bg-background text-foreground">
       <header className="flex items-center gap-[var(--gap-inline)] border-b px-[var(--pad-bar-x)] py-[var(--pad-bar-y)]">
         <Link
-          to="/review"
+          to="/annotate"
           search={{ org: org?.orgSlug }}
           className="font-semibold text-foreground no-underline"
         >

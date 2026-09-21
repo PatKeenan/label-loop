@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>annotator-session r5 — LabelLoop</title>
+<title>annotator-session r7 — LabelLoop</title>
 <link rel="stylesheet" href="tokens.css">
 <!--
   ============================================================================
-  SCREEN:     annotator-session (+ its landing, /review, and its waiting states)
-  ROLE:       annotator; also any staff member who opts in via "Review traces"
-              (ADR-0064: a role says what you may DO, the surface is a preference)
+  SCREEN:     annotator-session (+ its landing, /annotate, and its waiting states)
+  ROLE:       annotator; also any staff member who is ASSIGNED work and comes
+              here deliberately (ADR-0064: a role says what you may DO, the
+              surface is a preference; ADR-0084: staff are never ROUTED here)
   IMPLEMENTS: M5 plan phase 3 (thoughts/shared/plans/approved/2026-09-18_m5-members-
               annotation.md), ADR-0066 (acceptable / not acceptable + note),
               ADR-0067 (no operator signals), ADR-0071 (Phase A resumes for this
@@ -33,6 +34,11 @@
               The IN/OUT pair is gone, and with it open question Q1.
               APPROVED by the stakeholder 2026-09-20, as drawn. Q5 and Q6 stay
               open and are decided when phase 5 builds the screen.
+              r7 (2026-09-21) — WORDING ONLY, no layout change and no new open
+              question. ADR-0085: the product says annotation, not review, and
+              this surface said review throughout. r6's approval stands; this
+              is that screen with the word corrected. The one fact corrected
+              with it is the ROLE line, which named a door ADR-0084 removed.
   ============================================================================
 
   REVIEW CONTROLS. The strip at the very top switches between the five states.
@@ -76,7 +82,7 @@
  12. THE LANDING LISTS EVERY PANEL (stakeholder, 2026-09-18). Open panels show
      how many are waiting; locked ones show progress toward the 50-trace gate
      ("34 of 50"). With one panel it reads as a single progress card. Counts
-     come from GET /internal/review/panels; a trace count is not an operator
+     come from GET /internal/annotate/panels; a trace count is not an operator
      signal, so decision 8 does not withhold it.
  13. WAITING STATES ARE CENTRED, WITH FEW WORDS (stakeholder, 2026-09-18,
      after M4's top-left "Nothing to review yet" card read as broken). Locked
@@ -90,7 +96,7 @@
 
   NEW IN r6 (ADR-0073)
  16. ONE FLOW, IN TIME ORDER, NOT A PAIR OF PANELS. A chat reads as a
-     conversation whose last turn is the thing being reviewed; a proposal
+     conversation whose last turn is the thing being annotated; a proposal
      reads as the investigation, then the proposal. Same rules as the console's
      view (apps/web/src/components/shaped/), so the two cannot drift.
  17. ONLY THE FINAL REPLY OR PROPOSAL IS ON THE VIOLET SURFACE. Tool calls are
@@ -110,7 +116,7 @@
      support chat.
  21. A LEGACY TRACE SAYS SO. A trace recorded before inputs were captured
      (4,593 of them, ADR-0074) shows its output with one faint line and no
-     empty input block. Reviewing one is legitimate; pretending it had an input
+     empty input block. Annotating one is legitimate; pretending it had an input
      is not.
 
   OPEN QUESTIONS FOR REVIEW
@@ -128,7 +134,7 @@
         default? Not in the schema; would be a panel-version field.
   - Q5. Long outputs. Shown in full, as the console's view shows them: the
         page scrolls, tool results and reference collapse. A 20k-character
-        reply is still a wall. Options: cap the reviewed turn with "show all",
+        reply is still a wall. Options: cap the annotated turn with "show all",
         or leave it and let the session be slower on rare items. Drawn as-is.
   - Q6. NEW. A trace whose input is a tool-calling turn puts steps between the
         turns. Should an annotator see them at all, or only the conversation?
@@ -266,7 +272,7 @@
   .fields dt { font-size: var(--type-data); color: var(--color-text-muted); margin-bottom: var(--space-1); }
   .fields dd { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
 
-  /* A turn. The reviewed one carries the violet edge and tint — and nothing else does. */
+  /* A turn. The annotated one carries the violet edge and tint — and nothing else does. */
   .turn {
     background: var(--color-raised);
     border: var(--border-hair) solid var(--color-line);
@@ -282,14 +288,14 @@
   .turn p { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); max-width: var(--measure); }
   .turn p + p { margin-top: var(--space-3); }
 
-  .reviewed {
+  .annotated {
     background: var(--state-info-tint);
     border-color: var(--state-info-line);
     box-shadow: inset var(--border-thick) 0 0 var(--state-info-mark);
   }
-  .reviewed .tag { margin-left: auto; color: var(--state-info-fg); }
+  .annotated .tag { margin-left: auto; color: var(--state-info-fg); }
 
-  /* A tool call: one line, OUTSIDE the reviewed turn, opening to the whole thing. */
+  /* A tool call: one line, OUTSIDE the annotated turn, opening to the whole thing. */
   .step { padding-left: var(--space-4); }
   .step > summary {
     cursor: pointer; list-style: none;
@@ -399,7 +405,7 @@
 <!-- ===================== 1 · THE LANDING: every panel ===================== -->
 <main class="stage" data-state="landing">
   <div class="stage-inner">
-    <h1>Review traces</h1>
+    <h1>Annotate traces</h1>
     <div class="panels">
       <div class="panel-row">
         <span class="panel-name">support-reply-gate</span>
@@ -416,7 +422,7 @@
         <span class="track" aria-label="6 of 50 traces collected"><i style="width:12%"></i></span>
       </div>
     </div>
-    <p>A panel opens for review at 50 traces.</p>
+    <p>A panel opens for annotation at 50 traces.</p>
   </div>
 </main>
 
@@ -424,7 +430,7 @@
 <main class="stage" data-state="locked" hidden>
   <div class="stage-inner">
     <h1>Almost ready</h1>
-    <p>Reviewing opens when a panel has collected 50 traces.</p>
+    <p>Annotating opens when a panel has collected 50 traces.</p>
     <div class="panels">
       <div class="panel-row">
         <span class="panel-name">brand-voice</span>
@@ -476,7 +482,7 @@
         <p>Hi — I was charged $588 this morning for the annual renewal. I meant to cancel last week and forgot. We haven’t used the product since March. Can I get this refunded?</p>
       </section>
 
-      <!-- Evidence, OUTSIDE the reviewed turn (decision 17). Often the reason an answer is
+      <!-- Evidence, OUTSIDE the annotated turn (decision 17). Often the reason an answer is
            wrong — here, the account record the reply contradicts. -->
       <details class="step">
         <summary>
@@ -490,10 +496,10 @@
 }</pre>
       </details>
 
-      <section class="turn reviewed" aria-label="The reply you are reviewing">
+      <section class="turn annotated" aria-label="The reply you are annotating">
         <div class="turn-head">
           <span class="eyebrow">Agent</span>
-          <span class="eyebrow tag">You’re reviewing this</span>
+          <span class="eyebrow tag">You’re annotating this</span>
         </div>
         <p>Thanks for reaching out! Annual plans are non-refundable once the renewal has processed, as outlined in our Terms of Service.</p>
         <p>To avoid future charges, you can turn off auto-renew under Settings → Billing. Is there anything else I can help with?</p>
@@ -537,16 +543,16 @@
     <!--
       A trace older than the four roles (ADR-0074, decision 21). Its input was never
       recorded, so there is no flow to draw: one faint line says why, and the output stands
-      alone on the reviewed surface. Never an empty input block, and never an invented one.
+      alone on the annotated surface. Never an empty input block, and never an invented one.
       Still answerable — "is this acceptable" needs the output — which is why these stay in
       the queue rather than being filtered out of it.
     -->
     <div class="flow">
       <p class="legacy">Recorded before inputs were captured.</p>
-      <section class="turn reviewed" aria-label="The output you are reviewing">
+      <section class="turn annotated" aria-label="The output you are annotating">
         <div class="turn-head">
           <span class="eyebrow">Agent</span>
-          <span class="eyebrow tag">You’re reviewing this</span>
+          <span class="eyebrow tag">You’re annotating this</span>
         </div>
         <p>P2 — the export button on the reports page is misaligned on Safari.</p>
       </section>
@@ -569,7 +575,7 @@
 <main class="stage" data-state="drained" hidden>
   <div class="stage-inner">
     <h1>All caught up</h1>
-    <p>Nothing left to review in support-reply-gate. New traces appear here as the panel collects them.</p>
+    <p>Nothing left to annotate in support-reply-gate. New traces appear here as the panel collects them.</p>
     <div><a class="btn quiet" href="#">All panels</a></div>
   </div>
 </main>

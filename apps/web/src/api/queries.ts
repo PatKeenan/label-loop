@@ -177,7 +177,7 @@ export const traceDetailQuery = (orgId: string, traceId: string) =>
       return (await response.json()).data
     },
     // The trace itself never changes after it is written — `recorded_at` is stamped once.
-    // Its ANNOTATIONS do, whenever somebody reviews it (M5 phase 6), and a minute-stale
+    // Its ANNOTATIONS do, whenever somebody annotates it (M5 phase 6), and a minute-stale
     // answer to "who has looked at this" is the right trade for a drawer opened off a list:
     // the annotator is on another surface, so nobody is watching this for their own write.
     staleTime: 60_000,
@@ -198,18 +198,18 @@ export const membersQuery = (orgId: string) =>
   })
 
 /**
- * THE REVIEW SURFACE'S READS (ADR-0066, ADR-0067).
+ * THE ANNOTATOR SURFACE'S READS (ADR-0066, ADR-0067).
  *
  * Both are `annotation: [create]` on the server, which an annotator holds and staff hold too.
  * Neither is cached beyond the moment: the queue is a SEQUENCE, and a cached "next item" is an
  * item somebody else may already have answered. `staleTime: 0` and no structural sharing, so
  * asking again always asks the server.
  */
-export const reviewPanelsQuery = (orgId: string) =>
+export const annotatePanelsQuery = (orgId: string) =>
   queryOptions({
-    queryKey: ['review-panels', orgId],
+    queryKey: ['annotate-panels', orgId],
     queryFn: async () => {
-      const response = await api.internal.review.panels.$get(undefined, asOrg(orgId))
+      const response = await api.internal.annotate.panels.$get(undefined, asOrg(orgId))
       if (!response.ok) throw await apiErrorFrom(response)
       return (await response.json()).data.panels
     },
@@ -225,11 +225,11 @@ export const reviewPanelsQuery = (orgId: string) =>
  * to it anyway. Making the advance explicit keeps "what am I looking at" a value rather than
  * a race between a mutation and a refetch.
  */
-export const reviewNextQuery = (orgId: string, slug: string, nonce: number) =>
+export const annotateNextQuery = (orgId: string, slug: string, nonce: number) =>
   queryOptions({
-    queryKey: ['review-next', orgId, slug, nonce],
+    queryKey: ['annotate-next', orgId, slug, nonce],
     queryFn: async () => {
-      const response = await api.internal.review.panels[':slug'].next.$get(
+      const response = await api.internal.annotate.panels[':slug'].next.$get(
         { param: { slug } },
         asOrg(orgId),
       )
@@ -246,11 +246,11 @@ export const reviewNextQuery = (orgId: string, slug: string, nonce: number) =>
  * Asked only when the Back control is used, and never cached: the answer behind you changes
  * every time you save. `enabled: false` at the call site, fetched on demand.
  */
-export const reviewPreviousQuery = (orgId: string, slug: string) =>
+export const annotatePreviousQuery = (orgId: string, slug: string) =>
   queryOptions({
-    queryKey: ['review-previous', orgId, slug],
+    queryKey: ['annotate-previous', orgId, slug],
     queryFn: async () => {
-      const response = await api.internal.review.panels[':slug'].previous.$get(
+      const response = await api.internal.annotate.panels[':slug'].previous.$get(
         { param: { slug } },
         asOrg(orgId),
       )

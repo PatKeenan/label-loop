@@ -1,13 +1,16 @@
-# ADR-0079: Annotation runs against an assigned review set, and only that
+# ADR-0079: Annotation runs against an assigned annotation set, and only that
 
 **Status:** Accepted · **Date:** 2026-09-20 · **Milestone:** M5 (phase 7)
 **Supersedes the queue scope of:** ADR-0066
 
+> **Renamed 2026-09-21 (ADR-0085).** "Review set" is now **annotation set**, and the file name
+> with it. The decision below is unchanged; only its noun is.
+
 ## Decision
-An annotator's work is the review SETS assigned to them. There is no panel-wide queue, no default
+An annotator's work is the annotation SETS assigned to them. There is no panel-wide queue, no default
 set, and no work that appears because a gate opened: a developer creates a set from a panel's
 traces and assigns one or more annotators to it, and until that happens an annotator has nothing
-to review. A set they are not assigned to answers NOT_FOUND, exactly as another org's does.
+to annotate. A set they are not assigned to answers NOT_FOUND, exactly as another org's does.
 
 ## Context
 The M5 queue served a random unanswered trace from the whole panel. At 82 traces that is
@@ -16,4 +19,5 @@ when it is finished. A set is a bounded unit of work that can be COMPLETED, and 
 makes "somebody decided this was worth your afternoon" a true claim rather than a side effect of
 traffic. The accepted cost: a panel nobody curates is a panel nobody annotates.
 
-Plan: `thoughts/shared/plans/approved/2026-09-20_review-sets.md` (decisions 3, 4)
+Plan: `thoughts/shared/plans/superseded/2026-09-20_review-sets.md` (decisions 3, 4), carried into
+`thoughts/shared/plans/approved/2026-09-21_annotation-sets.md`

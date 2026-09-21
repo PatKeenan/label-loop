@@ -6,14 +6,14 @@ import type { AppEnv } from '../../app-env.ts'
 import { AppError } from '../../errors.ts'
 import { requirePermission } from '../../middleware/require-permission.ts'
 import {
-  listReviewPanels,
+  listAnnotationPanels,
   nextItem,
   previousItem,
   recordAnnotation,
 } from '../../services/annotation-queue.ts'
 
 /**
- * THE REVIEW SURFACE — what an annotator is served, and what they send back (ADR-0066).
+ * THE ANNOTATOR SURFACE — what an annotator is served, and what they send back (ADR-0066).
  *
  * **Every route is `annotation: [create]`**, which is the only capability an annotator holds
  * (ADR-0064). Staff hold it too: a role says what you may DO, and which surface you land on is
@@ -58,10 +58,10 @@ const wellFormedJson: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next()
 }
 
-const NO_SUCH_PANEL = 'No panel with that name is available to review.'
-const NO_SUCH_ITEM = 'That item is no longer available to review.'
+const NO_SUCH_PANEL = 'No panel with that name is available to annotate.'
+const NO_SUCH_ITEM = 'That item is no longer available to annotate.'
 
-export const createReviewRoutes = () =>
+export const createAnnotateRoutes = () =>
   new Hono<AppEnv>()
     /**
      * Every panel in the org with this annotator's standing in it: how many traces it has
@@ -69,8 +69,8 @@ export const createReviewRoutes = () =>
      * listed rather than hidden — the r6 mockup's landing shows progress toward 50 for each,
      * because a gate with no visible distance is indistinguishable from a dead end.
      */
-    .get('/review/panels', requirePermission({ annotation: ['create'] }), async (c) => {
-      const panels = await listReviewPanels(c.var.deps.db, {
+    .get('/annotate/panels', requirePermission({ annotation: ['create'] }), async (c) => {
+      const panels = await listAnnotationPanels(c.var.deps.db, {
         orgId: c.var.session.orgId,
         annotatorId: c.var.session.userId,
       })
@@ -82,7 +82,7 @@ export const createReviewRoutes = () =>
             trace_count: panel.traceCount,
             open: panel.open,
             remaining: panel.remaining,
-            reviewed: panel.reviewed,
+            annotated: panel.annotated,
           })),
         },
         request_id: c.var.requestId,
@@ -97,45 +97,49 @@ export const createReviewRoutes = () =>
      * still served: the question is whether the OUTPUT is acceptable, and the surface says the
      * input was never captured rather than drawing an empty block.
      */
-    .get('/review/panels/:slug/next', requirePermission({ annotation: ['create'] }), async (c) => {
-      const result = await nextItem(c.var.deps.db, {
-        orgId: c.var.session.orgId,
-        panelSlug: c.req.param('slug'),
-        annotatorId: c.var.session.userId,
-      })
-      if (result === null) {
-        throw new AppError('NOT_FOUND', NO_SUCH_PANEL, {
-          context: { reason: 'panel is not in the active org' },
+    .get(
+      '/annotate/panels/:slug/next',
+      requirePermission({ annotation: ['create'] }),
+      async (c) => {
+        const result = await nextItem(c.var.deps.db, {
+          orgId: c.var.session.orgId,
+          panelSlug: c.req.param('slug'),
+          annotatorId: c.var.session.userId,
         })
-      }
-      if (result.state === 'locked') {
+        if (result === null) {
+          throw new AppError('NOT_FOUND', NO_SUCH_PANEL, {
+            context: { reason: 'panel is not in the active org' },
+          })
+        }
+        if (result.state === 'locked') {
+          return c.json({
+            data: { state: 'locked' as const, trace_count: result.traceCount },
+            request_id: c.var.requestId,
+          })
+        }
+        if (result.state === 'drained') {
+          return c.json({
+            data: { state: 'drained' as const, annotated: result.annotated },
+            request_id: c.var.requestId,
+          })
+        }
         return c.json({
-          data: { state: 'locked' as const, trace_count: result.traceCount },
+          data: {
+            state: 'item' as const,
+            item_id: result.item.traceId,
+            // The three roles an annotator reads. `metadata` is absent by construction.
+            input: result.item.input,
+            output: result.item.output,
+            reference: result.item.reference,
+            remaining: result.item.remaining,
+            // Annotated by this person in this panel, EVER (not this visit): the count was local
+            // state and reset to zero on every return, which read as work having been lost.
+            annotated: result.item.annotated,
+          },
           request_id: c.var.requestId,
         })
-      }
-      if (result.state === 'drained') {
-        return c.json({
-          data: { state: 'drained' as const, reviewed: result.reviewed },
-          request_id: c.var.requestId,
-        })
-      }
-      return c.json({
-        data: {
-          state: 'item' as const,
-          item_id: result.item.traceId,
-          // The three roles an annotator reads. `metadata` is absent by construction.
-          input: result.item.input,
-          output: result.item.output,
-          reference: result.item.reference,
-          remaining: result.item.remaining,
-          // Reviewed by this person in this panel, EVER (not this visit): the count was local
-          // state and reset to zero on every return, which read as work having been lost.
-          reviewed: result.item.reviewed,
-        },
-        request_id: c.var.requestId,
-      })
-    })
+      },
+    )
     /**
      * ONE STEP BACK: the last thing this person answered here, served again so a mis-key is
      * recoverable. `state: 'none'` when there is nothing behind them — the surface draws the
@@ -146,7 +150,7 @@ export const createReviewRoutes = () =>
      * the platform thinks; it does not withhold what you yourself said a moment ago).
      */
     .get(
-      '/review/panels/:slug/previous',
+      '/annotate/panels/:slug/previous',
       requirePermission({ annotation: ['create'] }),
       async (c) => {
         const result = await previousItem(c.var.deps.db, {
@@ -165,7 +169,7 @@ export const createReviewRoutes = () =>
             output: result.item.output,
             reference: result.item.reference,
             remaining: result.item.remaining,
-            reviewed: result.item.reviewed,
+            annotated: result.item.annotated,
             previous_outcome: result.previousOutcome,
           },
           request_id: c.var.requestId,
@@ -177,7 +181,7 @@ export const createReviewRoutes = () =>
      * same trace twice — a changed mind is a new row, and the sequence is the evidence.
      */
     .post(
-      '/review/annotations',
+      '/annotate/annotations',
       requirePermission({ annotation: ['create'] }),
       wellFormedJson,
       jsonBody(annotationRequestSchema),

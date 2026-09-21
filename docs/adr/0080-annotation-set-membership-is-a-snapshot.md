@@ -1,6 +1,9 @@
-# ADR-0080: Review-set membership is a snapshot, append-only and timestamped
+# ADR-0080: Annotation-set membership is a snapshot, append-only and timestamped
 
 **Status:** Accepted · **Date:** 2026-09-20 · **Milestone:** M5 (phase 7)
+
+> **Renamed 2026-09-21 (ADR-0085).** "Review set" is now **annotation set**, and the file name
+> with it. The decision below is unchanged; only its noun is.
 
 ## Decision
 A set's picker (`manual`, `latest_n`, `earliest_n`, `random_n`) resolves ONCE and writes membership
@@ -15,4 +18,5 @@ the set held when this annotation happened" stays a query rather than a lost fac
 treatment `audit_events` and `annotations` have, and the versioned join table CONVENTIONS asks for
 in place of a flag on the row.
 
-Plan: `thoughts/shared/plans/approved/2026-09-20_review-sets.md` (decisions 1, 2)
+Plan: `thoughts/shared/plans/superseded/2026-09-20_review-sets.md` (decisions 1, 2), carried into
+`thoughts/shared/plans/approved/2026-09-21_annotation-sets.md`

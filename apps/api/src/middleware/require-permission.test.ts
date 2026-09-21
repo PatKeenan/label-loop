@@ -9,12 +9,12 @@ import type { AppEnv } from '../app-env.ts'
 import { type Config, loadConfig } from '../config.ts'
 import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
+import { createAnnotateRoutes } from '../routes/internal/annotate.ts'
 import { createJudgeRoutes } from '../routes/internal/judges.ts'
 import { createKeyRoutes } from '../routes/internal/keys.ts'
 import { createMemberRoutes } from '../routes/internal/members.ts'
 import { createModelRoutes } from '../routes/internal/models.ts'
 import { createPanelRoutes } from '../routes/internal/panels.ts'
-import { createReviewRoutes } from '../routes/internal/review.ts'
 import { createTraceRoutes } from '../routes/internal/traces.ts'
 import { fakeAuth } from '../testing/fake-auth.ts'
 import { fakeCatalogue } from '../testing/fake-catalogue.ts'
@@ -52,7 +52,7 @@ const guardedRoutes = () =>
     .route('/', createJudgeRoutes())
     .route('/', createTraceRoutes())
     .route('/', createMemberRoutes())
-    .route('/', createReviewRoutes())
+    .route('/', createAnnotateRoutes())
 
 /** The real app, with the console routes mounted behind a stand-in for the session. */
 const hostWith = (role: OrgRole) => {
@@ -97,7 +97,7 @@ const hostWith = (role: OrgRole) => {
 const STAFF: readonly OrgRole[] = ['admin', 'engineer']
 const ADMIN: readonly OrgRole[] = ['admin']
 /**
- * The review surface is the one place an annotator is admitted — and staff are admitted too,
+ * The annotator surface is the one place an annotator is admitted — and staff are admitted too,
  * because a role says what you may DO and the surface is a preference (ADR-0064). A
  * `guest_expert` holds nothing until M8 (ADR-0072), so they are refused here like everywhere.
  */
@@ -134,18 +134,18 @@ const MATRIX: readonly RouteCase[] = [
   { route: 'DELETE /invitations/:id', url: '/invitations/inv_x', admitted: ADMIN },
   { route: 'PATCH /members/:userId', url: '/members/user_x', admitted: ADMIN },
   { route: 'DELETE /members/:userId', url: '/members/user_x', admitted: ADMIN },
-  { route: 'GET /review/panels', url: '/review/panels', admitted: ANNOTATORS },
+  { route: 'GET /annotate/panels', url: '/annotate/panels', admitted: ANNOTATORS },
   {
-    route: 'GET /review/panels/:slug/next',
-    url: '/review/panels/some-panel/next',
+    route: 'GET /annotate/panels/:slug/next',
+    url: '/annotate/panels/some-panel/next',
     admitted: ANNOTATORS,
   },
   {
-    route: 'GET /review/panels/:slug/previous',
-    url: '/review/panels/some-panel/previous',
+    route: 'GET /annotate/panels/:slug/previous',
+    url: '/annotate/panels/some-panel/previous',
     admitted: ANNOTATORS,
   },
-  { route: 'POST /review/annotations', url: '/review/annotations', admitted: ANNOTATORS },
+  { route: 'POST /annotate/annotations', url: '/annotate/annotations', admitted: ANNOTATORS },
 ]
 
 const send = (role: OrgRole, { route, url }: RouteCase) => {

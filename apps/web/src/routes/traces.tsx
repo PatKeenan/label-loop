@@ -79,7 +79,7 @@ const COLUMNS: readonly { label: string; title?: string }[] = [
   {
     label: 'Verdict',
     title:
-      'The panel decision. “collecting” means the panel had no judges, so nothing was judged. “partial” means a scoring judge did not run. “annotated” means a person has reviewed this trace — open it to read what they said.',
+      'The panel decision. “collecting” means the panel had no judges, so nothing was judged. “partial” means a scoring judge did not run. “annotated” means a person has annotated this trace — open it to read what they said.',
   },
   {
     label: 'Score',
@@ -347,7 +347,7 @@ export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => {
                     is exactly a row that has left the queue, and the two cannot disagree.
                   */}
                   {trace.annotated ? (
-                    <Mark tone="neutral" title="A person has reviewed this trace">
+                    <Mark tone="neutral" title="A person has annotated this trace">
                       annotated
                     </Mark>
                   ) : null}

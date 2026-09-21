@@ -1,7 +1,7 @@
 import { ANNOTATION_NOTE_MAX_LENGTH, type AnnotationOutcome } from '@labelloop/contracts'
 
 /**
- * The review session's RULES, with no React in them (ADR-0066).
+ * The annotation session's RULES, with no React in them (ADR-0066).
  *
  * Two things are pure and worth testing on their own: which key means which answer, and when
  * Save is allowed. Both are mirrors of the server — the API refuses a `not_acceptable` with no

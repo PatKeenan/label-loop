@@ -9,7 +9,7 @@ import { cn } from 'cn'
  * The five tones are the five the approved palette defines, and they are not
  * interchangeable: `success` is agreement or a passing eval, `fail` is disagreement or a
  * regression or revoked access, `warning` is low confidence or a honeypot or drift,
- * `info` is judge-generated or system metadata, `neutral` is unreviewed or not-yet-run.
+ * `info` is judge-generated or system metadata, `neutral` is unannotated or not-yet-run.
  * Reach for the one that answers the question the reader has, not the one that looks right.
  *
  * `--radius-mark` is `--radius-xs` at EVERY density, which is why this is the one component

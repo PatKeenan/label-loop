@@ -72,15 +72,16 @@ it is reviewable as a single mechanical diff.
   mean annotation.
 
 ### Steps
-- [ ] API routes and file moved; every path renamed
-- [ ] Web routes, components and directory moved; landing redirect follows
-- [ ] On-screen words, including the annotator surface
-- [ ] ADR-0079…0083 renamed with a pointer to ADR-0085; r7 drawn
-- [ ] Docs swept
+- [x] API routes and file moved; every path renamed
+- [x] Web routes, components and directory moved; landing redirect follows
+- [x] On-screen words, including the annotator surface
+- [x] ADR-0079…0083 renamed with a pointer to ADR-0085; r7 drawn
+- [x] Docs swept
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
-- [ ] `grep -ri 'review' apps packages docs/adr` returns only historical prose (deviation notes,
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+      (996 pass / 2 fail — both `relations.test.ts`, the known seed-state failures, M4 Deviation 64)
+- [x] `grep -ri 'review' apps packages docs/adr` returns only historical prose (deviation notes,
       "reviewed by", this plan's own account of the rename) — no identifier, path or label
 
 ### Manual verification
@@ -363,3 +364,32 @@ is arriving there without having chosen to.
    none in the first place or by unassigning the one it has. **One rule, both directions**, so
    there is no ordering of calls that reaches a set with a disagreement and nobody to settle it.
    Their past answers stay and stay visible; they simply stop being the tie-break.
+
+---
+
+## Deviations
+
+### Phase 1
+1. **The payload key `reviewed` became `annotated`, and that is a wire change, not wording.**
+   The plan's phase 1 is "a rename, and nothing else", and listed paths, files and on-screen
+   words. It did not name the response field, but the automated verification it *does* name
+   ("no identifier, path or label") cannot pass while a response key says `reviewed`. So
+   `GET /annotate/panels`, `/annotate/panels/:slug/next` and `/previous` now return `annotated`,
+   the queue service's `reviewedWhere` is `annotatedWhere`, and `listReviewPanels` is
+   `listAnnotationPanels`. No behaviour changed; nothing outside this repo reads these routes
+   (they are `/internal`, console-only). `annotate.test.ts`'s key-set assertion was re-sorted
+   because `annotated` sorts before `input`.
+2. **r7 corrects one FACT beside the word.** The mockup's ROLE line read "also any staff member
+   who opts in via *Review traces*" — a door ADR-0084 removed. Leaving it would have had the
+   approved drawing re-assert a route that no longer exists, so it now reads "also any staff
+   member who is ASSIGNED work and comes here deliberately". The r7 revision note says so. The
+   `<title>` also still said `r5` (stale since r6); it says r7.
+3. **`unreviewed` in `tokens.css` was renamed in BOTH copies.** `apps/web/src/styles/tokens.css`
+   §1–§5 are verbatim from `mockups/tokens.css`, so the comment (`neutral / unannotated`) changed
+   identically in each rather than in the app copy alone, which would have broken the diff
+   invariant the header asks for.
+4. **Design-review prose was left alone, deliberately.** "the 6b review", "reviewable as a diff",
+   "its own review deleted it" are about REVIEWING ARTEFACTS, not about annotating traces, and
+   ADR-0085 retires the product's noun rather than the English word. Two quoted historical labels
+   also stay verbatim — `gate.tsx` and `section-nav.tsx` each record that phase 5 offered a
+   **Review traces** control and that it was removed; renaming a quotation would falsify it.

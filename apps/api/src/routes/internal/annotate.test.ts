@@ -16,7 +16,7 @@ import { fakeCatalogue } from '../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
 
 /**
- * THE REVIEW QUEUE, against a real Postgres and a real better-auth session (ADR-0066).
+ * THE ANNOTATION QUEUE, against a real Postgres and a real better-auth session (ADR-0066).
  *
  * The three claims worth a database: what the payload does NOT contain (ADR-0067, ADR-0077),
  * who the queue serves a trace to (one person, a skip frees it, never back to the skipper),
@@ -28,7 +28,7 @@ const DATABASE_URL = (() => {
   const url = process.env.DATABASE_URL
   if (url === undefined || url === '') {
     throw new Error(
-      'DATABASE_URL is not set — the review integration test needs a running Postgres.\n' +
+      'DATABASE_URL is not set — the annotate integration test needs a running Postgres.\n' +
         'Run: bun run db:up && bun run db:setup   (or copy .env.example to .env)',
     )
   }
@@ -151,23 +151,23 @@ type Item = {
   output?: unknown
   reference?: unknown
   remaining?: number
-  reviewed?: number
+  annotated?: number
   trace_count?: number
   previous_outcome?: string
 }
 
 const next = async (email: string, slug = `open-${tag}`, org = ORG) => {
-  const { status, body } = await call(email, 'GET', `/review/panels/${slug}/next`, { org })
+  const { status, body } = await call(email, 'GET', `/annotate/panels/${slug}/next`, { org })
   return { status, data: (body as { data?: Item }).data, body }
 }
 
 const stepBack = async (email: string, slug = `open-${tag}`) => {
-  const { status, body } = await call(email, 'GET', `/review/panels/${slug}/previous`)
+  const { status, body } = await call(email, 'GET', `/annotate/panels/${slug}/previous`)
   return { status, data: (body as { data?: Item }).data }
 }
 
 const answer = (email: string, itemId: string, outcome: string, note?: string) =>
-  call(email, 'POST', '/review/annotations', {
+  call(email, 'POST', '/annotate/annotations', {
     body: { item_id: itemId, outcome, ...(note === undefined ? {} : { note }) },
   })
 
@@ -215,7 +215,7 @@ beforeAll(async () => {
   await dropFixtures()
 
   await db.insert(schema.orgs).values([
-    { id: ORG, slug: `review-${tag}`, name: 'Review org' },
+    { id: ORG, slug: `annotate-${tag}`, name: 'Annotate org' },
     { id: OTHER_ORG, slug: `other-${tag}`, name: 'Somebody else' },
   ])
   for (const email of EMAILS) {
@@ -261,12 +261,12 @@ describe('what an annotator is served (ADR-0067, ADR-0077)', () => {
     expect(data?.state).toBe('item')
     // The absence IS the guarantee, so the assertion is the key set, not the values.
     expect(Object.keys(data ?? {}).sort()).toEqual([
+      'annotated',
       'input',
       'item_id',
       'output',
       'reference',
       'remaining',
-      'reviewed',
       'state',
     ])
     // Named individually as well, because a future field would have to be added to the list
@@ -309,7 +309,7 @@ describe('what an annotator is served (ADR-0067, ADR-0077)', () => {
   })
 
   test('the panel list shows the gate, and a locked panel has nothing remaining', async () => {
-    const { status, body } = await call(ANNOTATOR, 'GET', '/review/panels')
+    const { status, body } = await call(ANNOTATOR, 'GET', '/annotate/panels')
     expect(status).toBe(200)
     const panels = (body as { data: { panels: Record<string, unknown>[] } }).data.panels
     expect(panels.map((panel) => panel.slug).sort()).toEqual([`locked-${tag}`, `open-${tag}`])
@@ -378,24 +378,24 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
     expect(after?.remaining).toBe((before?.remaining ?? 0) - 1)
   })
 
-  test('`reviewed` counts this person’s answers here for good, and a skip is not a review', async () => {
-    const before = (await next(ENGINEER)).data?.reviewed ?? 0
+  test('`annotated` counts this person’s answers here for good, and a skip is not an annotation', async () => {
+    const before = (await next(ENGINEER)).data?.annotated ?? 0
 
     const first = (await next(ENGINEER)).data?.item_id ?? ''
     expect((await answer(ENGINEER, first, 'acceptable')).status).toBe(201)
-    expect((await next(ENGINEER)).data?.reviewed).toBe(before + 1)
+    expect((await next(ENGINEER)).data?.annotated).toBe(before + 1)
 
-    // A skip is an answer we store, but it is not a review: pressing S must not run it up.
+    // A skip is an answer we store, but it is not an annotation: pressing S must not run it up.
     const skipped = (await next(ENGINEER)).data?.item_id ?? ''
     expect((await answer(ENGINEER, skipped, 'skipped')).status).toBe(201)
-    expect((await next(ENGINEER)).data?.reviewed).toBe(before + 1)
+    expect((await next(ENGINEER)).data?.annotated).toBe(before + 1)
 
     // And it is the SERVER's count, so a fresh request — a person coming back tomorrow —
     // sees it rather than zero. (The page held this in component state until 2026-09-20.)
-    const panels = await call(ENGINEER, 'GET', '/review/panels')
-    const rows = (panels.body as { data: { panels: { slug: string; reviewed: number }[] } }).data
+    const panels = await call(ENGINEER, 'GET', '/annotate/panels')
+    const rows = (panels.body as { data: { panels: { slug: string; annotated: number }[] } }).data
       .panels
-    expect(rows.find((row) => row.slug === `open-${tag}`)?.reviewed).toBe(before + 1)
+    expect(rows.find((row) => row.slug === `open-${tag}`)?.annotated).toBe(before + 1)
   })
 
   test('an engineer may annotate — a role says what you may DO (ADR-0064)', async () => {
