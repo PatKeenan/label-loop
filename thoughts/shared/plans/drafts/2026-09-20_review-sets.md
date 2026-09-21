@@ -255,8 +255,8 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
 - **Honeypots** — gold-standard traces with known answers are a different object (PRODUCT 5.5).
 - **Sets spanning panels** — a set belongs to one panel; a cross-panel pass is M6's taxonomy work.
 - **Removing traces from a set** — append-only by grant, deliberately.
-- **Sharing a set between orgs, or assigning it to named people** — assignment arrives with
-  overlap.
+- **Sharing a set between orgs** — a set belongs to one org's panel, like everything else
+  (ADR-0047).
 
 ## Open questions for the human
 1. **Two one-line document edits, yours at approval**: PRODUCT.md 5.5 gains the set, assignment
