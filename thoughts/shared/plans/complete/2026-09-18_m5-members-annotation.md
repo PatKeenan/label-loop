@@ -1,7 +1,8 @@
 ---
 date: 2026-09-18T21:00:00Z
 author: claude-code
-status: approved
+status: complete
+completed_at: 2026-09-21T04:30:00Z
 approved_at: 2026-09-18T21:30:00Z
 approver: Pat Keenan
 milestone: M5
@@ -164,7 +165,9 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
       the M4 plan — the review is the gate)
 
 ### Manual verification
-- [ ] Stakeholder review of r5 in a browser; revisions recorded in the header's REVISION line
+- [x] Stakeholder review in a browser — **on r6, not r5** (2026-09-20), as the step above
+      records. ADR-0073 landed between r5 and its review and r5 drew the trace as an IN/OUT
+      pair, so reviewing r5 would have approved a screen the contract had already replaced.
 
 ---
 
@@ -209,9 +212,11 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 - [x] `bun test`, `bun run typecheck`, `bun run lint`
 
 ### Manual verification
-- [ ] `curl` as an annotator session: `next` on the 51-trace panel returns an item with only
-      artifact and context; three annotations (acceptable, not acceptable + note, skip) are stored
-      with the right annotator and panel version, and a direct UPDATE on the table is refused
+- [x] Verified by the stakeholder, 2026-09-21 — **against the FOUR ROLES, not `artifact` and
+      `context`** (Deviation 16): ADR-0073 landed between this plan and its phase 4, so the
+      payload is `input`/`output`/`reference` with `metadata` withheld. The append-only grant is
+      also covered by an automated test, which is the stronger check — a refused UPDATE is a
+      Postgres fact, not a screen.
 
 ---
 
@@ -242,10 +247,15 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 - [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
 
 ### Manual verification
-- [ ] **The M5 demo moment**: as an annotator invited in phase 2, annotate 20 real traces in under
-      5 minutes, keyboard only
-- [ ] As an engineer, open **Review traces** from the sidebar and annotate; the console is one
-      click away; the annotator surface never shows confidence, model, cost or ids
+- [x] **The M5 demo moment** — confirmed by the stakeholder, 2026-09-21.
+- ~~As an engineer, open **Review traces** from the sidebar and annotate~~ — **NOT VERIFIED,
+      and never will be: the behaviour was REMOVED before this plan closed** (ADR-0084, #91).
+      Met in a real console it read as an ambush, and the surface it landed on answers none of a
+      developer's questions. The sidebar door is gone; staff reach annotation through their own
+      console section, and a developer who wants to annotate is ASSIGNED a set (2026-09-21) and
+      chooses to go. Decision 3 of this plan is revised rather than delivered.
+      The payload half of the claim — no confidence, model, cost or ids on the annotator
+      surface — stands and is asserted by key in `review.test.ts` (Deviation 23).
 
 ---
 
@@ -269,8 +279,11 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
       per person each fail exactly one assertion.
 
 ### Manual verification
-- [ ] A trace annotated in phase 5 shows its annotation, annotator and note in the drawer and on
-      its page; the Overview's count matches
+- [x] Verified by the stakeholder, 2026-09-21. (The first attempt failed on a 13-hour-old API
+      process — `bun --hot` does not pick up route changes, so it served a trace with no
+      `annotations` key and the console read `.length` off `undefined`. Restarting it was the
+      fix; the console's tolerance of a stale API is recorded as a known sharp edge, not a bug
+      this phase introduced.)
 
 ---
 

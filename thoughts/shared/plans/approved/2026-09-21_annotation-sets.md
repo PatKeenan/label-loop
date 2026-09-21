@@ -287,9 +287,10 @@ inter-annotator agreement as a METRIC (M6); alignment sessions (M6); low-confide
 judge-disagreement pickers (M6); honeypots; sets spanning panels; removing traces from a set;
 sharing a set between orgs.
 
-Added: **no staff annotation surface.** Whether a developer may be assigned a set and annotate
-their own traces is open question 5; what is settled is that they never reach the annotator
-surface from the console.
+Added: **no staff annotation surface.** A developer who is assigned a set annotates on the
+ANNOTATOR surface, like everybody else (open question 5, answered) — there is no console-shaped
+way to answer a trace, and building one would be two renderings of one act. What ADR-0084 forbids
+is arriving there without having chosen to.
 
 ## Open questions for the human
 1. ~~**The two one-line document edits, still owed**~~ — **DONE at approval, 2026-09-21.**
@@ -305,7 +306,18 @@ surface from the console.
    them.
 4. **`aset_` as the id prefix** (new) — `ans_` reads as *answer*. `aset_` is five characters where
    most prefixes are four; `tr_` is already three, so the convention is not fixed.
-5. **May a developer or admin be ASSIGNED a set and annotate their own traces?** (new) ADR-0084
-   settles only that the console never delivers them into the annotator surface sideways. If yes,
-   assignment lists staff too and they reach it from their own list, deliberately. If no,
-   assignment is annotators-only and M5 decision 3 is fully revoked.
+5. ~~**May a developer or admin be ASSIGNED a set and annotate their own traces?**~~ —
+   **ANSWERED: YES** (stakeholder, 2026-09-21). So M5 decision 3 is **revised, not revoked**: a
+   developer may annotate; what they may not do is arrive by accident. Three consequences, and
+   they are binding on the phases above:
+   - **Phase 2**: `PUT /annotation-sets/:id/annotators` assigns from the org's MEMBERS, not from
+     its annotators — an admin or engineer is an assignable person, and may be the dictator.
+   - **Phase 3**: the queue already keys on `annotator_id` and asks no question about role, so a
+     staff member with `annotation: ['create']` is served their assigned set like anyone else.
+     Nothing to change; worth a test that says so, because "annotators only" is the assumption a
+     future reader will bring.
+   - **Phase 4**: a staff member who is assigned sees it in the Annotations section, with a
+     deliberate way in — their own set, chosen. **This is the ONLY route from the console to the
+     annotator surface, and it is a person picking up work assigned to them, which is the
+     opposite of the ambush ADR-0084 closed.** It must not appear on a set they are not assigned
+     to, because that would be the old door with a new label.
