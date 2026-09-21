@@ -122,7 +122,10 @@ it is reviewable as a single mechanical diff.
 - `apps/api/src/routes/internal/annotation-sets.ts`, `annotation: ['curate']`:
   `GET|POST /panels/:slug/annotation-sets`, `POST /annotation-sets/:id/top-up`,
   `PUT /annotation-sets/:id/annotators`, and **`POST /annotation-sets/:id/archive`** (new — the
-  one lifecycle write). Two or more annotators and no dictator is a 422. (otherwise unchanged)
+  one lifecycle write). **A call that would leave two or more assigned annotators with no
+  dictator is a 422 — whether it names none, or unassigns the one there is** (open question 6,
+  answered 2026-09-21). One rule in both directions, so no ordering of calls reaches a set with a
+  disagreement and nobody to settle it. (otherwise unchanged)
 
 ### Steps
 - [ ] Migration 0016, schema, grants, `aset_` prefix
@@ -132,7 +135,8 @@ it is reviewable as a single mechanical diff.
 - [ ] Tests: each picker returns what it says; membership append-only by grant (SQLSTATE 42501);
       a top-up re-picking a trace adds nothing; a duplicate name is a 422; the audit event carries
       no trace ids; unassigning keeps the row; two annotators with no dictator is refused and a
-      second dictator is refused by the database; **archiving is a stamp and does not change
+      second dictator is refused by the database; **unassigning the dictator is refused unless the
+      same call names another, and accepted when it does**; **archiving is a stamp and does not change
       whether the set is done**
 
 ### Automated verification
@@ -293,17 +297,41 @@ way to answer a trace, and building one would be two renderings of one act. What
 is arriving there without having chosen to.
 
 ## Open questions for the human
+> **ALL ANSWERED** (2026-09-21) — the four carried into this plan, and question 6, which fell
+> out of question 3. Nothing here blocks implementation. They are kept, struck through, because
+> the answers and their consequences are the record.
 1. ~~**The two one-line document edits, still owed**~~ — **DONE at approval, 2026-09-21.**
    PRODUCT.md 5.5 gained the set, its assignment, the dictator and the staff read; BUILD_SPINE
    M5's "Not now: multi-annotator consensus" became "consensus METRICS stay M6; M5 records the
    overlaps they will be computed from". Owed since 2026-09-20 and carried twice. **Check the
    wording — it is yours, and I wrote it.**
-2. **Can a person be assigned a set in a panel they otherwise cannot see?** (carried, unanswered)
-   Membership is org-wide, so assignment is currently the only thing narrowing an annotator to a
-   panel — either a happy accident or the panel-scoping deferral arriving early.
-3. **Unassigning someone who has already answered** (carried, unanswered) — drawn as: the stamp is
-   set, their answers stay and stay visible in the section, and the set can no longer complete on
-   them.
+2. ~~**Can a person be assigned a set in a panel they otherwise cannot see?**~~ —
+   **ANSWERED: YES** (stakeholder, 2026-09-21), and the framing is confirmed: membership is
+   org-wide, so **assignment is the only thing narrowing an annotator to a panel.** It is the
+   panel-scoping deferral arriving early, not an accident — `docs/PARKING_LOT.md` is updated to
+   say so, because that entry claimed M5's annotator would see every panel's queue, which stops
+   being true here.
+
+   **The consequence is a security property and must be written as one: assigning somebody a set
+   GRANTS THEM READ ACCESS to those traces' `input`, `output` and `reference`** through the
+   annotate queue, in a panel they can otherwise reach nothing of. They still cannot read the
+   panel, its judges, its keys or the trace list — the queue is the whole of their access
+   (ADR-0067) and `metadata` is withheld (ADR-0077). But `PUT /annotation-sets/:id/annotators` is
+   an access-granting write, not bookkeeping, which is why it is `annotation: ['curate']`
+   (ADR-0083) and why its audit event matters.
+
+   It does NOT solve the agency case in PARKING_LOT — nothing stops an annotator being assigned
+   sets from two competing brands' panels, and there is still no way to say "this person may
+   never see Brand B". That needs the member × panel grant, designed once with M8's guest access.
+3. ~~**Unassigning someone who has already answered**~~ — **ANSWERED: YES, as drawn**
+   (stakeholder, 2026-09-21). `unassigned_at` is stamped, never a delete. Their answers stay, stay
+   visible in the Annotations section, and stay in the record M6 measures agreement from — the
+   work was done and the row is append-only.
+
+   **This sharpens ADR-0086's derivation, and the plan is binding on it**: done is *every
+   CURRENTLY assigned annotator has answered every trace* — `unassigned_at IS NULL`. Reading it
+   as "every assigned annotator" would let one unassigned person block a set from ever completing,
+   which is the opposite of what unassigning is for. `setProgress` owns that, once.
 4. ~~**`aset_` as the id prefix**~~ — **ANSWERED: `aset_`** (stakeholder, 2026-09-21). The
    reasoning now lives where the next person will need it rather than in this plan:
    **CONVENTIONS.md "Id prefixes"** carries the full table (live / reserved / retired) and the
@@ -324,3 +352,14 @@ is arriving there without having chosen to.
      annotator surface, and it is a person picking up work assigned to them, which is the
      opposite of the ambush ADR-0084 closed.** It must not appear on a set they are not assigned
      to, because that would be the old door with a new label.
+6. ~~**Unassigning the DICTATOR**~~ — **ANSWERED: refused unless the same call names another**
+   (stakeholder, 2026-09-21), chosen with the read-rule consequence stated: the dictator rule is
+   a READ rule (ADR-0081), so changing who holds it **re-reads every past disagreement in that
+   set** — their old answers stop winning retroactively. Inherent to "a disagreement is two rows
+   and a rule for reading them", and now a known property rather than a surprise.
+
+   Binding on phase 2's route: `PUT /annotation-sets/:id/annotators` refuses (422) any call that
+   would leave a set with two or more assigned annotators and no dictator — whether by naming
+   none in the first place or by unassigning the one it has. **One rule, both directions**, so
+   there is no ordering of calls that reaches a set with a disagreement and nobody to settle it.
+   Their past answers stay and stay visible; they simply stop being the tie-break.

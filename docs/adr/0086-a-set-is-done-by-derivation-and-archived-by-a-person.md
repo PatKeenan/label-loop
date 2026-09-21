@@ -3,8 +3,14 @@
 **Status:** Accepted · **Date:** 2026-09-21 · **Milestone:** M5 (phase 7)
 
 ## Decision
-**Done is computed, never stored**: an annotation set is done when every assigned annotator has
-answered every trace in it. There is no `completed_at`.
+**Done is computed, never stored**: an annotation set is done when every **currently assigned**
+annotator has answered every trace in it. There is no `completed_at`.
+
+"Currently assigned" is `unassigned_at IS NULL`, and the word is load-bearing (stakeholder,
+2026-09-21). Unassigning is a stamp rather than a delete, so a person who was unassigned keeps
+their rows and keeps them visible — but the set stops waiting on them. Read as "every assigned
+annotator", one unassigned person would block a set from ever completing, which is the opposite
+of what unassigning is for.
 
 **Archived is a stamp a person sets**: one nullable `archived_at`, written by a developer putting
 a finished — or abandoned — pass away.
