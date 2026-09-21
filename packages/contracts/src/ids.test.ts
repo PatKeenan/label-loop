@@ -28,6 +28,7 @@ describe('prefixed ULIDs', () => {
       'ft_',
       'aud_',
       'inv_',
+      'aset_',
     ])
   })
 

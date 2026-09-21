@@ -4,6 +4,7 @@
  * follows import from this entry point rather than restating shapes.
  */
 
+export * from './annotation-sets.ts'
 export * from './annotations.ts'
 export * from './capabilities.ts'
 export * from './envelope.ts'

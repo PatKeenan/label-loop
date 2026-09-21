@@ -129,11 +129,11 @@ it is reviewable as a single mechanical diff.
   disagreement and nobody to settle it. (otherwise unchanged)
 
 ### Steps
-- [ ] Migration 0016, schema, grants, `aset_` prefix
-- [ ] Contracts: strategies, sizes, name rule, `annotation: ['curate']`
-- [ ] `resolveTraces` and the writes, each audited
-- [ ] Routes, including archive, with role × route matrix rows
-- [ ] Tests: each picker returns what it says; membership append-only by grant (SQLSTATE 42501);
+- [x] Migration 0016, schema, grants, `aset_` prefix
+- [x] Contracts: strategies, sizes, name rule, `annotation: ['curate']`
+- [x] `resolveTraces` and the writes, each audited
+- [x] Routes, including archive, with role × route matrix rows
+- [x] Tests: each picker returns what it says; membership append-only by grant (SQLSTATE 42501);
       a top-up re-picking a trace adds nothing; a duplicate name is a 422; the audit event carries
       no trace ids; unassigning keeps the row; two annotators with no dictator is refused and a
       second dictator is refused by the database; **unassigning the dictator is refused unless the
@@ -141,11 +141,16 @@ it is reviewable as a single mechanical diff.
       whether the set is done**
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`
+      (1045 pass / 2 fail — both `relations.test.ts`, the known seed-state failures, M4 Deviation 64)
 
 ### Manual verification
-- [ ] Create a random-25 set on `support-chat` by `curl`; `psql` shows 25 membership rows with the
+- [x] Create a random-25 set on `support-chat` by `curl`; `psql` shows 25 membership rows with the
       strategy; top it up by 25 and see 50, the new ones with a later `added_at`
+      — done on `demo`/`brixadi-brand-taste` (see Deviation 8); 25 rows all `random_n` with one
+      `added_at`, then 50 DISTINCT traces across two `added_at` batches. The dictator rule was
+      checked the same way: two annotators and no dictator is a 422, and the same call naming
+      one is a 200.
 
 ---
 
@@ -393,3 +398,32 @@ is arriving there without having chosen to.
    ADR-0085 retires the product's noun rather than the English word. Two quoted historical labels
    also stay verbatim — `gate.tsx` and `section-nav.tsx` each record that phase 5 offered a
    **Review traces** control and that it was removed; renaming a quotation would falsify it.
+
+### Phase 2
+5. **A member who cannot annotate cannot be assigned.** Open question 5 says assignment draws
+   from the org's MEMBERS rather than its annotators, and it does — an admin or engineer is
+   assignable and may be the dictator. But `guest_expert` holds NOTHING until M8 (ADR-0072), so
+   assigning one would write work rows they cannot reach: every annotate route is
+   `annotation: ['create']`, which they lack. The service refuses them with the same 422 a
+   non-member gets, phrased so the caller cannot tell which. The rule is read off the capability
+   map rather than off a role list, so M8 granting guests `annotation: ['create']` makes them
+   assignable with no change here.
+6. **Each failure is its own union arm.** `TopUpResult` and `AssignResult` list
+   `{ kind: 'not_found' }`, `{ kind: 'archived' }` … separately rather than as one arm with a
+   union `kind`. TypeScript narrows the discriminant either way, but only separate arms can be
+   EXCLUDED — and the route needs `unknown_traces` gone from the type after it has handled it,
+   or `traceIds` is reachable where it does not exist. The same reason `notFoundSet` is annotated
+   `: () => never` rather than inferred: narrowing through a throwing helper needs the type to
+   say `never` at the declaration.
+7. **The unique-violation check names its constraint.** `isUniqueViolation` reads the SQLSTATE
+   off `error.cause.code` as well as `error.code` (Drizzle wraps the driver error — the trap
+   `annotate.test.ts` already documents) AND requires `annotation_sets_panel_name_key`. Without
+   the name, a unique index added later would be reported to a caller as "that name is taken".
+8. **The manual check ran on `demo`/`brixadi-brand-taste`, not `testing`/`support-chat`.** The
+   plan named the panel; the `testing` org's admin on this machine is a GitHub-verified account
+   with no password to `curl` with, and `brixadi-brand-taste` (51 traces, seed admin) exercises
+   the same paths. The set it created is left in the dev database on purpose — phases 3 and 4
+   need one to look at.
+9. **Phase 2's branch is STACKED on phase 1's**, not cut from `main`: both touch
+   `routes/internal/index.ts`, and #96 is still open. The PR's base is
+   `refactor/m5-p7-annotation-vocabulary` and GitHub retargets it to `main` when that merges.
