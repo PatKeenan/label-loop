@@ -1,11 +1,13 @@
 ---
 date: 2026-09-21T03:00:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-21T04:10:00Z
+approver: Pat Keenan
 supersedes: thoughts/shared/plans/approved/2026-09-20_review-sets.md
 milestone: M5 (phase 7, after "Seeing the annotations")
 topic: annotation-sets
-related_adrs: [0003, 0019, 0061, 0064, 0066, 0067, 0073, 0077, 0079, 0080, 0081, 0082, 0083, 0084, 0085]
+related_adrs: [0003, 0019, 0061, 0064, 0066, 0067, 0073, 0077, 0079, 0080, 0081, 0082, 0083, 0084, 0085, 0086]
 research: thoughts/shared/research/2026-09-20_engineer-curated-review-sets.md
 ---
 
@@ -259,15 +261,19 @@ half.** It is the engineer console throughout (see "The rule this plan exists to
 
 ---
 
-## Decisions carried from the approved plan
+## Decisions made
+
+### Carried from the superseded plan
 ADR-0079 (annotation runs against an assigned set), ADR-0080 (membership is a snapshot), ADR-0081
 (everyone assigned reviews the whole set; the dictator's answer counts), ADR-0082 (capped at 250),
 ADR-0083 (curating is its own capability) — **all stand**, renamed by ADR-0085.
 
-## Decisions new to this plan
+### New to this plan
 1. **ADR-0084** — staff inspect annotations on a console surface of their own and cannot edit them.
+   Shipped ahead of this plan (#90), with the console fix it justifies (#91).
 2. **ADR-0085** — the product says annotation, not review, the annotator surface included.
-3. **Done is derived; archived is a stamp** — needs an ADR stub at approval (next free: 0086).
+   Shipped ahead of this plan (#90).
+3. **ADR-0086 — done is derived; archived is a stamp.** Stub spawned at approval.
 4. **The staff section needs no Phase A mockup.** It is built from the console's existing
    idioms — `PageHead`, `panelTrail`, the trace table, `Mark`/`Data`, the `?new` dialog — which
    ADR-0062 already fixed and which Traces, Keys and Members were all built from directly.
@@ -286,9 +292,11 @@ their own traces is open question 5; what is settled is that they never reach th
 surface from the console.
 
 ## Open questions for the human
-1. **The two one-line document edits, still owed** (carried, unanswered): PRODUCT.md 5.5 gains the
-   set, assignment and the dictator; BUILD_SPINE M5's "Not now: multi-annotator consensus" becomes
-   "recording overlaps; consensus metrics stay M6".
+1. ~~**The two one-line document edits, still owed**~~ — **DONE at approval, 2026-09-21.**
+   PRODUCT.md 5.5 gained the set, its assignment, the dictator and the staff read; BUILD_SPINE
+   M5's "Not now: multi-annotator consensus" became "consensus METRICS stay M6; M5 records the
+   overlaps they will be computed from". Owed since 2026-09-20 and carried twice. **Check the
+   wording — it is yours, and I wrote it.**
 2. **Can a person be assigned a set in a panel they otherwise cannot see?** (carried, unanswered)
    Membership is org-wide, so assignment is currently the only thing narrowing an annotator to a
    panel — either a happy accident or the panel-scoping deferral arriving early.
