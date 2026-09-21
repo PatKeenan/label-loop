@@ -304,8 +304,11 @@ is arriving there without having chosen to.
 3. **Unassigning someone who has already answered** (carried, unanswered) — drawn as: the stamp is
    set, their answers stay and stay visible in the section, and the set can no longer complete on
    them.
-4. **`aset_` as the id prefix** (new) — `ans_` reads as *answer*. `aset_` is five characters where
-   most prefixes are four; `tr_` is already three, so the convention is not fixed.
+4. ~~**`aset_` as the id prefix**~~ — **ANSWERED: `aset_`** (stakeholder, 2026-09-21). The
+   reasoning now lives where the next person will need it rather than in this plan:
+   **CONVENTIONS.md "Id prefixes"** carries the full table (live / reserved / retired) and the
+   rules for choosing one, with `ans_` as the worked example of a prefix that is distinct from
+   `ann_` and still indistinguishable from it in use.
 5. ~~**May a developer or admin be ASSIGNED a set and annotate their own traces?**~~ —
    **ANSWERED: YES** (stakeholder, 2026-09-21). So M5 decision 3 is **revised, not revoked**: a
    developer may annotate; what they may not do is arrive by accident. Three consequences, and

@@ -23,12 +23,9 @@
   exception.
 - Every response is enveloped: success `{ data, request_id }`, failure
   `{ error: { code, message }, request_id }`. Error codes are a closed enum in contracts.
-- All ids are prefixed ULIDs: `org_` (organisation), `pnl_` (panel), `pnv_` (panel
-  version), `jud_` (judge), `jdv_` (judge version), `tax_` (failure taxonomy), `tr_`,
-  `ann_`, `key_`, `ds_`, `ft_`, `aud_` (audit event), `inv_` (org invitation, ADR-0065). Greppable, sortable,
-  self-describing. (`cls_`/`clv_` were retired by ADR-0019.) The one exception is
-  better-auth's own tables, whose ids it mints itself (ADR-0008) — `org_members.user_id`
-  therefore holds a better-auth id, not a prefixed one.
+- All ids are prefixed ULIDs — greppable, sortable, self-describing. **The full table and the
+  rules for adding one are in "Id prefixes" below**; `ID_PREFIXES` in
+  `packages/contracts/src/ids.ts` is the runtime authority and that section explains it.
 - **Two identifiers, never conflated** (ADR-0010). `request_id` is the W3C/OTel trace
   id for one HTTP execution: present on EVERY response, success or failure, on every
   endpoint, and the id a customer quotes to support. `trace_id` is a `tr_` ULID naming
@@ -153,6 +150,70 @@
   backoff+jitter, circuit breaker, token/cost accounting emitted as trace span attributes.
   No fetch to a provider anywhere else in the codebase, ever.
 - Prompts live in versioned judge configs, not in code.
+
+
+## Id prefixes
+
+Every id this product mints is a **prefixed ULID**: a short prefix, then 26 Crockford-base32
+characters — 10 encoding a 48-bit millisecond timestamp, 16 encoding 80 bits of randomness — so
+ids issued in order also sort in order.
+
+**The prefix is the point.** An id turns up in a log line, a URL, a stack trace and a support
+ticket with nothing around it to say what it is. The prefix is the only thing that answers that,
+which is why every one of them has to be unambiguous ON ITS OWN, not merely different from the
+others.
+
+`ID_PREFIXES` in `packages/contracts/src/ids.ts` is the runtime authority — it is a closed enum,
+and `newId()` will not mint anything outside it. This table is what each one MEANS.
+
+| Prefix | Object | Status |
+|---|---|---|
+| `org_` | Organisation — the tenancy boundary (ADR-0047) | live |
+| `pnl_` | Panel — a customer's set of judges | live |
+| `pnv_` | Panel version — immutable; "editing" a panel writes n+1 (ADR-0003) | live |
+| `jud_` | Judge — one failure category, one binary question | live |
+| `jdv_` | Judge version — immutable, same reason as `pnv_` | live |
+| `tr_` | Trace — one stored evaluation. **Not `request_id`** — see "Two identifiers" above | live |
+| `ann_` | Annotation — **ONE PERSON'S ANSWER about one trace** (ADR-0066) | live |
+| `key_` | API key row. The secret itself is `llk_live_`/`llk_test_`, which is a different thing | live |
+| `aud_` | Audit event (ADR-0051) | live |
+| `inv_` | Organisation invitation (ADR-0065) | live |
+| `tax_` | Failure taxonomy, versioned | reserved — M6 |
+| `aset_` | **Annotation set** — a curated, snapshotted selection of a panel's traces, assigned to annotators (ADR-0079) | reserved — M5 phase 7 |
+| `ds_` | Curated fine-tuning dataset (PRODUCT 5.8) | reserved — M7 |
+| `ft_` | Fine-tune job / adapter (PRODUCT 5.8–5.9) | reserved — M7 |
+
+**Reserved means the prefix is spoken for and the table is not written yet.** A reserved prefix
+may sit in `ID_PREFIXES` before anything mints it; what it must not do is get quietly reused for
+something else.
+
+**Join tables have no id of their own.** `org_members`, `panel_version_judges`,
+`trace_verdicts`, and the annotation-set membership tables are keyed by the pair they join. A
+surrogate id on a join table is an id nothing ever quotes.
+
+**better-auth is the one exception** (ADR-0008): it mints its own ids for its own tables, so
+`org_members.user_id` and `annotations.annotator_id` hold a better-auth id, not a prefixed one.
+
+**Retired, never to be reused:** `cls_` and `clv_` (classifiers), removed by ADR-0019 when the
+product became judge-as-a-service. A retired prefix stays retired — old ids may still exist in
+logs and exports, and re-pointing one at a new object makes that history lie.
+
+### Choosing a new one
+
+1. **Read it cold.** Would somebody meeting `xyz_01J8…` in a log guess the right object? If the
+   honest answer is "only if they already know", it is the wrong prefix.
+2. **Read it NEXT TO THE ONES IT WILL APPEAR WITH.** This is the rule that actually bites. The
+   annotation set was nearly `ans_`, the obvious contraction — and `ann_` is already the
+   annotation, which IS an answer. `ans_` beside `ann_` is one letter apart, adjacent when
+   sorted, and the one that reads as "answer" is the one that is not. `aset_` was chosen instead
+   (stakeholder, 2026-09-21). Two prefixes that are merely *distinct* can still be
+   indistinguishable in use.
+3. **Avoid words that mean something else here.** `pass_` collides with the pass/fail verdict
+   vocabulary; `ast_` reads as an abstract syntax tree in a TypeScript repo; `set_` is too
+   generic when `ds_` is already a collection.
+4. **Length is not fixed.** Most are three characters, `tr_` is two, `aset_` is four. Clarity
+   beats symmetry.
+5. Add it to `ID_PREFIXES`, add a row above, and say which milestone makes it live.
 
 ## Error handling (the pattern, laid down once)
 - **Closed taxonomy** in `packages/contracts`, each code mapping to HTTP status +
