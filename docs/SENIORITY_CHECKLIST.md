@@ -18,6 +18,12 @@ interviewer in under five minutes.
 ## 2. Eval Harness (the differentiator)
 - [ ] Trace capture on 100% of AI calls (input/output/model/version/tokens/cost) — M1 · trace explorer
 - [ ] Annotation UI + sampling strategies (random, low-confidence, disagreement) — M5 · demo clip
+      *(M5 complete 2026-09-21. The UI is built — an annotator answers one trace at a time out
+      of an assigned set, and staff read every annotator's answer on the console's Annotations
+      section. FOUR pickers exist: manual, latest-n, earliest-n, random-n (ADR-0080). The row
+      stays UNCHECKED on this file's own rule — the two samplers it names by name,
+      low-confidence and judge-disagreement, are M6's because both need a judge to have run,
+      there is no deployed environment until M8, and no demo clip exists.)*
 - [ ] Axial coding → versioned failure taxonomy — M6 · taxonomy doc
 - [ ] LLM judge validated against human labels; agreement + drift tracked — M6 · dashboard
 - [ ] Eval suite gating CI (regression-blocking PR demo) — M6 · blocked-PR link

@@ -1,10 +1,12 @@
 ---
 date: 2026-09-21T03:00:00Z
 author: claude-code
-status: approved
+status: complete
+completed_at: 2026-09-21T18:30:00Z
 approved_at: 2026-09-21T04:10:00Z
 approver: Pat Keenan
-supersedes: thoughts/shared/plans/approved/2026-09-20_review-sets.md
+supersedes: thoughts/shared/plans/superseded/2026-09-20_review-sets.md
+shipped_in: ["#96", "#103", "#98", "#99"]
 milestone: M5 (phase 7, after "Seeing the annotations")
 topic: annotation-sets
 related_adrs: [0003, 0019, 0061, 0064, 0066, 0067, 0073, 0077, 0079, 0080, 0081, 0082, 0083, 0084, 0085, 0086]
@@ -505,3 +507,24 @@ is arriving there without having chosen to.
 22. **The trace-table selection is component state, not the URL** — alone among this console's
     view state. It can be 250 ids, which is not what a query string is for, and a selection is a
     moment's work rather than a view somebody shares.
+
+### Closing the plan
+23. **Phase 2 shipped as #103, not #97, and the reason is worth knowing before the next
+    multi-phase plan.** The repository is squash-only. The moment phase 1 (#96) merged, `main`
+    held its CONTENT under a new SHA with no ancestry link to the original commit still sitting
+    in each stacked branch's history — so every retargeted PR three-wayed against a stale merge
+    base and reported conflicts in files nobody had touched twice. The fix each time was
+    `git rebase --onto main <merged-parent>` and a re-run of the full gate; no change survived
+    it altered. **With squash merges, a stack needs a rebase between every merge.**
+
+    #97 was then closed by accident: GitHub's `mergeable` was still `UNKNOWN` after the
+    force-push, the merge API refuses on that, and `--delete-branch` closed the PR as a side
+    effect. Nothing was lost (`mergedAt` was null, the branch was intact) but it would not
+    reopen, so the same branch and the same commit went in as #103. The rest were merged only
+    after an explicit `MERGEABLE CLEAN`, and without `--delete-branch`.
+24. **The SENIORITY_CHECKLIST row this phase touches stays UNCHECKED**, and that is the file's
+    own rule rather than modesty: *"check items only when the artifact is live and linkable."*
+    Row 2.2 asks for an annotation UI **and** low-confidence and disagreement sampling, and
+    names a demo clip as its artifact. Two of the three samplers are M6's by this plan's own
+    "Explicitly NOT doing", there is no deployed environment until M8, and no clip exists. What
+    IS now true is recorded as a note beneath the row instead.

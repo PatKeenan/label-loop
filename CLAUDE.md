@@ -55,93 +55,76 @@ the driver: when in doubt, stop and ask rather than proceed autonomously. The
 thoughts/ directory is decision provenance for the public writeup — write accordingly.
 
 ## Current phase
-**M5 IS COMPLETE.** All six phases of
-`thoughts/shared/plans/complete/2026-09-18_m5-members-annotation.md` shipped and the stakeholder
-confirmed it on 2026-09-21: capabilities in place of role lists (#72, ADR-0064), invitations
-claimed on a verified sign-in (#73, ADR-0065), the `annotator-session` mockup r6 (#74), the
-`annotations` table and the queue (#84, ADR-0066, ADR-0067), the annotator surface (#85), and
-annotations shown to staff on the trace drawer and page (#88).
+**M5 IS COMPLETE, PHASE 7 INCLUDED.** The annotation-sets plan shipped on 2026-09-21 in four
+PRs — #96 (the rename), **#103** (sets, membership, pickers — opened as #97, see below), #98
+(the queue serves an assigned set), #99 (the Annotations section) — plus #102, which parks due
+dates. The plan is at `thoughts/shared/plans/complete/2026-09-21_annotation-sets.md` with 24
+deviations; read those before changing anything it touches. `thoughts/shared/plans/approved/`
+is EMPTY: there is no approved plan, so there is nothing to implement. **Next work starts at
+`/research`.**
 
-**Next is M5 phase 7, from the ONE approved plan:**
-`thoughts/shared/plans/approved/2026-09-21_annotation-sets.md` (approved 2026-09-21, #92). It
-supersedes `2026-09-20_review-sets.md`, which now lives in `thoughts/shared/plans/superseded/`
-with a header saying so — **implement from `approved/` only.** Four phases, in this order:
-**1. the rename**, **2. the set tables and pickers**, **3. the queue serves an assigned set**,
-**4. the Annotations section**. Migrations 0013–0015 are taken; annotation sets start at **0016**.
+**Next is M6** (BUILD_SPINE): axial coding over the failure notes into a versioned taxonomy
+(`tax_`), each category triaged into a `code` check or an `llm` judge; judges authored from it;
+alignment sessions; agreement tracked; the eval suite gating CI. M5 exists to have produced the
+notes M6 clusters.
 
-**Two ADRs from a console review on 2026-09-21 govern everything that follows** (#90, #91):
+**What M5 phase 7 leaves behind, and what a fresh session must not re-derive:**
 
-- **ADR-0084 — staff inspect annotations and CANNOT edit them.** Admins and engineers get their
-  own console section; opening a set shows who is assigned, where each of them is, and what each
-  of them selected on every trace. **Nobody annotates somebody else's work**: an annotation is one
-  person's answer, and an engineer able to correct one would destroy the disagreement M6 exists to
-  measure. Phase 5's sidebar link and gate-card button into the annotator surface are GONE (#91) —
-  met in a real console they read as an ambush.
-  **A developer MAY still annotate** (2026-09-21): they are assigned a set like anyone else and
-  enter deliberately from their own list. Assignment draws from the org's MEMBERS, not its
-  annotators. That one route is the only way from console to annotator surface, and it must never
-  appear on a set you are not assigned to.
-- **ADR-0085 — the product says ANNOTATION, not review.** Everywhere, the annotator surface
-  included. Phase 1 of the plan is that rename; ADR-0079…0083 are renamed, not superseded.
-- **ADR-0086** — a set is DONE by derivation (every assigned annotator has answered every trace,
-  computed, never stored) and ARCHIVED by a person (one nullable stamp).
-
-**TWO OPEN QUESTIONS BLOCK NOTHING BUT SHOULD BE SETTLED EARLY** (plan, open questions 2–4):
-the id prefix for an annotation set (`aset_` proposed; `ans_` rejected because it reads as
-*answer* beside `ann_`), whether assignment may scope someone to a panel they otherwise cannot
-see, and what unassigning someone who has already answered does. The last two have drawn answers
-in the plan and need confirming, not designing.
-
-**Two surfaces, and they do not borrow from each other** (PRODUCT.md 5.5). The annotator surface
-is the minimal, light one. Everything staff-facing is the dark, dense console under
-`data-surface="console"`. Phase 5 broke this by accident and nothing in the code said not to; the
-plan makes it an `architecture.test.ts` rule.
-
-**What M5 leaves behind that still holds:**
-
-- **The review API is `annotation: ['create']`** and its payload's ABSENCES are the design: no
-  verdict, score, confidence, model, cost, key, trace id or `metadata` (ADR-0067, ADR-0077).
-  Tests assert the payload's KEYS.
-- **`annotations` is append-only BY GRANT** (migration 0015) — a changed mind is a new row, so a
-  read takes the LATEST row per person. The trace detail does exactly that and counts what it
-  replaced as `revisions`; the step-back control depends on the same rule.
-- **`annotations.sampler` carries the picker's name** — the constant `'random'` until phase 3 of
-  the new plan gives it the membership row's strategy.
-- **`components/review/answer-state.ts`** holds the annotator's pure rules and MIRRORS the
-  server; it is never the authority. (Phase 1 renames it.)
-- **One account menu for both surfaces** (`components/shell/account-menu.tsx`) — do not
-  reintroduce a second sign-out path.
-- **The annotator surface reuses `components/shaped/`** under `data-surface="annotator"`. Two
-  renderings of one trace would be two accounts of what was judged.
-- **A Drizzle column inside a `sql` template renders UNQUALIFIED** (M5 Deviations 19 and 35, M4
-  Deviation 60) — qualify by hand. Phase 4 of the new plan adds more correlated subqueries than
-  anything before it.
-- **Tests that read `annotations` must scope to ONE annotator** (M5 Deviation 36).
-- **ADR-0073's four roles**: `input` and `output` (required), `reference` and `metadata`
-  (optional). `output` is the ONE thing judged; `metadata` is withheld from the annotator
-  (ADR-0077). A LEGACY trace has `input` NULL and the view says so rather than inventing one.
-- **One renderer for a trace**: `apps/web/src/components/shaped/`. Markdown is `markdown-to-jsx`,
-  configured once, raw HTML off (ADR-0078). `apps/api/src/llm/render-for-model.ts` is its
-  judge-side twin.
-- **The frame is ADR-0062's**; `apps/web/src/styles/tokens.css` §1–§5 are VERBATIM from
-  `mockups/tokens.css` — diff them after every `shadcn add`.
-- **`useSurface` and `useMenuFocusReturn`** are required on portalled overlays and menus.
-- **URL state:** TanStack Router merges a validator's result over the raw query, so **validators
-  must return every key**, `undefined` when absent (M4 Deviation 67).
-- **Run the API from source** (`bun run --cwd apps/api dev`) **and restart it after changing
-  routes** — `bun --hot` does not pick them up, and a stale API broke the console's trace page on
-  2026-09-21 until it was restarted. Kill stale dev servers: several running at once make the
-  local test suite unreadable (three "failures" of 15min, 17.8min and 3.8min on 2026-09-21).
+- **The product says ANNOTATION, never review** (ADR-0085). Not a preference — `grep -ri review
+  apps packages docs/adr` should return only design-review prose ("the 6b review", "reviewable
+  as a diff") and two quoted historical labels in `gate.tsx` and `section-nav.tsx` that record a
+  control ADR-0084 removed. An identifier, path or on-screen label saying "review" is a bug.
+- **Work is an ASSIGNED SET** (ADR-0079). No panel-wide queue, no default set, no bootstrap: an
+  annotator with nothing assigned has nothing to do, and the surface says so. A set you are not
+  on is NOT_FOUND, the same answer as another org's.
+- **A trace leaves YOUR queue when YOU answer it** (ADR-0081, superseding ADR-0066). Everyone
+  assigned annotates the whole set; the overlap is how many were assigned, and that overlap is
+  what M6 measures agreement from. Where answers differ the DICTATOR's counts — a rule for
+  READING rows, in `countingAnswer`, computed server-side so the console and M6 cannot disagree.
+- **`setProgress` is the ONE definition of answered and done** (ADR-0086), in
+  `services/annotation-queue.ts`. Done is DERIVED — every CURRENTLY assigned annotator
+  (`unassigned_at IS NULL`) has answered every trace — never stored. A set with no traces or
+  nobody assigned is NOT done. `archived_at` is the only lifecycle column and a person writes it.
+  Two counts per person and they are not interchangeable: `answered` includes skips and decides
+  done, `annotated` excludes them and is what a person is shown.
+- **STAFF INSPECT AND CANNOT EDIT** (ADR-0084). There is no control anywhere in the console that
+  changes an annotation, and it is ABSENT rather than disabled. The one route from console to
+  annotator surface is a person opening a set they are assigned to, guarded by `assignedToMe` on
+  `routes/annotation-set.tsx`. `architecture.test.ts` asserts all of this.
+- **`annotations.annotation_set_id` is nullable ONLY for pre-phase-7 rows**, and `sampler` now
+  carries the membership row's picker rather than the constant `'random'`.
+- **`annotation_set_traces` is append-only BY GRANT** (migration 0016), like `audit_events` and
+  `annotations`. The app role holds INSERT and SELECT; deleting needs the migrator.
+- **A Drizzle column inside a `sql` template renders UNQUALIFIED** — qualify by hand. This phase
+  added more correlated subqueries than anything before it and every one of them is commented.
+- **The console's CORS allow-list must name every method the router registers.** A missing one
+  preflights 204 and the browser drops the real request with no server-side trace; the whole
+  suite stayed green while the assign dialog silently did nothing. `routes/internal/cors.test.ts`
+  now derives the rule from the router. Add a method, and that test is what tells you.
+- **Two surfaces, and they do not borrow** (PRODUCT 5.5). `components/shell/` is the console's,
+  `components/annotate/` is the annotator's, `components/shaped/` is the one trace renderer and
+  belongs to neither. This is `architecture.test.ts`, not a paragraph, because phase 5 broke it.
 - **Two `relations.test.ts` failures locally are seed-state, not regressions** (M4 Deviation 64).
+- **Run the API from source** (`bun run --cwd apps/api dev`) **and restart it after changing
+  routes** — `bun --hot` does not pick them up. Kill stale dev servers before running tests.
+- **The repo is SQUASH-ONLY, so a stack of phase branches needs `git rebase --onto main
+  <merged-parent>` between every merge.** Squashing leaves the parent's content on `main` with
+  no ancestry link to the copy in the child's history, and the child then conflicts on files
+  nobody touched twice. Merge only on an explicit `MERGEABLE CLEAN`, and not with
+  `--delete-branch`: a refusal plus that flag closes the PR (it happened to #97 → #103).
 
-**Phase A:** `annotator-session` r6 is approved; phase 1 of the new plan redraws it as **r7**,
-wording only, for ADR-0085. `console-dashboard` stays PAUSED. The six product decisions in
-`thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open. **The staff Annotations
-section is built WITHOUT Phase A mockups** — a recorded departure from screens-first, on the
-grounds that the console's vocabulary is already fixed and Traces, Keys and Members were all built
-straight from it (decisions log, 2026-09-21).
+**Open, and not blocking:** two audit-log issues found while cleaning up — #100 (`ON DELETE SET
+NULL` makes a deleted org's events indistinguishable from platform-level ones, and M8 builds a
+viewer on that table) and #101 (the integration suite leaks its audit rows on every run).
+`docs/PARKING_LOT.md` gained due dates on an annotation set, which needs an email provider —
+a stack row never taken — before the reminder half means anything.
+
+**Phase A:** `annotator-session` is at **r7** (wording only, for ADR-0085; r6's approval stands).
+`console-dashboard` stays PAUSED and is M6's. The six product decisions in
+`thoughts/shared/research/2026-08-20_phase-a-design-harvest.md` stay open. The staff Annotations
+section was built WITHOUT Phase A mockups — a recorded departure from screens-first, on the
+grounds that the console's vocabulary was already fixed (decisions log, 2026-09-21).
 
 (This section has been stale four times — a fresh session reads it first and treats it as
 overriding. It is updated as part of closing a phase, not remembered afterwards: last on
-2026-09-21, when M5 completed (#88) and the annotation-sets plan was approved (#92), after
-ADR-0084 and ADR-0085 came out of a console review (#90, #91).)
+2026-09-21, when M5 phase 7 shipped and its plan moved to `complete/`.)
