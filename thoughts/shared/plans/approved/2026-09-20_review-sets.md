@@ -1,10 +1,12 @@
 ---
 date: 2026-09-20T16:00:00Z
 author: claude-code
-status: draft
+status: approved
+approved_at: 2026-09-20T17:05:00Z
+approved_by: Pat Keenan
 milestone: M5 (phase 7, after "Seeing the annotations")
 topic: review-sets
-related_adrs: [0003, 0019, 0061, 0064, 0066, 0067, 0073, 0077]
+related_adrs: [0003, 0019, 0061, 0064, 0066, 0067, 0073, 0077, 0079, 0080, 0081, 0082, 0083]
 research: thoughts/shared/research/2026-09-20_engineer-curated-review-sets.md
 ---
 
@@ -211,6 +213,9 @@ dictator's wins across people**.
 ---
 
 ## Decisions made
+ADR stubs spawned at approval: decisions 3–4 → ADR-0079, 1–2 → 0080, 5–8 and 14, 16 → 0081,
+9 → 0082, 13 → 0083. Decisions 10, 11, 12 and 15 are recorded here only — a floor that does not
+move, an id prefix, a column, and where a half-made selection lives.
 1. **Membership is resolved once, at creation** — over a query that re-evaluates: what a pass
    covered must not change under it (ADR-0003).
 2. **Membership is append-only and timestamped** — over allowing removal, and it is what makes
