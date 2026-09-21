@@ -35,6 +35,24 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
 
 ---
 
+## Three tables, and which one holds what
+
+Worth stating plainly, because "the same trace cannot be in a set twice" is about MEMBERSHIP and
+reads like a limit on answers. For a 250-trace set with two annotators:
+
+| Table | One row is | Rows |
+|---|---|---|
+| `review_set_traces` | this trace is IN this set | **250** — the contents, fixed at creation and grown only by top-up |
+| `review_set_reviewers` | this person is assigned (one of them flagged dictator) | **2** |
+| `annotations` | this person's ANSWER on this trace | **up to 500** — both annotators walk all 250 |
+
+Both annotators see the whole set because the queue's rule is per person: a trace leaves YOUR
+queue when YOU have answered it. And answers stack even for one person — the step-back correction
+appends rather than edits — so the full reading rule is **latest row wins per person, and the
+dictator's wins across people**.
+
+---
+
 ## Phase 1 — The set, its membership, and the pickers
 
 ### Changes
