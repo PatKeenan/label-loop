@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { check, index, pgEnum, pgTable, text } from 'drizzle-orm/pg-core'
+import { annotationSets } from './annotation-sets.ts'
 import { user } from './auth.ts'
 import { createdAt, id, idCheck } from './columns.ts'
 import { orgs } from './orgs.ts'
@@ -62,9 +63,22 @@ export const annotations = pgTable(
      */
     note: text('note'),
     /**
-     * WHICH SAMPLER served this item: `random` at M5, and recorded on every row from the first
-     * one. M6 adds low-confidence, disagreement and honeypot sampling, and "which strategy
-     * found the failures" is unanswerable retroactively if the column arrives with them.
+     * WHICH SET this answer was given against (ADR-0079). RESTRICT, as authorship is: a set
+     * whose answers exist is a pass that happened, and it cannot be deleted out from under
+     * them. The org cascade is the only thing that removes either.
+     *
+     * **NULLABLE only for the rows written before phase 7.** Annotation used to run against a
+     * whole panel, so those answers belong to no set and never will; backfilling them into an
+     * invented one would be a claim nobody made. Every row written from here carries it.
+     */
+    annotationSetId: text('annotation_set_id').references(() => annotationSets.id, {
+      onDelete: 'restrict',
+    }),
+    /**
+     * WHICH PICKER served this item — copied from the membership row that put the trace in the
+     * set (`manual`, `latest_n`, `earliest_n`, `random_n`). It was the constant `'random'`
+     * through M5 phase 6, when the queue WAS the sampler; now the set's picker is the answer,
+     * and "which strategy found the failures" stays a question the rows can answer.
      */
     sampler: text('sampler').notNull(),
     createdAt: createdAt(),
@@ -87,5 +101,7 @@ export const annotations = pgTable(
     index('annotations_panel_annotator_idx').on(table.panelId, table.annotatorId),
     // M6 reads a panel's annotations in order to cluster them.
     index('annotations_panel_created_idx').on(table.panelId, table.createdAt),
+    // The queue's pool question, per person: "which of this set's traces have I answered?"
+    index('annotations_set_annotator_idx').on(table.annotationSetId, table.annotatorId),
   ],
 )
