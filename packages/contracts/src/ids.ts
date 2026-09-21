@@ -7,6 +7,12 @@ import { z } from '@hono/zod-openapi'
  * followed by 16 encoding 80 bits of randomness — so ids issued in timestamp order also
  * sort in lexicographic order. Hand-rolled rather than pulled in: it is fifty lines of
  * encoding with no architectural weight (CONVENTIONS.md "Dependency threshold").
+ *
+ * **This list is the runtime authority; CONVENTIONS.md "Id prefixes" says what each one MEANS**
+ * — which are live, which are reserved for a later milestone, which are retired and may never be
+ * reused, and the rules for choosing a new one. Read it before adding a row here: the rule that
+ * actually bites is that a prefix must be unambiguous NEXT TO THE ONES IT WILL APPEAR WITH, not
+ * merely distinct from them.
  */
 
 export const ID_PREFIXES = [
