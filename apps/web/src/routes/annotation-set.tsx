@@ -2,6 +2,7 @@ import { can } from '@labelloop/contracts'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
+import { Settings2Icon, UserIcon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '../api/client.ts'
@@ -223,9 +224,18 @@ export const AnnotationSetPage = () => {
             work exist.
           </p>
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-[var(--gap-tight)] p-0">
+          // A GRID rather than a stack of full-width rows. Four people are four people, not four
+          // table rows — and at console width a row 1400px wide holding a name and a number is
+          // mostly empty space with the two facts at opposite ends of it. `auto-fill` at 15rem
+          // gives four across on a wide screen and one on a narrow one without a breakpoint.
+          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-[var(--gap-tight)] p-0">
             {columns.map((annotator) => (
-              <AnnotatorRow key={annotator.user_id} annotator={annotator} size={data.size} />
+              <AnnotatorCard
+                key={annotator.user_id}
+                annotator={annotator}
+                size={data.size}
+                {...(curates && !archived ? { onManage: () => setAssigning(true) } : {})}
+              />
             ))}
           </ul>
         )}
@@ -279,28 +289,91 @@ type Annotator = Detail['annotators'][number]
 type SetTrace = Detail['traces'][number]
 
 /**
- * WHERE ONE PERSON IS: answered of size, a bar, whether they are the dictator, and when they
- * were assigned.
+ * ONE PERSON, AS A CARD: who they are, how far they have got, and whether they settle a
+ * disagreement.
+ *
+ * **A card rather than a row, because these are people.** The rest of this screen is tables —
+ * traces, answers, ids — and the Assigned block was one too, which at console width meant a
+ * name at the far left and a number at the far right with a thousand pixels of nothing between
+ * them. A person is not a row of a table of traces.
+ *
+ * It stays the CONSOLE though: no fill, no shadow, no colour that is not carrying a fact. The
+ * card is defined by its border and its internal space, which is the same restraint every other
+ * surface here follows — on a dark surface, space reads and fills shout.
  *
  * `answered` rather than `annotated` — it includes skips, because a skip empties that trace out
- * of their queue. It is the same number `setProgress` decides "done" from, so a row reading
- * "12 of 12" and a set not marked done would be a contradiction this screen cannot produce.
+ * of their queue. It is the same number `setProgress` decides "done" from, so a card reading
+ * "12 of 12" beside a set not marked done would be a contradiction this screen cannot produce.
+ * The skip-excluding count is on the tooltip, where the person wondering about it will look.
  */
-const AnnotatorRow = ({ annotator, size }: { annotator: Annotator; size: number }) => {
+const AnnotatorCard = ({
+  annotator,
+  size,
+  onManage,
+}: {
+  annotator: Annotator
+  size: number
+  /**
+   * Absent for anybody who cannot curate, and on an archived set. It opens the assign dialog —
+   * the one place assignment actually changes — rather than being a per-card menu of its own:
+   * assignment is declared as a whole list (the server's `PUT` treats it that way), so a
+   * control that edited one person would be lying about what it does.
+   *
+   * **It changes who is ASSIGNED. It can never change what anybody ANSWERED** (ADR-0084).
+   */
+  onManage?: () => void
+}) => {
   const pct = size === 0 ? 0 : Math.min(100, Math.round((annotator.answered / size) * 100))
   const gone = annotator.unassigned_at !== null
+  const who = annotator.name === '' ? annotator.email : annotator.name
+
   return (
     <li
       className={cn(
-        'grid grid-cols-[1fr_auto] items-center gap-x-[var(--gap-inline)] gap-y-[var(--gap-tight)]',
+        'group relative flex flex-col gap-[var(--gap-inline)]',
         'rounded-md border border-border-soft px-[var(--pad-field-x)] py-[var(--pad-field-y)]',
+        // Unassigned is still listed and still readable — their answers stay (ADR-0086) — but
+        // it is not live work, and the card says so before the mark does.
         gone && 'opacity-70',
       )}
     >
-      <span className="flex min-w-0 flex-wrap items-center gap-[var(--gap-inline)]">
-        <span className="truncate text-ui" title={annotator.email}>
-          {annotator.name === '' ? annotator.email : annotator.name}
+      <div className="flex min-w-0 items-center gap-[var(--gap-inline)]">
+        <Monogram who={who} muted={gone} />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-ui" title={annotator.email}>
+            {who}
+          </span>
+          {/* The address under the name, because a display name is not an identity — two
+              people called Sam are told apart here and nowhere else on the card. */}
+          <span className="truncate font-mono text-micro text-muted-foreground" aria-hidden>
+            {annotator.email}
+          </span>
         </span>
+        {onManage === undefined ? null : (
+          /*
+            REVEALED ON HOVER *OR* FOCUS, never hover alone: a control that only exists for a
+            mouse does not exist for a keyboard. `opacity-0` keeps it in the tab order and in
+            the accessibility tree the whole time; `group-focus-within` is what makes tabbing
+            to it visible rather than a cursor jumping to something invisible.
+          */
+          <button
+            type="button"
+            onClick={onManage}
+            aria-label={`Change who is assigned (${annotator.email})`}
+            title="Change who is assigned"
+            className={cn(
+              'ml-auto shrink-0 rounded-[var(--radius-control)] p-[var(--space-1)]',
+              'text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground',
+              'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
+          >
+            <Settings2Icon aria-hidden className="size-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-[var(--gap-tight)]">
         {annotator.is_dictator && !gone ? (
           <Mark tone="info" title="Where answers differ, theirs is the one that counts">
             dictator
@@ -314,12 +387,24 @@ const AnnotatorRow = ({ annotator, size }: { annotator: Annotator; size: number 
             unassigned
           </Mark>
         ) : null}
-      </span>
-      <Data className="tabular-nums" title={`${annotator.annotated} answered, skips excluded`}>
-        {annotator.answered} of {size}
-      </Data>
+        <Data
+          className="ml-auto tabular-nums"
+          title={`${annotator.annotated} annotated, skips excluded`}
+        >
+          {annotator.answered} of {size}
+        </Data>
+      </div>
+
+      {/*
+        `mt-auto` PINS THE BAR TO THE BOTTOM, and that is what keeps a row of cards aligned.
+        The line above holds a `Mark` on some cards and only a number on others, and a mark is
+        two pixels taller than bare text — so bars laid out in flow sat two pixels apart from
+        card to card, which across four of them reads as ragged rather than as a difference
+        that means something. The grid already makes the cards equal height; this makes the bar
+        the line they are measured from, with no arithmetic to get wrong.
+      */}
       <span
-        className="col-span-2 h-[var(--space-1)] overflow-hidden rounded-[var(--radius-pill)] bg-muted"
+        className="mt-auto h-[var(--space-1)] overflow-hidden rounded-[var(--radius-pill)] bg-muted"
         role="progressbar"
         aria-valuenow={annotator.answered}
         aria-valuemin={0}
@@ -330,6 +415,37 @@ const AnnotatorRow = ({ annotator, size }: { annotator: Annotator; size: number 
         <span className="block h-full bg-muted-foreground" style={{ width: `${pct}%` }} />
       </span>
     </li>
+  )
+}
+
+/**
+ * INITIALS, not an avatar service and not a generic silhouette for everybody.
+ *
+ * Two letters from a name are enough to tell four people apart at a glance, which is the whole
+ * job here, and they need no network request and no gravatar-shaped privacy question. It stays
+ * achromatic — a per-person colour would be decoration, and the one fact on this card that
+ * earns colour is already carrying it (the dictator mark). `UserIcon` is the fallback for an
+ * account with nothing to take an initial from.
+ */
+const Monogram = ({ who, muted }: { who: string; muted: boolean }) => {
+  const initials = who
+    .split(/[\s@._-]+/)
+    .filter((part) => /\p{L}|\p{N}/u.test(part))
+    .slice(0, 2)
+    .map((part) => [...part][0]?.toUpperCase() ?? '')
+    .join('')
+
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-full border border-border-soft',
+        'bg-muted font-mono text-micro tracking-[var(--tracking-wide)]',
+        muted ? 'text-foreground-faint' : 'text-muted-foreground',
+      )}
+    >
+      {initials === '' ? <UserIcon className="size-4" /> : initials}
+    </span>
   )
 }
 
