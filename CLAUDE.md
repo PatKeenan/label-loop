@@ -55,12 +55,54 @@ the driver: when in doubt, stop and ask rather than proceed autonomously. The
 thoughts/ directory is decision provenance for the public writeup — write accordingly.
 
 ## Current phase
-**M5 is mid-flight, and the evaluate contract underneath it has been replaced.** M5's plan
-(`thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`) shipped phases 1–3:
-capabilities in place of role lists (#72, ADR-0064), invitations claimed on a verified sign-in
-(#73, ADR-0065), and phase 3's `annotator-session` mockup — **r6, approved and merged (#74,
-2026-09-20)**, redrawn against the transcript layout the shaped view uses. **M5 resumes at
-phase 4**: the `annotations` table (migration 0015) and the review queue.
+**M5 phases 1–5 have shipped; phase 6 closes that plan, and a SECOND approved plan then replaces
+the queue phases 4–5 built.** From
+`thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`: capabilities in place of
+role lists (#72, ADR-0064), invitations claimed on a verified sign-in (#73, ADR-0065), the
+`annotator-session` mockup r6 (#74), the `annotations` table and the review queue (#84, ADR-0066,
+ADR-0067), and the annotator surface itself (#85). **Phase 6 is next**: annotations shown to
+staff in the trace drawer and page.
+
+**Then phase 7, and it supersedes part of what #84 and #85 just shipped.**
+`thoughts/shared/plans/approved/2026-09-20_review-sets.md` (approved 2026-09-20, ADR-0079..0083):
+annotation runs against an **assigned review set**, not the whole panel. A developer creates a set
+from a panel's traces (manual / latest N / earliest N / random N, capped at **250**), assigns one
+or more annotators, and names one of them the **dictator** when there is more than one. Everyone
+assigned reviews the WHOLE set; overlaps are recorded, and where answers differ the dictator's
+counts — a read rule, not a workflow. **An annotator has nothing until a set is assigned to them.**
+Two ADRs supersede parts of ADR-0066: its queue scope (0079) and its one-person-per-trace rule
+(0081); its polarity and note rules stand. **Migrations 0013–0015 are taken; review sets start at
+0016.**
+
+**Owed before or with phase 7, and they are the stakeholder's** (the plan's open questions):
+PRODUCT.md 5.5 gains the set, assignment and the dictator — its own Phase A mockups cited 5.5 for
+an arbiter in August and 5.5 never had one; and BUILD_SPINE M5's *"Not now: multi-annotator
+consensus"* becomes "recording overlaps; consensus METRICS stay M6". Also unanswered: whether
+assignment may scope an annotator to a panel they otherwise cannot see, and what unassigning
+someone who has already answered does.
+
+**What M5's shipped phases leave behind:**
+
+- **The review API is `annotation: ['create']`** (`routes/internal/review.ts`), and its payload's
+  ABSENCES are the design: no verdict, score, confidence, model, cost, key, trace id or
+  `metadata` (ADR-0067, ADR-0077). Tests assert the payload's KEYS. Phase 7 keeps that.
+- **`annotations` is append-only BY GRANT** (migration 0015) — a changed mind is a new row, so a
+  read takes the LATEST row per person; the step-back control depends on it.
+- **`annotations.sampler` exists to carry the picker's name**; it is the constant `'random'` until
+  phase 7 gives it real strategies.
+- **`components/review/answer-state.ts`** holds the annotator's pure rules (key map, `canSave`) and
+  MIRRORS the server; it is never the authority.
+- **One account menu for both surfaces** (`components/shell/account-menu.tsx`). The annotator
+  surface shipped without a way to sign out because the frame drew the email as a label — do not
+  reintroduce a second sign-out path.
+- **The annotator surface reuses `components/shaped/`** under `data-surface="annotator"`. Two
+  renderings of one trace would be two accounts of what was judged.
+- **A Drizzle column inside a `sql` template renders UNQUALIFIED**, which made every panel's trace
+  count zero until it was qualified by hand (M5 Deviation 19, M4 Deviation 60). Phase 7 adds more
+  correlated subqueries than anything before it.
+- **Tests that read `annotations` must scope to ONE annotator** — an unscoped read picks up
+  another annotator's skip on the same trace, which made three assertions fail about one run in
+  ten (M5 Deviation 36).
 
 **ADR-0073 landed in between, and it is the thing to read first.** `POST /v1/…/evaluate` takes
 **four roles** — `input` and `output` (required, any JSON), `reference` and `metadata`
@@ -115,5 +157,5 @@ there, in code. `console-dashboard` stays PAUSED. The six product decisions in
 
 (This section has been stale four times — a fresh session reads it first and treats it as
 overriding. It is updated as part of closing a phase, not remembered afterwards: last on
-2026-09-20, when M5 phase 3's r6 mockup was approved and merged (#74), after the native-shapes
-plan completed in #77–#81.)
+2026-09-20, when M5 phases 4 and 5 merged (#84, #85) and the review-sets plan was approved (#86),
+after the native-shapes plan completed in #77–#81.)
