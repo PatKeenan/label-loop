@@ -1,7 +1,7 @@
 import type { ModelPin, ModelPinValidation } from '@labelloop/contracts'
 import type { Database } from '@labelloop/db'
 import { schema } from '@labelloop/db'
-import { and, count, desc, eq, sql } from 'drizzle-orm'
+import { and, count, countDistinct, desc, eq, ne, sql } from 'drizzle-orm'
 import type { Executor } from './executor.ts'
 
 /**
@@ -186,6 +186,23 @@ export const findPanelBySlug = async (db: Database, orgId: string, slug: string)
     .from(schema.traces)
     .where(eq(schema.traces.panelId, panel.id))
 
+  /**
+   * How many of this panel's traces have been ANNOTATED — the second half of the gate card
+   * (M5 phase 6): traces fill toward the floor, annotations toward the target.
+   *
+   * DISTINCT on the trace, deliberately. The table is append-only, so one person changing
+   * their mind writes a second row, and two annotators on one trace will be ordinary from
+   * phase 7 — a raw `count(*)` would report progress that nobody made. What the target
+   * measures is COVERAGE: how much of the panel somebody has now read.
+   *
+   * Skips excluded, the same rule the queue and the trace list use: a skip is an answer we
+   * store and not a review.
+   */
+  const [annotated] = await db
+    .select({ traces: countDistinct(schema.annotations.traceId) })
+    .from(schema.annotations)
+    .where(and(eq(schema.annotations.panelId, panel.id), ne(schema.annotations.outcome, 'skipped')))
+
   return {
     id: panel.id,
     slug: panel.slug,
@@ -200,6 +217,8 @@ export const findPanelBySlug = async (db: Database, orgId: string, slug: string)
      * a collecting trace is exactly the kind an annotator will read.
      */
     traceCount: counted?.traces ?? 0,
+    /** Traces with at least one non-skip annotation — coverage, not row count. */
+    annotatedTraceCount: annotated?.traces ?? 0,
     judges: (version?.judgeVersions ?? [])
       .map(({ judgeVersion }) => ({
         judgeId: judgeVersion.judge.id,

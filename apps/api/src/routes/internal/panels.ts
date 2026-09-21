@@ -216,6 +216,10 @@ export const createPanelRoutes = () =>
           // Every trace captured, judged or not: it is what the Overview counts toward the
           // annotation gate, and a collecting trace is exactly the kind an expert reads.
           trace_count: panel.traceCount,
+          // How many of them somebody has annotated — what the gate card fills toward the
+          // target once the floor is met (M5 phase 6). Coverage: one trace counts once,
+          // however many people answered it and however often they changed their minds.
+          annotated_trace_count: panel.annotatedTraceCount,
           judges: panel.judges.map((judge) => ({
             judge_id: judge.judgeId,
             judge_version_id: judge.judgeVersionId,

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowDownToLineIcon, ArrowUpFromLineIcon, Maximize2Icon } from 'lucide-react'
+import { ArrowDownToLineIcon, ArrowUpFromLineIcon, Maximize2Icon, UserIcon } from 'lucide-react'
 import { traceDetailQuery } from '../../api/queries.ts'
 import { ApiError } from '../../errors/api-error.ts'
 import { ShapedTrace } from '../shaped/shaped-trace.tsx'
@@ -17,11 +17,12 @@ import { Data, Eyebrow, Mark } from './mark.tsx'
  * while scanning a list — and a page would lose the scroll position and the live refresh the
  * person was using to find it.
  *
- * **Three sections, in the order a person asks.** Input first: what went in is the thing we
+ * **Four sections, in the order a person asks.** Input first: what went in is the thing we
  * never generated and the thing every verdict is about. Then Judges — or, for a COLLECTING
  * panel, a plain statement that none ran, because an empty section would read as missing
- * data. Then the details an engineer uses to go further (the key, the exact panel version,
- * the request id that finds this call's spans).
+ * data. Then Annotations: what the people who read it said (M5 phase 6). Then the details an
+ * engineer uses to go further (the key, the exact panel version, the request id that finds
+ * this call's spans).
  *
  * Staff-only, mounted by the shell only for admin and engineer, mirroring the server's
  * `requirePermission` on `GET /internal/traces/:id` (it never replaces it).
@@ -89,9 +90,11 @@ export const TraceDrawer = () => {
 }
 
 /**
- * THE TRACE, WHOLE — Request, Response, Details. ONE component, rendered by the drawer (the
- * quick look over a list) and by the trace page (the trace's own address), so the two cannot
- * drift into different accounts of the same record.
+ * THE TRACE, WHOLE — Request, Response, Annotations, Details. ONE component, rendered by the
+ * drawer (the quick look over a list) and by the trace page (the trace's own address), so the
+ * two cannot drift into different accounts of the same record. The annotations block is here
+ * rather than on the page alone for that reason: the trace page's own comment says annotations
+ * are what it gains at M5, and one body is how both get them at once.
  */
 export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
   const context = useConsoleContext()
@@ -180,6 +183,13 @@ export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
             </div>
           </section>
 
+          {/*
+            WHAT PEOPLE SAID — after the panel's answer, because that is the order the
+            question is asked in: here is what the machine decided, and here is what a person
+            who read it thinks. It is the read half of the loop M6 authors judges from.
+          */}
+          <Annotations annotations={detail.data.annotations} />
+
           <Section title="Details">
             <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-[var(--gap-stack)] gap-y-[var(--gap-inline)] text-ui">
               <Detail label="Key">
@@ -208,9 +218,86 @@ export const TraceDetailBody = ({ traceId }: { traceId: string }) => {
   )
 }
 
-type Judge = NonNullable<
+type Detail = NonNullable<
   Awaited<ReturnType<NonNullable<ReturnType<typeof traceDetailQuery>['queryFn']>>>
->['judges'][number]
+>
+type Annotation = Detail['annotations'][number]
+
+/**
+ * THE ANNOTATIONS BLOCK (M5 phase 6) — one entry per person who has answered this trace.
+ *
+ * **It is rendered even when empty**, saying so in a line. An absent section would leave a
+ * reader unable to tell "nobody has reviewed this" from "this console does not show that",
+ * and the first is a fact worth knowing while a panel is collecting.
+ *
+ * The OUTCOME earns the colour and the NOTE is the body, the same shape as a judge's verdict
+ * directly above — an annotation is the human answer to the same question, and rendering the
+ * two alike is what makes M6's comparison of them legible.
+ */
+export const Annotations = ({ annotations }: { annotations: readonly Annotation[] }) => (
+  <section className="flex flex-col gap-[var(--gap-stack)]">
+    <Eyebrow>
+      {annotations.length === 0 ? 'Annotations' : `Annotations · ${annotations.length}`}
+    </Eyebrow>
+    {annotations.length === 0 ? (
+      <p className="m-0 text-body text-muted-foreground">Nobody has reviewed this trace yet.</p>
+    ) : (
+      <ul className="m-0 flex list-none flex-col gap-[var(--space-6)] p-0">
+        {annotations.map((annotation) => (
+          <AnnotationRow key={annotation.id} annotation={annotation} />
+        ))}
+      </ul>
+    )}
+  </section>
+)
+
+/**
+ * One person's answer. The name is the person's own, with their address on hover: contribution
+ * attaches to the PERSON and outlives their membership (ADR-0066), so this is whoever did the
+ * work whether or not they are still in the org.
+ *
+ * `revisions` above zero is a CHANGED MIND, said plainly. The table is append-only, so the
+ * earlier answers are still there — what this screen shows is the current one, and staying
+ * silent about the others would be the screen deciding they did not happen.
+ */
+const AnnotationRow = ({ annotation }: { annotation: Annotation }) => (
+  <li className="flex flex-col gap-[var(--gap-inline)]">
+    <div className="flex flex-wrap items-center gap-[var(--gap-inline)]">
+      <span aria-hidden className="text-muted-foreground">
+        <UserIcon className="size-4" />
+      </span>
+      <span className="text-ui" title={annotation.annotator_email}>
+        {annotation.annotator_name === '' ? annotation.annotator_email : annotation.annotator_name}
+      </span>
+      <Outcome outcome={annotation.outcome} />
+      {annotation.revisions === 0 ? null : (
+        <Data title={`${annotation.revisions + 1} answers from this person, oldest kept`}>
+          changed{annotation.revisions > 1 ? ` ${annotation.revisions}×` : ''}
+        </Data>
+      )}
+      <Data className="ml-auto" title={annotation.created_at}>
+        {new Date(annotation.created_at).toLocaleString()}
+      </Data>
+    </div>
+    {annotation.note === null ? null : <p className="m-0 text-body">{annotation.note}</p>}
+  </li>
+)
+
+/**
+ * The three outcomes, in the words the annotator was shown (ADR-0066). A SKIP is not a
+ * failure and is not a pass — it is "I cannot judge this", which is why it is neutral: it
+ * says something about the pairing of person and trace, not about the output.
+ */
+const Outcome = ({ outcome }: { outcome: Annotation['outcome'] }) =>
+  outcome === 'skipped' ? (
+    <Mark tone="neutral">skipped</Mark>
+  ) : (
+    <Mark tone={outcome === 'acceptable' ? 'success' : 'fail'}>
+      {outcome === 'acceptable' ? 'acceptable' : 'not acceptable'}
+    </Mark>
+  )
+
+type Judge = Detail['judges'][number]
 
 /**
  * One judge's answer. The RATIONALE is the body — it was written before the verdict (ADR-0019)

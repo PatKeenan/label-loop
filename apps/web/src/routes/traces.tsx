@@ -79,7 +79,7 @@ const COLUMNS: readonly { label: string; title?: string }[] = [
   {
     label: 'Verdict',
     title:
-      'The panel decision. “collecting” means the panel had no judges, so nothing was judged. “partial” means a scoring judge did not run.',
+      'The panel decision. “collecting” means the panel had no judges, so nothing was judged. “partial” means a scoring judge did not run. “annotated” means a person has reviewed this trace — open it to read what they said.',
   },
   {
     label: 'Score',
@@ -336,6 +336,20 @@ export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => {
                     beside it is real but partial — which the verdict alone cannot say. */}
                   {trace.passed !== null && !trace.complete ? (
                     <Mark tone="warning">partial</Mark>
+                  ) : null}
+                  {/*
+                    A PERSON HAS BEEN HERE (M5 phase 6). Achromatic on purpose, beside marks
+                    that are not: rule 4 gives colour to the finding, and the finding is what
+                    the annotator SAID — which is a sentence, not a chip, and lives in the
+                    drawer this row opens. That somebody answered is the row's metadata.
+
+                    Its rule is the QUEUE's: a non-skip answer from anybody. So a marked row
+                    is exactly a row that has left the queue, and the two cannot disagree.
+                  */}
+                  {trace.annotated ? (
+                    <Mark tone="neutral" title="A person has reviewed this trace">
+                      annotated
+                    </Mark>
                   ) : null}
                 </span>
               </Cell>

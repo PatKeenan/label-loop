@@ -258,11 +258,15 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
   shows annotations collected so far against the 100 target.
 
 ### Steps
-- [ ] Annotations in the trace detail read and the drawer/page body (one component, both places)
-- [ ] Annotated mark in the table; annotation count on the Overview
+- [x] Annotations in the trace detail read and the drawer/page body (one component, both places)
+- [x] Annotated mark in the table; annotation count on the Overview
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build` — 996 pass;
+      the two `relations.test.ts` failures are the seed state M4 Deviation 64 records, identical
+      on a stashed tree. Three mutation checks: dropping the skip rule from `annotated`, counting
+      annotation rows instead of distinct traces, and rendering every row instead of the latest
+      per person each fail exactly one assertion.
 
 ### Manual verification
 - [ ] A trace annotated in phase 5 shows its annotation, annotator and note in the drawer and on
@@ -485,3 +489,38 @@ Recorded as they happen; decision provenance, not a changelog.
     ten, reading as flakiness in the queue rather than in the test. The helper now takes the
     person. And the positive draw loop went from 300 to 600 attempts: over a pool of ~50, a
     shuffle missing one trace in 300 tries is about 1 in 500.
+
+### Phase 6 (2026-09-20)
+
+34. **The gate card SWITCHES what it measures; it does not grow a second bar.** Below the floor
+    the work is collecting traces, so it counts traces toward 50; above it, collecting is no
+    longer the job, so the headline becomes ANNOTATED traces toward the target and the trace
+    count is demoted to a clause underneath. Two bars would make the reader work out which one
+    is theirs, and the card exists to name the next thing to do.
+35. **`annotated` is the QUEUE's rule, written the same way.** The list's flag is
+    `EXISTS (… outcome <> 'skipped')` — `answerableWhere`'s first clause — so a marked row is
+    exactly a row that has left the queue. The alternative, a mark that means "has any row",
+    would put a badge on traces still being served to annotators.
+36. **The Overview counts DISTINCT traces, not annotation rows.** The table is append-only and
+    phase 7 makes two annotators on one trace ordinary, so `count(*)` would report progress
+    nobody made. What the target measures is coverage: how much of the panel someone has read.
+    The wire field says so — `annotated_trace_count`, not `annotation_count`.
+37. **The detail read is the LATEST row per person, with `revisions` counting what it replaced.**
+    Rendering every row would show one person contradicting themselves; dropping the earlier ones
+    silently would be the screen deciding they never happened. Computed in JavaScript rather than
+    as `DISTINCT ON`, because this reads ONE trace and a `sql` template is the construct that has
+    already gone wrong twice in that file (Deviation 19, M4 Deviation 60).
+38. **A SKIP is shown on the trace and counted nowhere else.** "I cannot judge this" is worth
+    reading beside the output; it is not a review, so it does not mark the row and does not move
+    the panel's count — the same rule the queue applies, in all three reads.
+39. **The note crosses the wire and still never reaches the audit log** (ADR-0066), which is the
+    opposite of how the two are usually weighted. A note is free text an annotator may have put a
+    customer's words in, so it stays in a table an erasure request (M8) can reach.
+40. **`Annotations` is exported and tested through `renderToStaticMarkup`**, as `markdown.tsx`
+    is. Four claims, all of the form "the console does not say something untrue": a skip is not a
+    failure, a superseded answer is not forgotten, someone with no name gets their address rather
+    than a blank, and nobody having read a trace is said out loud.
+41. **Not verified in a browser by Claude**, for Deviation 32's reason: the console needs a
+    signed-in staff session, and signing in means entering a password. Typecheck, lint, the build
+    and the integration tests are what proves the three reads; the screens are the stakeholder's
+    manual verification.

@@ -249,6 +249,74 @@ const seedVerdict = async () => {
   })
 }
 
+/**
+ * WHAT PEOPLE SAID about two of this panel's traces (M5 phase 6), written so that every rule
+ * the three reads have to follow has a row that breaks it if they do not:
+ *
+ * - **TRACE, twice by the same person.** `annotations` is append-only, so a changed mind is a
+ *   second row — the detail must show ONE entry for them, the latest, with the first counted
+ *   rather than dropped, and the panel's annotated count must still be 1.
+ * - **TRACE, once by somebody else**, with a note: two entries, newest first.
+ * - **LEGACY_TRACE, a skip.** A skip is an answer we store and not a review, so it appears on
+ *   the detail and does NOT mark the row annotated or move the panel's count.
+ *
+ * Explicit timestamps, because the ordering is asserted and `defaultNow()` would put three
+ * rows inside one millisecond.
+ */
+const seedAnnotations = async () => {
+  const at = (minute: number) => new Date(Date.parse(`2026-09-20T10:0${minute}:00Z`))
+  await db.insert(schema.annotations).values([
+    {
+      id: newId('ann_'),
+      orgId: ORG,
+      traceId: TRACE,
+      panelId: PANEL,
+      panelVersionId: PANEL_VERSION,
+      annotatorId: await userIdOf(ANNOTATOR_EMAIL),
+      outcome: 'not_acceptable',
+      note: 'First read — no repro steps.',
+      sampler: 'random',
+      createdAt: at(1),
+    },
+    {
+      id: newId('ann_'),
+      orgId: ORG,
+      traceId: TRACE,
+      panelId: PANEL,
+      panelVersionId: PANEL_VERSION,
+      annotatorId: await userIdOf(ANNOTATOR_EMAIL),
+      outcome: 'acceptable',
+      note: null,
+      sampler: 'random',
+      createdAt: at(3),
+    },
+    {
+      id: newId('ann_'),
+      orgId: ORG,
+      traceId: TRACE,
+      panelId: PANEL,
+      panelVersionId: PANEL_VERSION,
+      annotatorId: await userIdOf(MEMBER_EMAIL),
+      outcome: 'not_acceptable',
+      note: 'The reply never names the browser.',
+      sampler: 'random',
+      createdAt: at(2),
+    },
+    {
+      id: newId('ann_'),
+      orgId: ORG,
+      traceId: LEGACY_TRACE,
+      panelId: PANEL,
+      panelVersionId: PANEL_VERSION,
+      annotatorId: await userIdOf(MEMBER_EMAIL),
+      outcome: 'skipped',
+      note: null,
+      sampler: 'random',
+      createdAt: at(4),
+    },
+  ])
+}
+
 const seedPagedTraces = async () => {
   for (const [index, row] of PAGED_TRACES.entries()) {
     await db.insert(schema.traces).values({
@@ -305,15 +373,22 @@ const signIn = async (email: string): Promise<string> => {
   return setCookie.map((cookie) => cookie.split(';')[0]).join('; ')
 }
 
-/** Membership is ours, not better-auth's (ADR-0014), so it is a separate insert. */
-const grantMembership = async (email: string, role: 'admin' | 'annotator' = 'admin') => {
+const userIdOf = async (email: string): Promise<string> => {
   const rows = await db
     .select({ id: schema.user.id })
     .from(schema.user)
     .where(eq(schema.user.email, email))
   const userId = rows[0]?.id
   if (userId === undefined) throw new Error(`no user for ${email}`)
-  await db.insert(schema.orgMembers).values({ orgId: ORG, userId, role }).onConflictDoNothing()
+  return userId
+}
+
+/** Membership is ours, not better-auth's (ADR-0014), so it is a separate insert. */
+const grantMembership = async (email: string, role: 'admin' | 'annotator' = 'admin') => {
+  await db
+    .insert(schema.orgMembers)
+    .values({ orgId: ORG, userId: await userIdOf(email), role })
+    .onConflictDoNothing()
 }
 
 beforeAll(async () => {
@@ -331,6 +406,9 @@ beforeAll(async () => {
   await signUp(OUTSIDER_EMAIL)
   await signUp(ANNOTATOR_EMAIL)
   await grantMembership(ANNOTATOR_EMAIL, 'annotator')
+
+  // After the accounts exist: `annotator_id` references `user` (ADR-0066).
+  await seedAnnotations()
 })
 
 afterAll(async () => {
@@ -551,6 +629,15 @@ describe('the login screen asks which doors exist (Deviation 11)', () => {
   })
 })
 
+type AnnotationEntry = {
+  annotator_email: string
+  annotator_name: string
+  outcome: string
+  note: string | null
+  revisions: number
+  created_at: string
+}
+
 /** Just the fields these tests read — the real shape is the RPC type the console consumes. */
 type Detail = {
   data: {
@@ -562,6 +649,7 @@ type Detail = {
     panel_version: number
     passed: boolean | null
     judges: unknown[]
+    annotations: AnnotationEntry[]
   }
   error: { code: string }
 }
@@ -635,5 +723,73 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
     const { status, body } = await detail(cookie, TRACE)
     expect(status).toBe(403)
     expect(body.error.code).toBe('FORBIDDEN')
+  })
+
+  /**
+   * SEEING THE ANNOTATIONS (M5 phase 6). Three reads carry them, and each one applies the
+   * same two rules — latest row per person, and a skip is not a review — to a different
+   * question. They are tested together because the failure that matters is the three
+   * disagreeing: a row marked annotated whose drawer shows nobody, or a panel counting
+   * progress no one made.
+   */
+  test('one entry per person, their LATEST answer, newest first', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, TRACE)
+    expect(status).toBe(200)
+    // THREE rows were written; two of them are one person changing their mind.
+    expect(body.data.annotations).toHaveLength(2)
+    expect(body.data.annotations.map((row) => row.annotator_email)).toEqual([
+      ANNOTATOR_EMAIL,
+      MEMBER_EMAIL,
+    ])
+    expect(body.data.annotations[0]).toMatchObject({
+      outcome: 'acceptable',
+      // The LATEST answer carried no note; the superseded one did, and must not leak forward.
+      note: null,
+      // The earlier answer is counted rather than dropped — the screen can say it changed.
+      revisions: 1,
+    })
+    expect(body.data.annotations[1]).toMatchObject({
+      outcome: 'not_acceptable',
+      note: 'The reply never names the browser.',
+      revisions: 0,
+    })
+    expect(body.data.annotations[0]?.annotator_name).toBe('Test person')
+  })
+
+  test('a SKIP is shown on the trace and is not a review anywhere else', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, LEGACY_TRACE)
+    expect(status).toBe(200)
+    // Visible here — "I could not judge this" is a fact about the trace worth reading …
+    expect(body.data.annotations).toMatchObject([{ outcome: 'skipped', note: null }])
+
+    // … and not an annotation anywhere it would be counted as one.
+    const list = await app().request(`http://localhost/internal/traces?panel_id=${PANEL}`, {
+      headers: { cookie },
+    })
+    const rows = ((await list.json()) as { data: { traces: { id: string; annotated: boolean }[] } })
+      .data.traces
+    expect(rows.find((row) => row.id === LEGACY_TRACE)?.annotated).toBe(false)
+    expect(rows.find((row) => row.id === TRACE)?.annotated).toBe(true)
+  })
+
+  test('a trace nobody has read says so with an empty list, never a missing key', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const { status, body } = await detail(cookie, SIBLING_TRACE)
+    expect(status).toBe(200)
+    expect(body.data.annotations).toEqual([])
+  })
+
+  test('the panel counts TRACES annotated, not annotation rows', async () => {
+    const cookie = await signIn(MEMBER_EMAIL)
+    const response = await app().request('http://localhost/internal/panels/issue-triage', {
+      headers: { cookie },
+    })
+    expect(response.status).toBe(200)
+    const data = ((await response.json()) as { data: { annotated_trace_count: number } }).data
+    // Four rows across two traces: three on TRACE (one person twice, one person once) and a
+    // skip. Exactly ONE trace has been reviewed, and that is what the gate card fills with.
+    expect(data.annotated_trace_count).toBe(1)
   })
 })

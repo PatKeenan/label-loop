@@ -131,6 +131,15 @@ export type TraceListItem = {
   score: number | null
   complete: boolean
   threshold: number
+  /**
+   * HAS ANYBODY ANSWERED THIS TRACE — the table's `annotated` mark (M5 phase 6).
+   *
+   * The rule is the QUEUE's, verbatim: a non-skip annotation exists from somebody. It is
+   * written that way so the mark and the queue cannot disagree — a trace marked annotated is
+   * exactly a trace that has left the queue (`answerableWhere` in `services/annotation-queue.ts`).
+   * A skip is not an answer, so a trace only skipped is not marked.
+   */
+  annotated: boolean
   /** Null until the follow-up job has run; the console shows it as "pending". */
   recordedAt: Date | null
   createdAt: Date
@@ -175,6 +184,14 @@ export const listTraces = async (
       score: schema.traces.score,
       complete: schema.traces.complete,
       threshold: schema.traces.threshold,
+      // QUALIFIED by hand, and the correlation is the whole reason: a Drizzle column inside a
+      // `sql` template renders UNQUALIFIED, so `schema.traces.id` here would bind to the
+      // subquery's own `annotations` scope and silently answer false for every row. The same
+      // trap as Deviation 60 of the M4 plan and Deviation 19 of this one.
+      annotated: sql<boolean>`EXISTS (
+        SELECT 1 FROM annotations
+        WHERE annotations.trace_id = "traces"."id" AND annotations.outcome <> 'skipped'
+      )`,
       recordedAt: schema.traces.recordedAt,
       createdAt: schema.traces.createdAt,
       // QUALIFIED by hand: a column inside a `sql` template renders unqualified, and
@@ -278,5 +295,59 @@ export const getTraceDetail = async (
     .where(eq(schema.traceVerdicts.traceId, trace.id))
     .orderBy(schema.judges.slug)
 
-  return { ...trace, verdicts }
+  /**
+   * WHAT PEOPLE SAID ABOUT IT (M5 phase 6) — the other half of what a trace is now, beside
+   * what the judges said. Staff-only, like the rest of this read.
+   *
+   * Every row for the trace, oldest first, because the LATEST row per person is computed
+   * below and the earlier ones are what make a changed mind visible. `annotations` is
+   * append-only by grant (migration 0015): there is no other way to have answered twice.
+   *
+   * `user` rather than `org_members`: the annotator reference is to the PERSON and outlives
+   * their membership (ADR-0066), so joining the membership would blank the name of anyone
+   * who has since left — and a name we recorded work under is not ours to drop.
+   */
+  const answers = await db
+    .select({
+      id: schema.annotations.id,
+      annotatorId: schema.annotations.annotatorId,
+      annotatorName: schema.user.name,
+      annotatorEmail: schema.user.email,
+      outcome: schema.annotations.outcome,
+      note: schema.annotations.note,
+      createdAt: schema.annotations.createdAt,
+    })
+    .from(schema.annotations)
+    .innerJoin(schema.user, eq(schema.user.id, schema.annotations.annotatorId))
+    .where(eq(schema.annotations.traceId, trace.id))
+    // `ann_` is a ULID, so `id` orders two answers saved inside one millisecond — the same
+    // tie-break the queue's step-back uses, for the same reason.
+    .orderBy(schema.annotations.createdAt, schema.annotations.id)
+
+  return { ...trace, verdicts, annotations: latestPerAnnotator(answers) }
+}
+
+/**
+ * ONE ROW PER PERSON: what they think NOW, with how many times they have said it.
+ *
+ * The append-only table records a changed mind as a second row, so rendering every row would
+ * show one person appearing to contradict themselves — the drawer's question is "what does
+ * each person say about this trace", and the answer is their latest row (CLAUDE.md). The
+ * earlier ones are not dropped silently: `revisions` counts them, so a screen can say the
+ * answer was changed without claiming the first one never happened.
+ *
+ * Done in JavaScript rather than as `DISTINCT ON`: this reads ONE trace, so the rows are the
+ * handful of people who looked at it, and a `sql` template here is the construct that has
+ * already gone wrong twice in this file.
+ */
+const latestPerAnnotator = <T extends { annotatorId: string; createdAt: Date }>(
+  oldestFirst: T[],
+): (T & { revisions: number })[] => {
+  const latest = new Map<string, T & { revisions: number }>()
+  for (const row of oldestFirst) {
+    const seen = latest.get(row.annotatorId)
+    latest.set(row.annotatorId, { ...row, revisions: seen === undefined ? 0 : seen.revisions + 1 })
+  }
+  // Newest answer first: the drawer reads top-down and the most recent judgement leads.
+  return [...latest.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 }

@@ -89,7 +89,12 @@ export const PanelOverviewPage = () => {
       />
 
       {collecting ? (
-        <Gate traceCount={data.trace_count} panelSlug={panel.slug} orgSlug={orgSlug} />
+        <Gate
+          traceCount={data.trace_count}
+          annotatedTraceCount={data.annotated_trace_count}
+          panelSlug={panel.slug}
+          orgSlug={orgSlug}
+        />
       ) : null}
 
       {/*
