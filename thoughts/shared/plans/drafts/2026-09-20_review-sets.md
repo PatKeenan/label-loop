@@ -51,12 +51,16 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
     **Assignment is what makes work exist**: an annotator sees the sets assigned to them and
     nothing else. Unassigning is a stamp, never a delete, so "who was asked to do this" survives
     (the `api_keys` posture).
-  - `review_set_traces`: `review_set_id`, `trace_id`, `strategy` (enum:
+  - `review_set_traces`: **a join table of two ids and how the trace got there — the trace
+    itself is NEVER copied.** A row is `review_set_id`, `trace_id`, `strategy` (enum:
     `manual | latest_n | earliest_n | random_n`), `added_at`, `added_by` (→ `user`, RESTRICT).
-    PK `(review_set_id, trace_id)` — the same trace cannot be added twice, and a top-up that
-    would re-pick it is a no-op rather than a duplicate. **Append-only by GRANT**, like
-    `annotations` and `audit_events`: `REVOKE UPDATE, DELETE`. Removing a trace from a set after
-    someone annotated it would rewrite what a past pass covered (ADR-0003's posture).
+    PK `(review_set_id, trace_id)` — **the same trace cannot be in one set twice**, enforced by
+    the database, and a top-up that re-picks it inserts nothing (`ON CONFLICT DO NOTHING`). The
+    same trace CAN be in two different sets, which is one row each and still one trace.
+    **Append-only by GRANT** (`REVOKE UPDATE, DELETE`), like `annotations` and `audit_events`:
+    that is the whole of it — the app role can add a row and read it, and cannot change or remove
+    one. Removing a trace from a set after somebody annotated it would rewrite what a past pass
+    covered (ADR-0003's posture). Roughly 100 bytes a row: a 250-trace set is 25 KB of pointers.
   - `rvs_` added to `ID_PREFIXES`.
 - `packages/contracts/src/review-sets.ts` (new) — the strategy enum, the size bounds
   (1…**`REVIEW_SET_MAX_SIZE` = 250**, stakeholder 2026-09-20: *saturation* is what bounds a pass,
@@ -204,9 +208,12 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
 6. **This SUPERSEDES ADR-0066's "one person per trace"**, which was written when the queue was
    the whole panel and a second opinion had nowhere to live. A trace now leaves YOUR queue when
    YOU have answered it. The skip rule is unchanged.
-7. **The developer names a DICTATOR when there is more than one annotator, at assignment** — over
-   resolving disagreements as a workflow. One dictator per set, enforced by a partial unique
-   index; two reviewers and no dictator is refused at the route.
+7. **The developer names a DICTATOR when there is more than one annotator, at assignment, and the
+   dictator is ONE OF THEM** (stakeholder, 2026-09-20) — over resolving disagreements as a
+   workflow, and over an adjudicator who does not annotate: their answer is what counts where the
+   others differ, so a dictator who never answered would leave a disagreement with no winner. One
+   per set, enforced by a partial unique index; two reviewers and no dictator is refused at the
+   route; a dictator who is not in the assigned list is refused with them.
 8. **A disagreement is read, not resolved**: where answers differ, the dictator's counts. No split
    queue, no arbitration screen, no resolution object, nothing waiting on anybody — and both
    answers stay on the table, which is what M6 measures agreement from.
@@ -223,7 +230,17 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
 13. **Curating and assigning are `annotation: ['curate']`, held by admin and engineer** — over
     letting an annotator curate: choosing what someone's afternoon is spent on is not the same
     act as spending it.
-14. **The set's name reaches the annotator; its strategy does not** — ADR-0067's reasoning applied
+14. **A set is COMPLETE when every assigned annotator has answered every trace in it**
+    (stakeholder, 2026-09-20) — over "each trace has at least one answer", which would call a set
+    done while half of one person's work is outstanding. With one annotator the two rules are the
+    same; with two they differ the moment one is slower.
+15. **Manual selection survives paging in MEMORY, not in the URL** — the console's trace table is
+    keyset-paginated, so "tick six on this page, page back, tick four more" needs the ticks to
+    outlive the page. They live in component state with a visible "10 selected · clear" control,
+    and are lost on reload. The URL was the alternative and is not viable: 250 ULIDs is about
+    7.5 KB, well past what a URL should carry, and `?trace=` and friends are there for state worth
+    sharing — a half-made selection is not.
+16. **The set's name reaches the annotator; its strategy does not** — ADR-0067's reasoning applied
     to selection. **Nor does another annotator's answer**: knowing what someone else said is the
     strongest anchor there is, and agreement measured after it is not agreement.
 
@@ -242,16 +259,12 @@ METRICS stay M6". Both are one-line edits, proposed in this plan and made at app
   overlap.
 
 ## Open questions for the human
-1. **Must the dictator also annotate the set?** Drawn as yes — they are one of the assigned
-   annotators, and their answer is what counts where the others differ. A dictator who never
-   answers would leave disagreements with no winner.
-2. **Manual selection across pages** — the trace table is keyset-paginated; does selection survive
-   paging (state in the URL), or is one page the practical limit for a first cut?
-3. **Does a set complete when every assigned annotator has answered every trace**, or when each
-   trace has at least one answer? They differ the moment one annotator is slower than the other.
-4. **Two one-line document edits, yours at approval**: PRODUCT.md 5.5 gains the set, assignment
+1. **Two one-line document edits, yours at approval**: PRODUCT.md 5.5 gains the set, assignment
    and the dictator; BUILD_SPINE M5's "Not now: multi-annotator consensus" becomes "recording
    overlaps; consensus metrics stay M6".
-5. **Can a person be assigned a set in a panel they otherwise cannot see?** Membership is org-wide
+2. **Can a person be assigned a set in a panel they otherwise cannot see?** Membership is org-wide
    (the panel-scoping deferral of 2026-09-18), so assignment is currently the only thing narrowing
    an annotator to a panel — either a happy accident or that deferral arriving early.
+3. **Unassigning someone who has already answered** — drawn as: the stamp is set, their answers
+   stay, and the set can no longer complete on them. Worth confirming that is what you would
+   expect rather than "their answers stop counting".
