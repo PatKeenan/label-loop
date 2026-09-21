@@ -1,3 +1,4 @@
+import { ANNOTATION_FLOOR, ANNOTATION_TARGET } from '@labelloop/contracts'
 import { Data, Mark } from './mark.tsx'
 
 /**
@@ -11,10 +12,11 @@ import { Data, Mark } from './mark.tsx'
  *
  * **Progress is visible from the first call**, because a gate with no visible distance is
  * indistinguishable from a dead end.
+ *
+ * The two numbers moved to `@labelloop/contracts` when the API began enforcing the floor
+ * (M5 phase 4): the server refuses a queue below it, and this bar fills toward the number the
+ * server is checking.
  */
-export const ANNOTATION_FLOOR = 50
-export const ANNOTATION_TARGET = 100
-
 export const Gate = ({ traceCount }: { traceCount: number }) => {
   const open = traceCount >= ANNOTATION_FLOOR
   // Against the FLOOR, not the target: the bar this fills is the one that unlocks something.

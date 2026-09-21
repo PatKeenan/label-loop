@@ -8,6 +8,7 @@
  * fails at runtime.
  */
 
+export * from './annotations.ts'
 export * from './api-keys.ts'
 export * from './audit-events.ts'
 export * from './auth.ts'
