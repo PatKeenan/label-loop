@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.4.0](https://github.com/PatKeenan/label-loop/compare/v0.3.0...v0.4.0) (2026-09-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **db:** drop artifact and context; output is NOT NULL (ADR-0074) ([#81](https://github.com/PatKeenan/label-loop/issues/81))
+
+### Features
+
+* **api:** add GitHub sign-in, and shut the password door in production ([#59](https://github.com/PatKeenan/label-loop/issues/59)) ([de7208a](https://github.com/PatKeenan/label-loop/commit/de7208a5db36b6dea0f33712ab9659db8b6b7556))
+* **api:** add the model catalogue, and bound what the picker may claim ([#61](https://github.com/PatKeenan/label-loop/issues/61)) ([9db1669](https://github.com/PatKeenan/label-loop/commit/9db1669eb5de463f9111df90741e47272bfb36e8))
+* **api:** annotation sets, their membership and the pickers (ADR-0079…0086) ([#103](https://github.com/PatKeenan/label-loop/issues/103)) ([c65c437](https://github.com/PatKeenan/label-loop/commit/c65c437f7aab1a83321d24ae009e9a578e6a2a61))
+* **api:** annotations, append-only, served by a per-panel review queue (ADR-0066) ([#84](https://github.com/PatKeenan/label-loop/issues/84)) ([dec08e7](https://github.com/PatKeenan/label-loop/commit/dec08e7ecc0a9b671ad352401d9dad7be0bc86d9))
+* **api:** app-emitted metrics, through the collector ([#50](https://github.com/PatKeenan/label-loop/issues/50)) ([a875c6b](https://github.com/PatKeenan/label-loop/commit/a875c6be17d75d4eb989e79418998f62ddcf53e2))
+* **api:** create panels and judges, the first write path for versions ([#63](https://github.com/PatKeenan/label-loop/issues/63)) ([27ec479](https://github.com/PatKeenan/label-loop/commit/27ec479714b177dd508a942ae125b9869d475df5))
+* **api:** evaluate takes input, output, reference and metadata (ADR-0073) ([#77](https://github.com/PatKeenan/label-loop/issues/77)) ([43023b3](https://github.com/PatKeenan/label-loop/commit/43023b3910f37bf3fe0482ce4937a773cf828bdb))
+* **api:** invite members by email, claimed on verified sign-in ([#73](https://github.com/PatKeenan/label-loop/issues/73)) ([69adee8](https://github.com/PatKeenan/label-loop/commit/69adee81e24d33efbe4c89c98c8d6f526f8d6e8a))
+* **api:** issue and revoke keys, and give the audit log its first writer ([#60](https://github.com/PatKeenan/label-loop/issues/60)) ([d6ef323](https://github.com/PatKeenan/label-loop/commit/d6ef323366a392e495ea89ee554ac871d76572c8))
+* **api:** judges read the roles, rendered by shape (ADR-0073) ([#78](https://github.com/PatKeenan/label-loop/issues/78)) ([ee9cdec](https://github.com/PatKeenan/label-loop/commit/ee9cdecdcebe7c2e81c843ea0051acf214bd8bad))
+* **api:** let a panel collect before it judges ([#69](https://github.com/PatKeenan/label-loop/issues/69)) ([d049189](https://github.com/PatKeenan/label-loop/commit/d049189aa2cfd2b7ee6e5e8da2b954b0b4e82839))
+* **api:** make the org explicit, and enforce the role in it ([#58](https://github.com/PatKeenan/label-loop/issues/58)) ([b57056b](https://github.com/PatKeenan/label-loop/commit/b57056be71b479a89bdc70d6d018c68fa56f294a))
+* **api:** replace role lists with a shared capability map ([#72](https://github.com/PatKeenan/label-loop/issues/72)) ([1d456ab](https://github.com/PatKeenan/label-loop/commit/1d456abbe3e86ddcb88940d889d01915e90ef737))
+* **db:** a read-only role for the dashboards ([#51](https://github.com/PatKeenan/label-loop/issues/51)) ([027a19d](https://github.com/PatKeenan/label-loop/commit/027a19d1775ebe8cccc7e4efe97b0fd22d4ef333))
+* **db:** drop artifact and context; output is NOT NULL (ADR-0074) ([#81](https://github.com/PatKeenan/label-loop/issues/81)) ([f464e62](https://github.com/PatKeenan/label-loop/commit/f464e62fd0e109debebe6bd808b7456d12e76c27))
+* **grafana:** dashboards as code, and one alert rule ([#52](https://github.com/PatKeenan/label-loop/issues/52)) ([2702d50](https://github.com/PatKeenan/label-loop/commit/2702d500ea347222a79a00cb9db380626aa002e5))
+* **infra:** logs to Loki, by out-of-process collection ([#53](https://github.com/PatKeenan/label-loop/issues/53)) ([c8d786c](https://github.com/PatKeenan/label-loop/commit/c8d786c7562828cf255b67fcc6106802b8622ac9))
+* **k6:** a soak, and retention sized from what it shows ([#54](https://github.com/PatKeenan/label-loop/issues/54)) ([51119ad](https://github.com/PatKeenan/label-loop/commit/51119ad3734c3ad3a9b8a2d0a4f8eb5cdc7f320e))
+* the annotation queue serves an assigned set (ADR-0079, ADR-0081, ADR-0086) ([#98](https://github.com/PatKeenan/label-loop/issues/98)) ([bab503a](https://github.com/PatKeenan/label-loop/commit/bab503a416fb4258f07cc16348a1ad3deaa9c3a8))
+* **web:** a trace shows what people said about it (ADR-0066) ([#88](https://github.com/PatKeenan/label-loop/issues/88)) ([a5e4525](https://github.com/PatKeenan/label-loop/commit/a5e45255e5687da9fc3cc150b9283df91dad8350))
+* **web:** build the console frame on the converted tokens ([#67](https://github.com/PatKeenan/label-loop/issues/67)) ([4422597](https://github.com/PatKeenan/label-loop/commit/44225978e58ba982605e0cf36df152f350a4e85e))
+* **web:** build the console rooms for collecting panels ([#70](https://github.com/PatKeenan/label-loop/issues/70)) ([0475686](https://github.com/PatKeenan/label-loop/commit/0475686041a7cdf733e6fd0bd5fdbe56a96192c0))
+* **web:** the Annotations section — staff read who said what (ADR-0084) ([#99](https://github.com/PatKeenan/label-loop/issues/99)) ([76394aa](https://github.com/PatKeenan/label-loop/commit/76394aa6895e830d802417032be9476a1deb8289))
+* **web:** the annotator surface — one trace, one question (ADR-0066) ([#85](https://github.com/PatKeenan/label-loop/issues/85)) ([ebfd3d6](https://github.com/PatKeenan/label-loop/commit/ebfd3d68400b8c10575eb6405986d317f3ab9054))
+* **web:** traces read by shape, with only the output on the judged surface (ADR-0073) ([#79](https://github.com/PatKeenan/label-loop/issues/79)) ([b7e91b3](https://github.com/PatKeenan/label-loop/commit/b7e91b345cadcb080c505252e5d38e654d17e59c))
+
+
+### Bug Fixes
+
+* **web:** staff are never routed into the annotator surface (ADR-0084) ([#91](https://github.com/PatKeenan/label-loop/issues/91)) ([f7586cf](https://github.com/PatKeenan/label-loop/commit/f7586cf26f771aec0aa2d60d1b4049e6b9457b61))
+
+
+### Refactoring
+
+* the product says annotation, not review (ADR-0085) ([#96](https://github.com/PatKeenan/label-loop/issues/96)) ([8faf8a1](https://github.com/PatKeenan/label-loop/commit/8faf8a13171bee8f14bc076777adcb603568808e))
+
+
+### Documentation
+
+* accept ADR-0073 and plan the native-shapes evaluate contract ([#75](https://github.com/PatKeenan/label-loop/issues/75)) ([9c67d63](https://github.com/PatKeenan/label-loop/commit/9c67d63211ec4983cca18e99bee65aeda5d8ea50))
+* **api:** every caller and document speaks in the four roles (ADR-0073) ([#80](https://github.com/PatKeenan/label-loop/issues/80)) ([a953787](https://github.com/PatKeenan/label-loop/commit/a9537879540556449fc5fa8ccb1ffaaf489ec154))
+* approve the M4 console and auth plan, and decide D17 (shadcn/ui) ([#57](https://github.com/PatKeenan/label-loop/issues/57)) ([9663b8d](https://github.com/PatKeenan/label-loop/commit/9663b8d5530f1cf733f65c6bd7ff991c21e5cc08))
+* close M5 phase 7 — annotation sets shipped ([#104](https://github.com/PatKeenan/label-loop/issues/104)) ([01da016](https://github.com/PatKeenan/label-loop/commit/01da01685e9981762b4668590de937e6f9ecbd1d))
+* current phase is M5 after the native-shapes contract change ([#82](https://github.com/PatKeenan/label-loop/issues/82)) ([0e94656](https://github.com/PatKeenan/label-loop/commit/0e9465616deb2525995ff5819ebaf851a4372749))
+* M5 is at phase 5; review sets are approved and supersede the queue ([#87](https://github.com/PatKeenan/label-loop/issues/87)) ([058008b](https://github.com/PatKeenan/label-loop/commit/058008bffa434e9e04058a4f139af1baa14a7732))
+* M5 is complete; phase 7 is next and a developer may be assigned a set ([#93](https://github.com/PatKeenan/label-loop/issues/93)) ([5ab5613](https://github.com/PatKeenan/label-loop/commit/5ab5613cf7c43fde49bcdff12d9f6270ddac1024))
+* M5 phase 3 is merged; the next phase is 4 ([#83](https://github.com/PatKeenan/label-loop/issues/83)) ([01e49c6](https://github.com/PatKeenan/label-loop/commit/01e49c6ddad5039e87f5d6fe5390c3db7b7f2e75))
+* **mockups:** draw annotator-session r5 for judgeless panels ([#74](https://github.com/PatKeenan/label-loop/issues/74)) ([34129f2](https://github.com/PatKeenan/label-loop/commit/34129f251661788d33cf97ffc97ecbf35b48b477))
+* **mockups:** draw the console frame, and let a panel collect before it judges ([#65](https://github.com/PatKeenan/label-loop/issues/65)) ([8033fad](https://github.com/PatKeenan/label-loop/commit/8033fad9abff1b3715aad8b5ecd75ab4c517cc8b))
+* park due dates on an annotation set ([#102](https://github.com/PatKeenan/label-loop/issues/102)) ([3c1f807](https://github.com/PatKeenan/label-loop/commit/3c1f807a699a85630f3152b22eb68e4155508ef7))
+* phase 7's open questions are all answered ([#95](https://github.com/PatKeenan/label-loop/issues/95)) ([6dd6933](https://github.com/PatKeenan/label-loop/commit/6dd6933ed794b622aa07fcb173eef232e9a2ed63))
+* **plan:** approve annotation sets — staff read, rename, done by derivation (+ ADR 0086) ([#92](https://github.com/PatKeenan/label-loop/issues/92)) ([7ccc8fc](https://github.com/PatKeenan/label-loop/commit/7ccc8fcaf27a7710e527e25a5864c04d0eb8216a))
+* **plan:** approve evaluate-native-shapes (+ ADR 0074..0078) ([#76](https://github.com/PatKeenan/label-loop/issues/76)) ([b381bb2](https://github.com/PatKeenan/label-loop/commit/b381bb287f7af0e9fdc62d33ea69bd065ea67d4b))
+* **plan:** approve review sets — assigned, dictated, capped at 250 (+ ADR 0079..0083) ([#86](https://github.com/PatKeenan/label-loop/issues/86)) ([8f26a12](https://github.com/PatKeenan/label-loop/commit/8f26a127077b73304b9dfa0fb60fba363b15df7d))
+* **plan:** approve the M3 observability plan (+ ADR 0041-0045) ([#49](https://github.com/PatKeenan/label-loop/issues/49)) ([b26be36](https://github.com/PatKeenan/label-loop/commit/b26be36f82886b6d444329bd673fa7dc24ecd484))
+* **plan:** approve the M5 members and annotation plan (+ ADR 0064-0072) ([#71](https://github.com/PatKeenan/label-loop/issues/71)) ([dc5a38d](https://github.com/PatKeenan/label-loop/commit/dc5a38d43bc2b42192cac9454a73263554cbf7a0))
+* **plan:** complete the M2 resilience and load baseline ([#47](https://github.com/PatKeenan/label-loop/issues/47)) ([3126b55](https://github.com/PatKeenan/label-loop/commit/3126b55cfaf552f217447c21d109ce4d75f1ae0d))
+* **plan:** complete the M3 observability plan ([#55](https://github.com/PatKeenan/label-loop/issues/55)) ([6b19444](https://github.com/PatKeenan/label-loop/commit/6b19444942cf486bc04f002bad08d9fa0d885668))
+* point CLAUDE.md at phase 7, and at what phase 8 now builds ([#66](https://github.com/PatKeenan/label-loop/issues/66)) ([2904749](https://github.com/PatKeenan/label-loop/commit/2904749ae60d096b186f1e7095576d2c94e29f28))
+* point CLAUDE.md at phase 8, and at what phase 7 leaves behind ([#68](https://github.com/PatKeenan/label-loop/issues/68)) ([8ff50bc](https://github.com/PatKeenan/label-loop/commit/8ff50bc81b1a83d083ba83b30fd9be86ee41cc33))
+* reconcile the M4 plan and CLAUDE.md before a context reset ([#64](https://github.com/PatKeenan/label-loop/issues/64)) ([01410e8](https://github.com/PatKeenan/label-loop/commit/01410e87f42821d10bb8621267026626144d864f))
+* remove the SDK from M4, which ADR-0002 descoped in August ([#56](https://github.com/PatKeenan/label-loop/issues/56)) ([289077a](https://github.com/PatKeenan/label-loop/commit/289077a0e4a0a7a63336bf7af63ab8de42c09c8f))
+* staff inspect annotations, never edit them; annotation replaces review ([#90](https://github.com/PatKeenan/label-loop/issues/90)) ([1285dbb](https://github.com/PatKeenan/label-loop/commit/1285dbbbfcab619f3f7c334ab95fc449f79a3763))
+* the id prefix is aset_, and the prefix rules get a reference table ([#94](https://github.com/PatKeenan/label-loop/issues/94)) ([f2663cb](https://github.com/PatKeenan/label-loop/commit/f2663cbf901ec1bef983947d4c9df765a49d89e2))
+
+
+### CI
+
+* **gitleaks:** allowlist model identifiers, which look like API keys ([#62](https://github.com/PatKeenan/label-loop/issues/62)) ([320f60a](https://github.com/PatKeenan/label-loop/commit/320f60a4f3f2cb28ae8fcdc5b26cb6b7555e379a))
+
 ## [0.3.0](https://github.com/PatKeenan/label-loop/compare/v0.2.0...v0.3.0) (2026-09-08)
 
 
