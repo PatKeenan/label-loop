@@ -10,6 +10,7 @@ import { type Config, loadConfig } from '../config.ts'
 import { createFakeProvider, createModelGateway } from '../llm/index.ts'
 import { createMemoryRateLimitStore } from '../rate-limit/memory-store.ts'
 import { createAnnotateRoutes } from '../routes/internal/annotate.ts'
+import { createAnnotationSetRoutes } from '../routes/internal/annotation-sets.ts'
 import { createJudgeRoutes } from '../routes/internal/judges.ts'
 import { createKeyRoutes } from '../routes/internal/keys.ts'
 import { createMemberRoutes } from '../routes/internal/members.ts'
@@ -53,6 +54,7 @@ const guardedRoutes = () =>
     .route('/', createTraceRoutes())
     .route('/', createMemberRoutes())
     .route('/', createAnnotateRoutes())
+    .route('/', createAnnotationSetRoutes())
 
 /** The real app, with the console routes mounted behind a stand-in for the session. */
 const hostWith = (role: OrgRole) => {
@@ -146,13 +148,43 @@ const MATRIX: readonly RouteCase[] = [
     admitted: ANNOTATORS,
   },
   { route: 'POST /annotate/annotations', url: '/annotate/annotations', admitted: ANNOTATORS },
+  /**
+   * CURATING IS STAFF, and an ANNOTATOR IS REFUSED — which is the row worth reading (ADR-0083).
+   * Choosing what somebody's afternoon is spent on is not the same act as spending it, and
+   * assigning a set grants its traces to whoever is named.
+   */
+  {
+    route: 'GET /panels/:slug/annotation-sets',
+    url: '/panels/some-panel/annotation-sets',
+    admitted: STAFF,
+  },
+  {
+    route: 'POST /panels/:slug/annotation-sets',
+    url: '/panels/some-panel/annotation-sets',
+    admitted: STAFF,
+  },
+  {
+    route: 'POST /annotation-sets/:id/top-up',
+    url: '/annotation-sets/aset_x/top-up',
+    admitted: STAFF,
+  },
+  {
+    route: 'PUT /annotation-sets/:id/annotators',
+    url: '/annotation-sets/aset_x/annotators',
+    admitted: STAFF,
+  },
+  {
+    route: 'POST /annotation-sets/:id/archive',
+    url: '/annotation-sets/aset_x/archive',
+    admitted: STAFF,
+  },
 ]
 
 const send = (role: OrgRole, { route, url }: RouteCase) => {
   const method = route.split(' ')[0] ?? 'GET'
   return hostWith(role).request(`/probe${url}`, {
     method,
-    ...(method === 'POST' || method === 'PATCH'
+    ...(method === 'POST' || method === 'PATCH' || method === 'PUT'
       ? { body: '{}', headers: { 'content-type': 'application/json' } }
       : {}),
   })

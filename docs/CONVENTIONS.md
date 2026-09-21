@@ -179,7 +179,7 @@ and `newId()` will not mint anything outside it. This table is what each one MEA
 | `aud_` | Audit event (ADR-0051) | live |
 | `inv_` | Organisation invitation (ADR-0065) | live |
 | `tax_` | Failure taxonomy, versioned | reserved — M6 |
-| `aset_` | **Annotation set** — a curated, snapshotted selection of a panel's traces, assigned to annotators (ADR-0079) | reserved — M5 phase 7 |
+| `aset_` | **Annotation set** — a curated, snapshotted selection of a panel's traces, assigned to annotators (ADR-0079) | live |
 | `ds_` | Curated fine-tuning dataset (PRODUCT 5.8) | reserved — M7 |
 | `ft_` | Fine-tune job / adapter (PRODUCT 5.8–5.9) | reserved — M7 |
 
