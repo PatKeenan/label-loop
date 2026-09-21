@@ -12,6 +12,8 @@ import { safeRedirect } from './api/redirect.ts'
 import { validateConsoleSearch } from './components/shell/context.ts'
 import { AnnotateHomePage } from './routes/annotate.tsx'
 import { AnnotateSessionPage } from './routes/annotate-session.tsx'
+import { AnnotationSetPage } from './routes/annotation-set.tsx'
+import { AnnotationsPage } from './routes/annotations.tsx'
 import { HomePage } from './routes/home.tsx'
 import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
@@ -160,6 +162,23 @@ const panelTraceRoute = createRoute({
   component: TracePage,
 })
 
+/**
+ * THE ANNOTATIONS SECTION (ADR-0084) — the panel's annotation sets, and one of them. Staff
+ * only; the server guards both reads with `annotation: ['curate']` and this mirrors nothing it
+ * does not enforce.
+ */
+const panelAnnotationsRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/p/$panelSlug/annotations',
+  component: AnnotationsPage,
+})
+
+const panelAnnotationSetRoute = createRoute({
+  getParentRoute: () => consoleRoute,
+  path: '/p/$panelSlug/annotations/$setId',
+  component: AnnotationSetPage,
+})
+
 const panelKeysRoute = createRoute({
   getParentRoute: () => consoleRoute,
   path: '/p/$panelSlug/keys',
@@ -242,6 +261,8 @@ export const router = createRouter({
       panelJudgesRoute,
       panelTracesRoute,
       panelTraceRoute,
+      panelAnnotationsRoute,
+      panelAnnotationSetRoute,
       panelKeysRoute,
       settingsMembersRoute,
     ]),

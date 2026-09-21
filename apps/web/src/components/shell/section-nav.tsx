@@ -34,16 +34,26 @@ type Section =
   // against the route tree, so a literal is checked at compile time and a template string
   // is not. A section pointing at a route that does not exist should be a build failure.
   | {
-      to: '/p/$panelSlug' | '/p/$panelSlug/traces' | '/p/$panelSlug/keys'
+      to:
+        | '/p/$panelSlug'
+        | '/p/$panelSlug/traces'
+        | '/p/$panelSlug/keys'
+        | '/p/$panelSlug/annotations'
       label: string
       state: 'live'
     }
   | { label: string; state: 'locked'; why: string }
   | { label: string; state: 'scheduled'; milestone: string; why: string }
-  // BOTH KINDS OF UNAVAILABLE AT ONCE, which is why it needs its own state: below the floor
-  // annotation is not available for this panel at all (a padlock, ADR-0061), and above it the
-  // section that would show the work is still being built (a milestone mark).
-  | { label: string; state: 'gated'; milestone: string; why: string }
+  // THE FLOOR, AND NOTHING ELSE. It used to mean both kinds of unavailable at once — below the
+  // floor annotation is not available for this panel at all (a padlock, ADR-0061), and above it
+  // the section did not exist yet (a milestone mark). Phase 7 built the section, so the second
+  // half is gone and this is the floor alone.
+  | {
+      to: '/p/$panelSlug/annotations'
+      label: string
+      state: 'gated'
+      why: string
+    }
 
 const SECTIONS: readonly Section[] = [
   // The panel's home and, at M4, its onboarding: collecting state, progress toward the
@@ -74,10 +84,10 @@ const SECTIONS: readonly Section[] = [
    * bug rather than as a threshold.
    */
   {
+    to: '/p/$panelSlug/annotations',
     label: 'Annotations',
     state: 'gated',
-    milestone: 'M5',
-    why: 'The annotation sets this panel’s annotators are working, and what each of them said — arrives with M5 phase 7.',
+    why: 'The annotation sets this panel’s annotators are working, and what each of them said.',
   },
   { label: 'Taxonomy', state: 'scheduled', milestone: 'M6', why: 'Arrives at M6' },
   { label: 'Alignment', state: 'scheduled', milestone: 'M6', why: 'Arrives at M6' },
@@ -105,31 +115,24 @@ export const SectionNav = ({
   <nav className="flex flex-col gap-px" aria-label={panelName}>
     {SECTIONS.map((section) => {
       // The one section with a condition on it: annotation opens at the floor (ADR-0061).
-      if (section.state === 'gated') {
-        const below = traceCount < ANNOTATION_FLOOR
+      // THE ONE SECTION WITH A CONDITION ON IT, and it is now only the floor: below it the
+      // section is locked, above it the row is an ordinary live link (M5 phase 7 built what it
+      // points at). Gated rather than hidden, with the distance in the tooltip — a section that
+      // vanishes at 49 traces and reappears at 50 reads as a bug rather than as a threshold.
+      if (section.state === 'gated' && traceCount < ANNOTATION_FLOOR) {
         return (
           <span
             key={section.label}
             aria-disabled="true"
-            title={
-              below
-                ? `Opens at ${ANNOTATION_FLOOR} collected traces — this panel has ${traceCount}`
-                : section.why
-            }
+            title={`Opens at ${ANNOTATION_FLOOR} collected traces — this panel has ${traceCount}`}
             className={cn(ROW, 'cursor-not-allowed text-foreground-faint')}
           >
             {section.label}
-            {below ? (
-              <LockIcon aria-hidden className="ml-auto size-3 shrink-0 text-foreground-faint" />
-            ) : (
-              <Mark tone="neutral" className="ml-auto">
-                {section.milestone}
-              </Mark>
-            )}
+            <LockIcon aria-hidden className="ml-auto size-3 shrink-0 text-foreground-faint" />
           </span>
         )
       }
-      if (section.state === 'live') {
+      if (section.state === 'live' || section.state === 'gated') {
         return (
           <Link
             key={section.label}

@@ -130,3 +130,83 @@ describe('no OpenTelemetry auto-instrumentation, anywhere (ADR-0007)', () => {
     expect(offending).toEqual([])
   })
 })
+
+/**
+ * TWO SURFACES, AND THEY DO NOT BORROW FROM EACH OTHER (PRODUCT.md 5.5, CLAUDE.md).
+ *
+ * The annotator surface is the minimal, friendly, light one, for a non-engineer answering one
+ * question at a time. Everything staff-facing is the engineer console: dark, dense, inside
+ * `ConsoleShell`, under `data-surface="console"`. They share `tokens.css` at different settings
+ * — the same tokens, never a second design system — and nothing else.
+ *
+ * **This is a test because a paragraph did not hold.** M5 phase 5 broke the rule by accident and
+ * nothing in the code said not to: a console screen linked into the annotator surface, and met
+ * in a running console it read as an ambush (ADR-0084). The rule is now the kind of thing CI
+ * refuses rather than the kind a reviewer has to notice.
+ *
+ * `components/shaped/` is shared ON PURPOSE and belongs to neither side: it is the ONE renderer
+ * for a trace (ADR-0078), and two renderings of one trace would be two accounts of what was
+ * judged. `components/shell/` is the console's, `components/annotate/` is the annotator's, and
+ * those two are what may not cross.
+ */
+const CONSOLE_ROUTES = [
+  'apps/web/src/routes/annotations.tsx',
+  'apps/web/src/routes/annotation-set.tsx',
+  'apps/web/src/routes/traces.tsx',
+  'apps/web/src/routes/trace.tsx',
+  'apps/web/src/routes/panel.tsx',
+  'apps/web/src/routes/keys.tsx',
+  'apps/web/src/routes/members.tsx',
+  'apps/web/src/routes/home.tsx',
+]
+
+const ANNOTATOR_FILES = [
+  'apps/web/src/routes/annotate.tsx',
+  'apps/web/src/routes/annotate-session.tsx',
+]
+
+const fileAt = (path: string): SourceFile => {
+  const file = FILES.find((candidate) => candidate.path === path)
+  if (file === undefined) {
+    throw new Error(`${path} is not in the scan — rename it here as well, or the rule is silent.`)
+  }
+  return file
+}
+
+describe('the two surfaces do not borrow from each other (PRODUCT 5.5, ADR-0084)', () => {
+  test('every file the rule names still exists — a rule over a moved file proves nothing', () => {
+    for (const path of [...CONSOLE_ROUTES, ...ANNOTATOR_FILES]) expect(fileAt(path).path).toBe(path)
+  })
+
+  test('no CONSOLE route imports an annotator component', () => {
+    const found = offences(CONSOLE_ROUTES.map(fileAt), /from '.*components\/annotate\//)
+    expect(found).toEqual([])
+  })
+
+  test('no ANNOTATOR screen imports a console component', () => {
+    // `components/shell/` is the console's frame, its sidebar, its tables and its dialogs. The
+    // annotator surface has its own frame and shares only the account menu and the surface
+    // hook, which live there for a reason that is recorded and is the exception, not the rule.
+    const SHARED_FROM_SHELL = /components\/shell\/(account-menu|surface|context|menu-focus)/
+    const found = offences(ANNOTATOR_FILES.map(fileAt), /from '.*components\/shell\//).filter(
+      (offence) => !SHARED_FROM_SHELL.test(offence),
+    )
+    expect(found).toEqual([])
+  })
+
+  test('no console route links INTO the annotator surface except one assigned set', () => {
+    /**
+     * ADR-0084: staff are never ROUTED to the annotator surface. The one route that remains is
+     * a person picking up work assigned to them — their own set, chosen — which is the opposite
+     * of the ambush phase 5 shipped, and it lives on the set page behind `assignedToMe`.
+     */
+    const others = CONSOLE_ROUTES.filter(
+      (path) => path !== 'apps/web/src/routes/annotation-set.tsx',
+    )
+    expect(offences(others.map(fileAt), /to="\/annotate/)).toEqual([])
+    expect(offences(others.map(fileAt), /to: '\/annotate/)).toEqual([])
+
+    // And on the one page that has it, it is guarded rather than unconditional.
+    expect(fileAt('apps/web/src/routes/annotation-set.tsx').source).toContain('assignedToMe')
+  })
+})

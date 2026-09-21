@@ -250,29 +250,40 @@ half.** It is the engineer console throughout (see "The rule this plan exists to
   about what reaches the ANNOTATOR, not about what staff may see).
 
 ### Steps
-- [ ] `GET /annotation-sets/:id` — set, annotators with progress, traces with answers
-- [ ] Annotations section: the set table, state filter, create dialog
-- [ ] One set: annotator progress, the trace × annotator answer grid, assign / top up / archive
-- [ ] Trace rows open the phase 6 drawer — no second rendering of an answer
-- [ ] Sidebar row live; gate card points here
-- [ ] Trace-table selection → New annotation set
-- [ ] Tests: the staff read returns every annotator's answer and the dictator marking; a set in
-      another org is NOT_FOUND; an **annotator** calling the staff read is FORBIDDEN; `bun test
-      apps/web` covers the pure parts (state derivation for the badge, the create form's rules)
+- [x] `GET /annotation-sets/:id` — set, annotators with progress, traces with answers
+- [x] Annotations section: the set table, state filter, create dialog
+- [x] One set: annotator progress, the trace × annotator answer grid, assign / top up / archive
+- [x] Trace rows open the phase 6 drawer — no second rendering of an answer
+- [x] Sidebar row live; gate card points here
+- [x] Trace-table selection → New annotation set
+- [x] Tests: the staff read returns every annotator's answer and the dictator marking; a set in
+      another org is NOT_FOUND; an **annotator** calling the staff read is FORBIDDEN (see
+      Deviation 21 for the pure web tests)
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
-- [ ] **No annotator component is imported by a console route, and no console component by the
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+      (1081 pass / 2 fail — both `relations.test.ts`, the known seed-state failures, M4 Deviation 64)
+- [x] **No annotator component is imported by a console route, and no console component by the
       annotator surface** — asserted in `architecture.test.ts`, which already owns this kind of
       rule. The two-surface rule becomes a test rather than a paragraph.
 
 ### Manual verification
-- [ ] As an engineer: select six traces by hand, make a set, assign two annotators, name a
+- [x] As an engineer: select six traces by hand, make a set, assign two annotators, name a
       dictator. As each annotator, answer some. Back in the console: both annotators' progress is
       right, the trace grid shows both answers side by side, disagreements are visible, and the
       dictator's is marked. **Nothing on the screen offers to change an answer.**
-- [ ] Archive the set; it leaves the default list and is still readable behind the filter
-- [ ] The console never changes appearance — the section looks like Traces, not like the
+      — done in the browser on `demo`/`brixadi-brand-taste`. Six ticked in the trace table → "6
+      selected · New annotation set" → the dialog with no strategy control and "Takes 6 selected
+      traces" → straight into the set. Assigning two with no dictator disabled Save and said why;
+      naming one saved. Both answered two traces, disagreeing on the first: the grid reads
+      `ACCEPTABLE | NOT ACCEPTABLE note | ACCEPTABLE by dictator` on that row and
+      `NOT ACCEPTABLE | NOT ACCEPTABLE note | NOT ACCEPTABLE` (no "by dictator") on the one they
+      agreed about. Unanswered rows read `—`. A trace row opens the phase 6 drawer with both
+      answers and their notes. **This is also where the CORS bug was found — see Deviation 19.**
+- [x] Archive the set; it leaves the default list and is still readable behind the filter
+      — the list says "1 set shown · Show archived (1)"; the toggle puts `?archived=true` in the
+      URL and the archived row back. The archived set's own page drops Assign / Top up / Archive.
+- [x] The console never changes appearance — the section looks like Traces, not like the
       annotator surface
 
 ---
@@ -464,3 +475,33 @@ is arriving there without having chosen to.
     page's `window` keydown listener, so Y/N/S and Enter looked dead when driven from the harness.
     Dispatching a real `KeyboardEvent` in the page selects and saves correctly, so r6 decision 8
     still holds — the shortcut path is intact and the tooling was the problem.
+
+### Phase 4
+17. **The set LIST carries `done` too, from the same `setProgress`.** The plan puts "how many
+    traces are answered" on the list and `setProgress` in phase 3; the list route now calls it
+    once for the whole page rather than per row. One definition, asked once.
+18. **`countingAnswer` is computed on the SERVER and sent with each trace row.** The plan says
+    the dictator's is "marked"; doing that marking in the console would be a second
+    implementation of ADR-0081's read rule, and M6 will read the same rows from SQL. The grid
+    renders what the server decided.
+19. **`PUT` was missing from the console's CORS allow-list, and only a browser could say so.**
+    `PUT /annotation-sets/:id/annotators` (phase 2) is the first PUT this API ever registered.
+    The preflight is answered 204 whatever the method is, and the browser then drops the real
+    request on its own with no server-side trace — so the whole suite was green while the assign
+    dialog silently did nothing. `index.ts` already carried a comment predicting exactly this
+    ("the one line in M4's tenancy work that no test can catch — `app.request()` sends no
+    preflight"). **It is now catchable and caught**: `routes/internal/cors.test.ts` asks the app
+    for every method its router registers and asserts the preflight allows each one. Verified to
+    fail with the method removed, and to name it.
+20. **A section's sidebar row is `gated` OR live, not both.** The row carried a milestone mark
+    above the floor as well as a padlock below it, because the section did not exist yet. It
+    does now, so `gated` means the floor alone and the row is an ordinary link above it.
+21. **No `bun test apps/web` was added.** The plan suggests pure web tests for "state derivation
+    for the badge" and "the create form's rules" — neither is a pure function here. The badge
+    reads `done` straight off the server (Deviation 17) rather than deriving anything, and the
+    form's rules are `DISPLAY_NAME_RULES` and `ANNOTATION_SET_MAX_SIZE` from contracts, already
+    tested where they live. Testing either in the console would be asserting that a value is
+    passed through. What the two-surface rule needed instead is a test, and it got one.
+22. **The trace-table selection is component state, not the URL** — alone among this console's
+    view state. It can be 250 ids, which is not what a query string is for, and a selection is a
+    moment's work rather than a view somebody shares.

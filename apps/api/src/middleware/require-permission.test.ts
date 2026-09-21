@@ -167,6 +167,7 @@ const MATRIX: readonly RouteCase[] = [
     url: '/panels/some-panel/annotation-sets',
     admitted: STAFF,
   },
+  { route: 'GET /annotation-sets/:id', url: '/annotation-sets/aset_x', admitted: STAFF },
   {
     route: 'POST /annotation-sets/:id/top-up',
     url: '/annotation-sets/aset_x/top-up',

@@ -12,6 +12,7 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-or
 import type { Clock } from '../ports/clock.ts'
 import { recordAuditEvent } from '../repositories/audit-events.ts'
 import type { Executor } from '../repositories/executor.ts'
+import { setProgress } from './annotation-queue.ts'
 
 /**
  * CURATING AN ANNOTATION SET — creating one, growing it, assigning people to it, putting it
@@ -632,4 +633,189 @@ export const countingAnswer = (
   const theirs = dictatorId === null ? undefined : latest.get(dictatorId)
   if (theirs === undefined) return null
   return { outcome: theirs.outcome, annotatorId: theirs.annotatorId }
+}
+
+// ── The staff read ────────────────────────────────────────────────────────────────────────
+
+export type SetAnnotator = {
+  userId: string
+  email: string
+  name: string
+  isDictator: boolean
+  assignedAt: Date
+  unassignedAt: Date | null
+  answered: number
+  annotated: number
+}
+
+export type SetTraceAnswer = {
+  annotatorId: string
+  outcome: string
+  note: string | null
+  createdAt: Date
+  /** Earlier rows by the same person on the same trace — a changed mind, said plainly. */
+  revisions: number
+}
+
+export type SetTrace = {
+  traceId: string
+  addedAt: Date
+  strategy: AnnotationSetStrategy
+  answers: SetTraceAnswer[]
+  /** Which answer counts, by ADR-0081's read rule. `null` while there is no tie-break. */
+  counting: { outcome: string; annotatorId: string } | null
+}
+
+export type AnnotationSetDetail = {
+  id: string
+  name: string
+  panelId: string
+  panelSlug: string
+  createdAt: Date
+  archivedAt: Date | null
+  createdByEmail: string
+  size: number
+  done: boolean
+  annotators: SetAnnotator[]
+  traces: SetTrace[]
+}
+
+/**
+ * ONE SET, FOR STAFF: who is assigned, where each of them is, and what each of them selected on
+ * every trace (ADR-0084).
+ *
+ * **It is a read, and there is no write beside it.** Nobody annotates somebody else's work: an
+ * engineer able to correct an answer would destroy the disagreement M6 exists to measure. Where
+ * a developer thinks an answer is wrong, the remedy is another annotator on the set (ADR-0081).
+ *
+ * **This is the one place ADR-0067's withholding does not apply**, and the distinction is worth
+ * stating: ADR-0067 is about what reaches the ANNOTATOR, not about what staff may see. Reading
+ * a panel's traces is `trace: ['read']` territory, which annotators do not have and staff do.
+ *
+ * **An UNASSIGNED annotator stays listed**, marked, with their answers intact (open question 3).
+ * They are excluded from `done` and from nothing else — the work happened.
+ *
+ * Progress comes from `setProgress`, the same function the annotator's own list uses, because
+ * two screens computing "done" separately would disagree and the one that disagreed would be
+ * believed (ADR-0086).
+ */
+export const getAnnotationSetDetail = async (
+  db: Database,
+  { orgId, setId }: { orgId: string; setId: string },
+): Promise<AnnotationSetDetail | undefined> => {
+  const [set] = await db
+    .select({
+      id: schema.annotationSets.id,
+      name: schema.annotationSets.name,
+      panelId: schema.annotationSets.panelId,
+      panelSlug: schema.panels.slug,
+      createdAt: schema.annotationSets.createdAt,
+      archivedAt: schema.annotationSets.archivedAt,
+      createdByEmail: schema.user.email,
+    })
+    .from(schema.annotationSets)
+    .innerJoin(schema.panels, eq(schema.panels.id, schema.annotationSets.panelId))
+    .innerJoin(schema.user, eq(schema.user.id, schema.annotationSets.createdBy))
+    .where(and(eq(schema.annotationSets.id, setId), eq(schema.annotationSets.orgId, orgId)))
+    .limit(1)
+  if (set === undefined) return undefined
+
+  // EVERY row, assigned or not — `setProgress` reads only the live ones, which is what `done`
+  // needs; this list is what happened, which needs both.
+  const people = await db
+    .select({
+      userId: schema.annotationSetAnnotators.userId,
+      email: schema.user.email,
+      name: schema.user.name,
+      isDictator: schema.annotationSetAnnotators.isDictator,
+      assignedAt: schema.annotationSetAnnotators.assignedAt,
+      unassignedAt: schema.annotationSetAnnotators.unassignedAt,
+      // QUALIFIED BY HAND — see `listAnnotationSets` above for what an unqualified column
+      // inside a `sql` template does to a correlated subquery.
+      answered: sql<number>`(
+        SELECT count(DISTINCT annotations.trace_id)::int FROM annotations
+        WHERE annotations.annotation_set_id = ${setId}
+          AND annotations.annotator_id = "annotation_set_annotators"."user_id"
+      )`.mapWith(Number),
+      annotated: sql<number>`(
+        SELECT count(DISTINCT annotations.trace_id)::int FROM annotations
+        WHERE annotations.annotation_set_id = ${setId}
+          AND annotations.annotator_id = "annotation_set_annotators"."user_id"
+          AND annotations.outcome <> 'skipped'
+      )`.mapWith(Number),
+    })
+    .from(schema.annotationSetAnnotators)
+    .innerJoin(schema.user, eq(schema.user.id, schema.annotationSetAnnotators.userId))
+    .where(eq(schema.annotationSetAnnotators.annotationSetId, setId))
+    .orderBy(asc(schema.annotationSetAnnotators.assignedAt))
+
+  const members = await db
+    .select({
+      traceId: schema.annotationSetTraces.traceId,
+      addedAt: schema.annotationSetTraces.addedAt,
+      strategy: schema.annotationSetTraces.strategy,
+    })
+    .from(schema.annotationSetTraces)
+    .where(eq(schema.annotationSetTraces.annotationSetId, setId))
+    .orderBy(asc(schema.annotationSetTraces.addedAt), asc(schema.annotationSetTraces.traceId))
+
+  const rows = await db
+    .select({
+      id: schema.annotations.id,
+      traceId: schema.annotations.traceId,
+      annotatorId: schema.annotations.annotatorId,
+      outcome: schema.annotations.outcome,
+      note: schema.annotations.note,
+      createdAt: schema.annotations.createdAt,
+    })
+    .from(schema.annotations)
+    .where(eq(schema.annotations.annotationSetId, setId))
+    .orderBy(asc(schema.annotations.createdAt), asc(schema.annotations.id))
+
+  const dictator = people.find((row) => row.isDictator && row.unassignedAt === null)?.userId ?? null
+
+  const byTrace = new Map<string, typeof rows>()
+  for (const row of rows) {
+    const held = byTrace.get(row.traceId)
+    if (held === undefined) byTrace.set(row.traceId, [row])
+    else held.push(row)
+  }
+
+  const traces: SetTrace[] = members.map((member) => {
+    const all = byTrace.get(member.traceId) ?? []
+    // THE LATEST ROW PER PERSON, and how many it replaced. The table is append-only, so an
+    // earlier answer is history rather than a second opinion — and a changed mind is a fact
+    // this screen states rather than one it hides.
+    const latest = new Map<string, { row: (typeof rows)[number]; earlier: number }>()
+    for (const row of all) {
+      const held = latest.get(row.annotatorId)
+      latest.set(row.annotatorId, {
+        row,
+        earlier: held === undefined ? 0 : held.earlier + 1,
+      })
+    }
+    return {
+      traceId: member.traceId,
+      addedAt: member.addedAt,
+      strategy: member.strategy,
+      answers: [...latest.values()].map(({ row, earlier }) => ({
+        annotatorId: row.annotatorId,
+        outcome: row.outcome,
+        note: row.note,
+        createdAt: row.createdAt,
+        revisions: earlier,
+      })),
+      counting: countingAnswer(all, dictator),
+    }
+  })
+
+  const progress = (await setProgress(db, [setId])).get(setId)
+
+  return {
+    ...set,
+    size: members.length,
+    done: progress?.done ?? false,
+    annotators: people,
+    traces,
+  }
 }

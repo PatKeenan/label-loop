@@ -1,8 +1,10 @@
+import { can } from '@labelloop/contracts'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { useState } from 'react'
 import { tracePagesQuery, type tracesQuery } from '../api/queries.ts'
+import { CreateAnnotationSetDialog } from '../components/shell/annotation-set-dialog.tsx'
 import {
   type ConsoleSearch,
   useConsoleContext,
@@ -119,6 +121,16 @@ export const TracesPage = () => {
   const context = useConsoleContext()
   const panel = usePanelContext(context.state === 'ready' ? context.orgId : null)
   const [interval, setRefreshInterval] = useState<Interval>(10)
+  /**
+   * PICKING TRACES BY HAND, for an annotation set (ADR-0080's `manual`).
+   *
+   * Component state rather than the URL, unlike every other piece of view state here: this can
+   * be 250 ids, and a query string is not where a quarter of a page of identifiers belongs. It
+   * is also the one thing on this screen nobody would want back after a reload — a selection is
+   * a moment's work, not a view somebody shares.
+   */
+  const [selected, setSelected] = useState<readonly string[]>([])
+  const [creating, setCreating] = useState(false)
 
   const options = tracePagesQuery(
     context.state === 'ready' ? context.orgId : '',
@@ -135,6 +147,10 @@ export const TracesPage = () => {
   })
 
   if (context.state !== 'ready' || panel.state !== 'ready') return null
+
+  // Only somebody who may CURATE can pick rows for a set, so the column only exists for them
+  // (ADR-0083). The server refuses the write either way; this keeps the table from offering it.
+  const curates = can(context.role, { annotation: ['curate'] })
 
   const head = <PageHead scope={panelTrail(context.orgSlug, panel.slug)} title="Traces" />
 
@@ -179,7 +195,19 @@ export const TracesPage = () => {
         scope={panelTrail(context.orgSlug, panel.slug)}
         title="Traces"
         actions={
-          browsingOlder ? (
+          selected.length > 0 ? (
+            // THE SELECTION'S OWN ACTIONS, replacing the live control while a selection exists:
+            // the reader has stopped watching the stream and started choosing from it.
+            <span className="flex items-center gap-[var(--gap-inline)] text-ui text-muted-foreground">
+              {selected.length} selected
+              <Button size="sm" variant="outline" onClick={() => setSelected([])}>
+                Clear
+              </Button>
+              <Button size="sm" onClick={() => setCreating(true)}>
+                New annotation set
+              </Button>
+            </span>
+          ) : browsingOlder ? (
             <span className="flex items-center gap-[var(--gap-inline)] text-ui text-muted-foreground">
               Live paused while viewing older traces
               <Button size="sm" variant="outline" onClick={backToLatest}>
@@ -199,7 +227,7 @@ export const TracesPage = () => {
         </p>
       ) : (
         <div className="flex flex-col gap-[var(--gap-stack)]">
-          <TraceTable traces={rows} />
+          <TraceTable traces={rows} {...(curates ? { selected, onSelect: setSelected } : {})} />
           <div className="flex items-center gap-[var(--gap-inline)]">
             <Data>
               {rows.length} {rows.length === 1 ? 'trace' : 'traces'} shown
@@ -222,6 +250,16 @@ export const TracesPage = () => {
           </div>
         </div>
       )}
+
+      <CreateAnnotationSetDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        orgId={context.orgId}
+        orgSlug={context.orgSlug}
+        panelSlug={panel.slug}
+        panelTraceCount={panel.traceCount}
+        traceIds={selected}
+      />
     </>
   )
 }
@@ -265,13 +303,45 @@ export type TraceRow = Awaited<
  * The trace table, shared by the Traces section and the Overview's Recent traces — one
  * rendering, so the five rows on the Overview are the same five rows at the top of Traces.
  */
-export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => {
+export const TraceTable = ({
+  traces,
+  selected,
+  onSelect,
+}: {
+  traces: readonly TraceRow[]
+  /**
+   * WHEN BOTH ARE PRESENT the table grows a checkbox column, for picking an annotation set out
+   * of rows an engineer is already reading (plan, phase 4). Absent on the Overview's Recent
+   * traces and for anybody who cannot curate — an unusable control is a question the reader has
+   * to answer before ignoring.
+   */
+  selected?: readonly string[]
+  onSelect?: (next: readonly string[]) => void
+}) => {
   const search = useSearch({ strict: false }) as ConsoleSearch
+  const picking = selected !== undefined && onSelect !== undefined
+  const allShown = picking && traces.length > 0 && traces.every((t) => selected.includes(t.id))
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-data">
         <thead>
           <tr className="border-b border-border-strong text-left">
+            {picking ? (
+              <th className="w-[var(--row-min)] px-[var(--pad-cell-x)] py-[var(--pad-cell-y)]">
+                <input
+                  type="checkbox"
+                  aria-label={allShown ? 'Clear selection' : 'Select every trace shown'}
+                  checked={allShown}
+                  onChange={() =>
+                    onSelect(
+                      allShown
+                        ? selected.filter((id) => !traces.some((t) => t.id === id))
+                        : [...new Set([...selected, ...traces.map((t) => t.id)])],
+                    )
+                  }
+                />
+              </th>
+            ) : null}
             {COLUMNS.map(({ label, title }) => (
               <th
                 key={label}
@@ -299,6 +369,24 @@ export const TraceTable = ({ traces }: { traces: readonly TraceRow[] }) => {
                 search.trace === trace.id && 'bg-muted',
               )}
             >
+              {picking ? (
+                // OUTSIDE the stretched link's reach, so ticking a row does not also open it:
+                // `relative` lifts this cell above the `after:absolute` overlay below.
+                <td className="relative z-10 px-[var(--pad-cell-x)] py-[var(--pad-cell-y)] align-middle">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${trace.id}`}
+                    checked={selected.includes(trace.id)}
+                    onChange={(event) =>
+                      onSelect(
+                        event.target.checked
+                          ? [...selected, trace.id]
+                          : selected.filter((id) => id !== trace.id),
+                      )
+                    }
+                  />
+                </td>
+              ) : null}
               <Cell>
                 <Link
                   to="."

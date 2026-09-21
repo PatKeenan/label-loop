@@ -544,6 +544,164 @@ describe('archiving is a stamp (ADR-0086)', () => {
   })
 })
 
+describe('the staff read (ADR-0084)', () => {
+  /**
+   * Built here rather than reused from another test's fixtures, because this is the one claim
+   * that needs TWO people answering the SAME traces differently — which is what the grid
+   * exists to show and what the dictator rule exists to settle.
+   */
+  const setup = async (name: string) => {
+    const set = await createSet(name, { strategy: 'manual', trace_ids: traceIds.slice(10, 13) })
+    const one = await userId(ANNOTATOR)
+    const two = await userId(SECOND)
+    await call(ENGINEER, 'PUT', `/annotation-sets/${set.id}/annotators`, {
+      body: {
+        annotators: [{ user_id: one, is_dictator: true }, { user_id: two }],
+      },
+    })
+    return { setId: set.id, one, two }
+  }
+
+  const answer = (email: string, setId: string, itemId: string, outcome: string, note?: string) =>
+    call(email, 'POST', `/annotate/sets/${setId}/annotations`, {
+      body: { item_id: itemId, outcome, ...(note === undefined ? {} : { note }) },
+    })
+
+  const read = async (setId: string, email = ENGINEER) => {
+    const { status, body } = await call(email, 'GET', `/annotation-sets/${setId}`)
+    return { status, data: (body as { data?: Record<string, never> }).data, body }
+  }
+
+  test('it returns EVERY annotator’s answer, and marks the one that counts', async () => {
+    const { setId, one, two } = await setup('Two answers')
+    const [first] = traceIds.slice(10, 11)
+    // They disagree about the same trace, which is the case the whole grid exists for.
+    expect((await answer(ANNOTATOR, setId, first ?? '', 'acceptable')).status).toBe(201)
+    expect(
+      (await answer(SECOND, setId, first ?? '', 'not_acceptable', 'Refuses a valid refund.'))
+        .status,
+    ).toBe(201)
+
+    const { status, data } = await read(setId)
+    expect(status).toBe(200)
+    const detail = data as unknown as {
+      size: number
+      done: boolean
+      annotators: { user_id: string; is_dictator: boolean; answered: number }[]
+      traces: {
+        trace_id: string
+        answers: { annotator_id: string; outcome: string; note: string | null }[]
+        counting: { outcome: string; annotator_id?: string; annotatorId?: string } | null
+      }[]
+    }
+    expect(detail.size).toBe(3)
+    expect(detail.done).toBe(false)
+    expect(detail.annotators.map((row) => row.user_id).sort()).toEqual([one, two].sort())
+    expect(detail.annotators.find((row) => row.user_id === one)?.is_dictator).toBe(true)
+
+    const row = detail.traces.find((trace) => trace.trace_id === first)
+    expect(row?.answers).toHaveLength(2)
+    expect(row?.answers.map((entry) => entry.outcome).sort()).toEqual([
+      'acceptable',
+      'not_acceptable',
+    ])
+    // The NOTE reaches staff. ADR-0067 is about what reaches the ANNOTATOR; reading a panel's
+    // traces is `trace: ['read']` territory, which staff have.
+    expect(row?.answers.find((entry) => entry.annotator_id === two)?.note).toBe(
+      'Refuses a valid refund.',
+    )
+    // THE DICTATOR'S IS THE ONE THAT COUNTS (ADR-0081) — computed by the server, so this screen
+    // and M6 cannot disagree about which answer won.
+    expect(row?.counting?.outcome).toBe('acceptable')
+  })
+
+  test('an UNANSWERED trace carries no answers and nothing counting', async () => {
+    const { setId } = await setup('Mostly untouched')
+    const detail = (await read(setId)).data as unknown as {
+      traces: { answers: unknown[]; counting: unknown }[]
+    }
+    expect(detail.traces).toHaveLength(3)
+    expect(detail.traces.every((trace) => trace.answers.length === 0)).toBe(true)
+    expect(detail.traces.every((trace) => trace.counting === null)).toBe(true)
+  })
+
+  test('an UNASSIGNED annotator stays listed, marked, with their answers intact', async () => {
+    const { setId, one, two } = await setup('Somebody left')
+    const [first] = traceIds.slice(10, 11)
+    expect((await answer(SECOND, setId, first ?? '', 'acceptable')).status).toBe(201)
+
+    // Unassign them — the same call keeps the dictator, which is what the server requires.
+    const put = await call(ENGINEER, 'PUT', `/annotation-sets/${setId}/annotators`, {
+      body: { annotators: [{ user_id: one, is_dictator: true }] },
+    })
+    expect(put.status).toBe(200)
+
+    const detail = (await read(setId)).data as unknown as {
+      annotators: { user_id: string; unassigned_at: string | null; answered: number }[]
+      traces: { answers: { annotator_id: string }[] }[]
+    }
+    const gone = detail.annotators.find((row) => row.user_id === two)
+    expect(gone?.unassigned_at).toBeString()
+    expect(gone?.answered).toBe(1)
+    // The work happened, so the answer is still on the grid.
+    expect(detail.traces.some((trace) => trace.answers.some((a) => a.annotator_id === two))).toBe(
+      true,
+    )
+  })
+
+  test('a CHANGED MIND shows the latest answer and says how many it replaced', async () => {
+    const { setId } = await setup('Second thoughts')
+    const [first] = traceIds.slice(10, 11)
+    expect((await answer(ANNOTATOR, setId, first ?? '', 'acceptable')).status).toBe(201)
+    expect(
+      (await answer(ANNOTATOR, setId, first ?? '', 'not_acceptable', 'Caught it on re-reading.'))
+        .status,
+    ).toBe(201)
+
+    const detail = (await read(setId)).data as unknown as {
+      traces: { trace_id: string; answers: { outcome: string; revisions: number }[] }[]
+    }
+    const row = detail.traces.find((trace) => trace.trace_id === first)
+    // ONE entry per person — the latest — with the count of what it replaced. The table is
+    // append-only, so the earlier rows are still there; this screen shows the current answer
+    // and says plainly that it is not the first.
+    expect(row?.answers).toHaveLength(1)
+    expect(row?.answers[0]?.outcome).toBe('not_acceptable')
+    expect(row?.answers[0]?.revisions).toBe(1)
+  })
+
+  test('an ANNOTATOR calling the staff read is FORBIDDEN', async () => {
+    const { setId } = await setup('Not for annotators')
+    // They are ASSIGNED to this very set and can annotate it — and still cannot read what
+    // anybody else said. Knowing another annotator's answer is the strongest anchor there is
+    // (ADR-0081), which is why curating is its own capability (ADR-0083).
+    const { status, body } = await read(setId, ANNOTATOR)
+    expect(status).toBe(403)
+    expect(codeOf(body)?.code).toBe('FORBIDDEN')
+  })
+
+  test('a set in another org is NOT_FOUND', async () => {
+    const { setId } = await setup('Mine')
+    const { status, body } = await call(STRANGER, 'GET', `/annotation-sets/${setId}`, {
+      org: OTHER_ORG,
+    })
+    expect(status).toBe(404)
+    expect(codeOf(body)?.code).toBe('NOT_FOUND')
+  })
+
+  test('the LIST carries `done`, derived the same way the set detail derives it', async () => {
+    const { setId } = await setup('Finish me')
+    for (const traceId of traceIds.slice(10, 13)) {
+      expect((await answer(ANNOTATOR, setId, traceId, 'acceptable')).status).toBe(201)
+      expect((await answer(SECOND, setId, traceId, 'acceptable')).status).toBe(201)
+    }
+    const listed = await call(ENGINEER, 'GET', `/panels/${slug}/annotation-sets`)
+    const sets = (listed.body as { data: { sets: { id: string; done: boolean }[] } }).data.sets
+    expect(sets.find((row) => row.id === setId)?.done).toBe(true)
+    expect(((await read(setId)).data as unknown as { done: boolean }).done).toBe(true)
+  })
+})
+
 describe('org scoping (ADR-0057)', () => {
   test("another org's set is NOT_FOUND, not FORBIDDEN", async () => {
     const set = await createSet('Mine alone', { strategy: 'latest_n', size: 2 })

@@ -59,7 +59,14 @@ const consoleCors = () =>
     origin: (origin, c) => (origin === c.var.deps.config.WEB_ORIGIN ? origin : undefined),
     credentials: true,
     // PATCH and DELETE since M5's Members screen: a role change and a removal are not POSTs.
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    // PUT since phase 7's assignment, which DECLARES the whole list rather than adding to it.
+    //
+    // **This line is the one the comment above predicted.** A missing method preflights fine —
+    // the OPTIONS is answered 204 — and the real request is then dropped by the browser with
+    // no server-side trace at all. `app.request()` sends no preflight, so the whole test suite
+    // was green while the console's assign dialog failed silently in a real browser. Every
+    // method this API answers has to be on this list, and nothing but a browser will say so.
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['content-type', ACTIVE_ORG_HEADER],
   })
 
