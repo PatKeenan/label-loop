@@ -1,3 +1,4 @@
+import { ANNOTATION_FLOOR } from '@labelloop/contracts'
 import { Link } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { LockIcon } from 'lucide-react'
@@ -33,7 +34,7 @@ type Section =
   // against the route tree, so a literal is checked at compile time and a template string
   // is not. A section pointing at a route that does not exist should be a build failure.
   | {
-      to: '/p/$panelSlug' | '/p/$panelSlug/traces' | '/p/$panelSlug/keys'
+      to: '/p/$panelSlug' | '/p/$panelSlug/traces' | '/p/$panelSlug/keys' | '/review/$panelSlug'
       label: string
       state: 'live'
     }
@@ -51,12 +52,16 @@ const SECTIONS: readonly Section[] = [
   },
   { to: '/p/$panelSlug/traces', label: 'Traces', state: 'live' },
   { to: '/p/$panelSlug/keys', label: 'Keys', state: 'live' },
-  {
-    label: 'Annotation',
-    state: 'scheduled',
-    milestone: 'M5',
-    why: 'Arrives at M5, and opens at 50 collected traces',
-  },
+  /**
+   * REVIEW TRACES — live at M5, and the one section that leaves the console (plan phase 5).
+   * It opens the annotator surface for this panel, because a role says what you may DO and
+   * the surface is a preference (ADR-0064): an engineer who wants to annotate may.
+   *
+   * Locked below the gate rather than hidden, with the distance in the tooltip: the count is
+   * on the Overview, and a section that vanishes at 49 traces and reappears at 50 reads as a
+   * bug rather than as a threshold.
+   */
+  { to: '/review/$panelSlug', label: 'Review traces', state: 'live' },
   { label: 'Taxonomy', state: 'scheduled', milestone: 'M6', why: 'Arrives at M6' },
   { label: 'Alignment', state: 'scheduled', milestone: 'M6', why: 'Arrives at M6' },
   { label: 'Fine-tunes', state: 'scheduled', milestone: 'M7', why: 'Arrives at M7' },
@@ -73,13 +78,42 @@ export const SectionNav = ({
   panelSlug,
   panelName,
   orgSlug,
+  traceCount,
 }: {
   panelSlug: string
   panelName: string
   orgSlug: string
+  traceCount: number
 }) => (
   <nav className="flex flex-col gap-px" aria-label={panelName}>
     {SECTIONS.map((section) => {
+      // The one section with a condition on it: reviewing opens at the floor (ADR-0061).
+      if (section.state === 'live' && section.to === '/review/$panelSlug') {
+        if (traceCount < ANNOTATION_FLOOR) {
+          return (
+            <span
+              key={section.label}
+              aria-disabled="true"
+              title={`Opens at ${ANNOTATION_FLOOR} collected traces — this panel has ${traceCount}`}
+              className={cn(ROW, 'cursor-not-allowed text-foreground-faint')}
+            >
+              {section.label}
+              <LockIcon aria-hidden className="ml-auto size-3 shrink-0 text-foreground-faint" />
+            </span>
+          )
+        }
+        return (
+          <Link
+            key={section.label}
+            to={section.to}
+            params={{ panelSlug }}
+            search={{ org: orgSlug }}
+            className={cn(ROW, 'hover:bg-secondary')}
+          >
+            {section.label}
+          </Link>
+        )
+      }
       if (section.state === 'live') {
         return (
           <Link

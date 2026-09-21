@@ -1,5 +1,7 @@
 import { ANNOTATION_FLOOR, ANNOTATION_TARGET } from '@labelloop/contracts'
-import { Data, Mark } from './mark.tsx'
+import { Link } from '@tanstack/react-router'
+import { Button } from '../ui/button.tsx'
+import { Mark } from './mark.tsx'
 
 /**
  * The annotation gate, shown as a COUNT (ADR-0061; 6c decision 3).
@@ -17,7 +19,15 @@ import { Data, Mark } from './mark.tsx'
  * (M5 phase 4): the server refuses a queue below it, and this bar fills toward the number the
  * server is checking.
  */
-export const Gate = ({ traceCount }: { traceCount: number }) => {
+export const Gate = ({
+  traceCount,
+  panelSlug,
+  orgSlug,
+}: {
+  traceCount: number
+  panelSlug: string
+  orgSlug: string
+}) => {
   const open = traceCount >= ANNOTATION_FLOOR
   // Against the FLOOR, not the target: the bar this fills is the one that unlocks something.
   const pct = Math.min(100, Math.round((traceCount / ANNOTATION_FLOOR) * 100))
@@ -55,7 +65,7 @@ export const Gate = ({ traceCount }: { traceCount: number }) => {
         {open ? (
           <>
             An expert can now review these and say what went wrong in their own words; judges are
-            written from those notes. <Data>Annotation lands at M5.</Data>
+            written from those notes.
           </>
         ) : (
           <>
@@ -65,6 +75,21 @@ export const Gate = ({ traceCount }: { traceCount: number }) => {
           </>
         )}
       </p>
+
+      {/*
+        The way IN, from the screen that says the gate is open — live at M5 (plan phase 5). It
+        leaves the console for the annotator surface, which is the point: reviewing is the same
+        act whoever does it, and the frame it happens in is a preference (ADR-0064).
+      */}
+      {open ? (
+        <div>
+          <Button asChild variant="outline">
+            <Link to="/review/$panelSlug" params={{ panelSlug }} search={{ org: orgSlug }}>
+              Review traces
+            </Link>
+          </Button>
+        </div>
+      ) : null}
     </section>
   )
 }

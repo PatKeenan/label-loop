@@ -232,14 +232,14 @@ drawn for agree/correct against a classifier; r5 is drawn for what M5 actually d
 - Portalled overlays on this surface use `useSurface('annotator')` (Deviation 53 of M4).
 
 ### Steps
-- [ ] Review layout and routes, outside the console shell
-- [ ] Session screen from r5, keyboard-first
-- [ ] Annotator landing → `/review`
-- [ ] Staff "Review traces" section + gate-card link
-- [ ] `bun test apps/web` covers the pure parts (keyboard map, note rules)
+- [x] Review layout and routes, outside the console shell
+- [x] Session screen from r5, keyboard-first
+- [x] Annotator landing → `/review`
+- [x] Staff "Review traces" section + gate-card link
+- [x] `bun test apps/web` covers the pure parts (keyboard map, note rules)
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`, `bun run --cwd apps/web build`
 
 ### Manual verification
 - [ ] **The M5 demo moment**: as an annotator invited in phase 2, annotate 20 real traces in under
@@ -433,3 +433,55 @@ Recorded as they happen; decision provenance, not a changelog.
 24. **`item_id` is the trace id, and is never labelled as one.** The console cannot deep-link an
     annotator into the trace detail, and the write resolves the id under the session's org, so
     holding the value grants nothing the session did not already.
+
+### Phase 5 (2026-09-20)
+
+25. **Built from r6, not r5** — r5 drew the trace as an IN/OUT pair, which ADR-0073 replaced.
+    The session renders the trace with `ShapedTrace`, the SAME component the console's drawer
+    uses, so the two surfaces cannot give different accounts of what was judged. `metadata` is
+    not passed, because the payload does not carry it (ADR-0077).
+26. **Advancing the queue is a NONCE in the query key**, not a refetch. A refetch is a retry of
+    the same question; the queue is a sequence, and the server has just recorded an answer.
+    `staleTime: 0` and `gcTime: 0` on the next-item read, so nothing is ever served from cache.
+27. **The pure rules live in `components/review/answer-state.ts`** — the key map and `canSave` —
+    and are tested without a DOM (14 tests). They MIRROR the server's rules rather than being
+    the authority: the API refuses a noteless `not_acceptable` and a skip carrying a note, and
+    this is what stops a person meeting that refusal.
+28. **Enter inside the note saves; Shift+Enter writes a second line.** A note is prose, and the
+    keyboard-first promise is worth nothing if saving means reaching for the mouse.
+29. **The annotator's landing is a redirect in `homeRoute.beforeLoad`**, asking the same `can()`
+    map the server guards with. The console's old "Nothing to review yet" placeholder — now
+    reachable only by typing a console URL — became "Reviewing happens over here" with a link.
+30. **`usePanelContext` now carries `traceCount`**, so the sidebar's Review entry can unlock at
+    the floor. Locked below it, with the distance in the tooltip: a section that vanishes at 49
+    traces and reappears at 50 reads as a bug rather than as a threshold.
+31. **The gate card gained the way IN.** "Annotation lands at M5" is gone from it, replaced by a
+    Review traces button once the gate is open.
+32. **Not verified in a browser by Claude.** The surface needs a signed-in annotator, and
+    signing in means entering a password. Signed out, `/review` correctly redirects to `/login`;
+    everything past that is the stakeholder's manual verification — including the M5 demo
+    moment (20 traces in under 5 minutes, keyboard only).
+33. **The account menu is ONE component, shared by both surfaces** (stakeholder, 2026-09-20).
+    The first build of the review frame rendered the signed-in address as a static chip, taking
+    r6's `.account` box literally when its own header comment said "the account menu alone" —
+    which left an annotator with no way to sign out at all. `components/shell/account-menu.tsx`
+    now owns the trigger, the sign-out mutation and the order that matters (forget the one-time
+    key plaintext, clear the cache, then navigate), and the console passes its Organisation
+    settings item into it. Two implementations of signing out is one of them being forgotten.
+34. **Progress is the SERVER's count, not the page's** (stakeholder, 2026-09-20). "7 this
+    session" was `useState`, so leaving the panel and coming back read as zero — as though the
+    work had been lost. `GET /review/panels` and `…/next` now return `reviewed`: this person's
+    non-skip answers in this panel, ever. A skip is stored but is not a review, so pressing S
+    cannot run the counter up. r6's decision 11 stands — a count, never a history.
+35. **ONE step back, not a history** (stakeholder, 2026-09-20). `GET /review/panels/:slug/previous`
+    serves the last thing THIS person answered here, with `previous_outcome` — their own answer,
+    which ADR-0067 does not withhold; it withholds what a judge or the platform thinks. Answering
+    again APPENDS, so the correction is a second row and the first stays: reading "what does this
+    person think of this trace" is therefore the LATEST row for the pair, which M6 must do. A skip
+    counts as a last answer, since "actually, I can judge this" is the case it exists for. r6's
+    decision 11 still stands against a full history.
+36. **Two test flakes found and fixed while adding it.** `annotationsOf(traceId)` was unscoped, so
+    a trace another annotator had skipped put their row in three assertions — roughly one run in
+    ten, reading as flakiness in the queue rather than in the test. The helper now takes the
+    person. And the positive draw loop went from 300 to 600 attempts: over a pool of ~50, a
+    shuffle missing one trace in 300 tries is about 1 in 500.

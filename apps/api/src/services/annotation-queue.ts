@@ -1,6 +1,6 @@
 import { ANNOTATION_FLOOR, type AnnotationOutcome, newId } from '@labelloop/contracts'
 import { type Database, schema } from '@labelloop/db'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { recordAuditEvent } from '../repositories/audit-events.ts'
 
 /**
@@ -37,6 +37,8 @@ export type QueuePanel = {
   open: boolean
   /** How many traces are still answerable BY THIS PERSON. Zero while locked. */
   remaining: number
+  /** How many this person has reviewed here, across every visit — not this session's count. */
+  reviewed: number
 }
 
 /**
@@ -67,6 +69,12 @@ export const listReviewPanels = async (
         WHERE traces.panel_id = "panels"."id"
           AND ${answerableWhere(annotatorId)}
       )`,
+      reviewed: sql<number>`(
+        SELECT count(*)::int FROM annotations
+        WHERE annotations.panel_id = "panels"."id"
+          AND annotations.annotator_id = ${annotatorId}
+          AND annotations.outcome <> 'skipped'
+      )`,
     })
     .from(schema.panels)
     .where(eq(schema.panels.orgId, orgId))
@@ -77,6 +85,19 @@ export const listReviewPanels = async (
     return { ...row, open, remaining: open ? row.remaining : 0 }
   })
 }
+
+/**
+ * How many this person has REVIEWED in this panel — for good, not for this visit.
+ *
+ * Skips are excluded: a skip is an answer we store ("I cannot judge this") but it is not a
+ * review, and counting it would let someone run the counter up by pressing S.
+ */
+const reviewedWhere = (panelId: string, annotatorId: string) => sql`(
+  SELECT count(*)::int FROM annotations
+  WHERE annotations.panel_id = ${panelId}
+    AND annotations.annotator_id = ${annotatorId}
+    AND annotations.outcome <> 'skipped'
+)`
 
 /**
  * The two rules that decide whether a trace is still answerable by this person, as one SQL
@@ -105,11 +126,14 @@ export type QueueItem = {
   reference: unknown
   /** What is left AFTER this one, so the surface can say "44 left" honestly. */
   remaining: number
+  /** Reviewed by this person in this panel, ever. Survives leaving and coming back. */
+  reviewed: number
 }
 
 export type NextResult =
   | { state: 'locked'; traceCount: number }
-  | { state: 'drained' }
+  /** `reviewed` rides along so the finished screen can say what the visit was worth. */
+  | { state: 'drained'; reviewed: number }
   | { state: 'item'; item: QueueItem }
 
 /**
@@ -153,6 +177,7 @@ export const nextItem = async (
         WHERE traces.panel_id = ${panel.id}
           AND ${answerableWhere(annotatorId)}
       )`,
+      reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number),
     })
     .from(schema.traces)
     .where(and(eq(schema.traces.panelId, panel.id), answerableWhere(annotatorId)))
@@ -162,10 +187,76 @@ export const nextItem = async (
     .limit(1)
 
   const item = rows[0]
-  if (item === undefined) return { state: 'drained' }
+  if (item === undefined) {
+    const [counted] = await db
+      .select({ reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number) })
+      .from(schema.panels)
+      .where(eq(schema.panels.id, panel.id))
+      .limit(1)
+    return { state: 'drained', reviewed: counted?.reviewed ?? 0 }
+  }
   // `remaining` is computed before this answer exists, so the count the annotator sees next to
   // the item INCLUDES it. Subtracting here is what makes "44 left" mean "after this one".
   return { state: 'item', item: { ...item, remaining: Math.max(0, item.remaining - 1) } }
+}
+
+/**
+ * THE LAST THING THIS PERSON ANSWERED HERE, served back so it can be answered again — the
+ * one step back (stakeholder, 2026-09-20).
+ *
+ * It is an UNDO of the answer, not of the row: the table is append-only, so answering again
+ * writes a second row and the first stays. "What does this person think of this trace" is
+ * therefore the LATEST row for the pair, which is what M6 must read — the sequence is the
+ * evidence, and an edit in place would destroy the change of mind rather than record it.
+ *
+ * A skip counts as a last answer. Skipping is how a person parks something they cannot judge,
+ * and "actually, I can" is exactly the case this exists for.
+ *
+ * `null` when the panel is not this org's, or when there is nothing behind you yet.
+ */
+export const previousItem = async (
+  db: Database,
+  { orgId, panelSlug, annotatorId }: { orgId: string; panelSlug: string; annotatorId: string },
+): Promise<{ item: QueueItem; previousOutcome: AnnotationOutcome } | null> => {
+  const [panel] = await db
+    .select({ id: schema.panels.id })
+    .from(schema.panels)
+    .where(and(eq(schema.panels.orgId, orgId), eq(schema.panels.slug, panelSlug)))
+    .limit(1)
+  if (panel === undefined) return null
+
+  const [row] = await db
+    .select({
+      traceId: schema.traces.id,
+      panelId: schema.traces.panelId,
+      panelVersionId: schema.traces.panelVersionId,
+      input: schema.traces.input,
+      output: schema.traces.output,
+      reference: schema.traces.reference,
+      previousOutcome: schema.annotations.outcome,
+      remaining: sql<number>`(
+        SELECT count(*)::int FROM traces
+        WHERE traces.panel_id = ${panel.id}
+          AND ${answerableWhere(annotatorId)}
+      )`,
+      reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number),
+    })
+    .from(schema.annotations)
+    .innerJoin(schema.traces, eq(schema.traces.id, schema.annotations.traceId))
+    .where(
+      and(
+        eq(schema.annotations.panelId, panel.id),
+        eq(schema.annotations.annotatorId, annotatorId),
+      ),
+    )
+    // The most recent answer, and `id` breaks a tie: `ann_` is a ULID, so it sorts by time
+    // within the same millisecond — two answers saved in one tick still have an order.
+    .orderBy(desc(schema.annotations.createdAt), desc(schema.annotations.id))
+    .limit(1)
+
+  if (row === undefined) return null
+  const { previousOutcome, ...item } = row
+  return { item, previousOutcome }
 }
 
 export type AnnotationWrite = {
