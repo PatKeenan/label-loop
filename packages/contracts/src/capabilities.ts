@@ -21,14 +21,20 @@ import { createAccessControl } from 'better-auth/plugins/access'
 export const ROLES = ['admin', 'engineer', 'annotator', 'guest_expert'] as const
 export type OrgRole = (typeof ROLES)[number]
 
-/** Every resource the console surface guards, and the actions on it. */
+/**
+ * Every resource the console surface guards, and the actions on it.
+ *
+ * `annotation` carries two, and the split is the point (ADR-0083): `create` is answering a
+ * trace, which an annotator does; `curate` is creating a set, topping it up, assigning people
+ * to it and archiving it, which `admin` and `engineer` do and an annotator cannot.
+ */
 const statements = {
   panel: ['read', 'create'],
   key: ['read', 'issue', 'revoke'],
   model: ['read'],
   judge: ['read'],
   trace: ['read'],
-  annotation: ['create'],
+  annotation: ['create', 'curate'],
   member: ['read', 'manage'],
 } as const
 
@@ -50,8 +56,10 @@ const grants = {
   // Everything except managing members: an engineer builds panels and issues keys, but who
   // is in the org, and with what role, is the admin's call.
   engineer: ac.newRole({ ...statements, member: ['read'] }),
-  // Annotation only. No keys, no panel authoring, no trace list — an annotator reads traces
-  // through their queue, which serves only what annotating needs (ADR-0067).
+  // Annotation only, and NOT `curate`. No keys, no panel authoring, no trace list — an
+  // annotator reads traces through their queue, which serves only what annotating needs
+  // (ADR-0067). Choosing what somebody's afternoon is spent on is not the same act as
+  // spending it, and assigning a set GRANTS read access to its traces (ADR-0083).
   annotator: ac.newRole({ annotation: ['create'] }),
   // Nothing until M8 (ADR-0072): guest access is time-boxed, panel-scoped and PII-masked,
   // and granting annotation without those hands an outsider every trace in the org.

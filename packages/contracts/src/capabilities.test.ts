@@ -16,6 +16,7 @@ const EVERY_REQUEST: readonly PermissionRequest[] = [
   { judge: ['read'] },
   { trace: ['read'] },
   { annotation: ['create'] },
+  { annotation: ['curate'] },
   { member: ['read'] },
   { member: ['manage'] },
 ]
@@ -40,6 +41,14 @@ describe('what each role may do', () => {
     expect(granted('annotator')).toEqual([{ annotation: ['create'] }])
     expect(can('annotator', { key: ['read'] })).toBe(false)
     expect(can('annotator', { trace: ['read'] })).toBe(false)
+  })
+
+  test('an annotator may NOT curate (ADR-0083)', () => {
+    // Choosing what somebody's afternoon is spent on is not the same act as spending it, and
+    // assigning a set grants read access to its traces — so it is the admin's and engineer's.
+    expect(can('annotator', { annotation: ['curate'] })).toBe(false)
+    expect(can('admin', { annotation: ['curate'] })).toBe(true)
+    expect(can('engineer', { annotation: ['curate'] })).toBe(true)
   })
 
   test('a guest expert may do nothing until M8 (ADR-0072)', () => {

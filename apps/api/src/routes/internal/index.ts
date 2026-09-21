@@ -4,6 +4,7 @@ import type { AppEnv } from '../../app-env.ts'
 import { AUTH_BASE_PATH } from '../../auth.ts'
 import { ACTIVE_ORG_HEADER, sessionAuth } from '../../middleware/session.ts'
 import { createAnnotateRoutes } from './annotate.ts'
+import { createAnnotationSetRoutes } from './annotation-sets.ts'
 import { createJudgeRoutes } from './judges.ts'
 import { createKeyRoutes } from './keys.ts'
 import { createMeRoutes } from './me.ts'
@@ -97,4 +98,5 @@ export const createInternalRoutes = () => {
     .route('/', createPanelRoutes())
     .route('/', createMemberRoutes())
     .route('/', createAnnotateRoutes())
+    .route('/', createAnnotationSetRoutes())
 }
