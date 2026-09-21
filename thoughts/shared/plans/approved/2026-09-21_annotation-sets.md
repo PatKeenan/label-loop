@@ -179,22 +179,28 @@ it is reviewable as a single mechanical diff.
   (ADR-0067, ADR-0077); the set's NAME reaches the annotator, its strategy does not. (unchanged)
 
 ### Steps
-- [ ] Queue pool from membership; `listAnnotationSets`; next/previous by set
-- [ ] `setProgress` — the one definition of answered and done
-- [ ] Sets scoped to assignments; an unassigned set is NOT_FOUND
-- [ ] `annotations.annotation_set_id` + `sampler` from the membership row
-- [ ] Routes moved to sets; the old panel routes removed
-- [ ] Tests: a set's queue never serves a trace outside it; **two annotators on one set each get
+- [x] Queue pool from membership; `listAssignedSets` (see Deviation 10); next/previous by set
+- [x] `setProgress` — the one definition of answered and done
+- [x] Sets scoped to assignments; an unassigned set is NOT_FOUND
+- [x] `annotations.annotation_set_id` + `sampler` from the membership row (migration 0017)
+- [x] Routes moved to sets; the old panel routes removed
+- [x] Tests: a set's queue never serves a trace outside it; **two annotators on one set each get
       the whole set, and neither is served a trace twice**; the floor still refuses; `sampler`
       records the picker; where two answers differ the dictator's is what a read returns;
       **a done set becomes not-done when a third annotator is assigned** (the derivation's point)
 
 ### Automated verification
-- [ ] `bun test`, `bun run typecheck`, `bun run lint`
+- [x] `bun test`, `bun run typecheck`, `bun run lint`
+      (1062 pass / 2 fail — both `relations.test.ts`, the known seed-state failures, M4 Deviation 64)
 
 ### Manual verification
-- [ ] As an annotator with nothing assigned, the surface says so and offers nothing; assign a set
+- [x] As an annotator with nothing assigned, the surface says so and offers nothing; assign a set
       as an engineer, reload, and it appears; annotations carry its id
+      — done in the browser as `annotator@labelloop.test`: "Nothing assigned yet / Work appears
+      here when somebody assigns you a set", then after a `PUT .../annotators` the set appears by
+      NAME with its panel and "50 left". Two answers written; both rows carry the `aset_` id and
+      `sampler = 'random_n'`, the picker that filled that set. The one pre-phase-7 row still has
+      `annotation_set_id` NULL, which is what the column being nullable is for.
 
 ---
 
@@ -427,3 +433,34 @@ is arriving there without having chosen to.
 9. **Phase 2's branch is STACKED on phase 1's**, not cut from `main`: both touch
    `routes/internal/index.ts`, and #96 is still open. The PR's base is
    `refactor/m5-p7-annotation-vocabulary` and GitHub retargets it to `main` when that merges.
+
+### Phase 3
+10. **The queue's list is `listAssignedSets`, not `listAnnotationSets`.** The plan names it
+    `listAnnotationSets`, but phase 2 already exports that from `services/annotation-sets.ts` for
+    the staff read — two same-named exports meaning "a panel's sets" and "my sets" is exactly the
+    ambiguity a name should close. The queue's says whose sets it returns.
+11. **The write takes the set in the PATH**, `POST /annotate/sets/:id/annotations`, rather than a
+    `set_id` in the body. The plan says "the write takes the set id" without saying where; the
+    path matches the reads beside it, and it leaves the BODY's key set exactly as ADR-0067's
+    tests assert it (`item_id`, `outcome`, `note` — nothing added).
+12. **`countingAnswer` returns `null` when the answers differ and the dictator has not answered.**
+    The plan says the dictator's counts where answers differ; it does not say what to report
+    before they have spoken. Reporting somebody else's would invent a decision nobody made, so
+    the honest answer is "no tie-break yet". It is a pure function over rows — the staff read and
+    the trace detail must not compute this two different ways — and phase 4 consumes it.
+13. **`setProgress` carries TWO counts per annotator, and only one of them decides done.**
+    `answered` includes skips, because a skip empties that trace out of your queue; `annotated`
+    excludes them, because a skip is an answer we store and not an annotation, and counting it
+    would let somebody run their counter up by pressing S. Done reads `answered`, so "done" and
+    "nothing left in anybody's queue" cannot drift apart.
+14. **A set with NO TRACES or NOBODY ASSIGNED is explicitly not done.** Both are vacuously true
+    under "every assigned annotator has answered every trace", and both mean a pass that has not
+    happened. ADR-0086 does not say so; the code and a test now do.
+15. **An ARCHIVED set is not offered to its annotators.** It stays readable to staff behind the
+    filter (phase 4), but it has been put away, so it leaves the annotator's list and its queue
+    answers NOT_FOUND like any other unreachable set. The plan says archiving is a stamp and does
+    not change done; it did not say what it does to the queue.
+16. **Keyboard note, not a defect:** the browser pane's synthetic key events do not reach the
+    page's `window` keydown listener, so Y/N/S and Enter looked dead when driven from the harness.
+    Dispatching a real `KeyboardEvent` in the page selects and saves correctly, so r6 decision 8
+    still holds — the shortcut path is intact and the tooling was the problem.

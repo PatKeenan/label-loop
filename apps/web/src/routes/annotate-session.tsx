@@ -1,10 +1,10 @@
-import { ANNOTATION_NOTE_MAX_LENGTH } from '@labelloop/contracts'
+import { ANNOTATION_FLOOR, ANNOTATION_NOTE_MAX_LENGTH } from '@labelloop/contracts'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.ts'
-import { annotateNextQuery, annotatePreviousQuery } from '../api/queries.ts'
+import { annotateNextQuery, annotatePreviousQuery, assignedSetsQuery } from '../api/queries.ts'
 import { AnnotateFrame, Stage } from '../components/annotate/annotate-frame.tsx'
 import {
   type Answer,
@@ -20,7 +20,8 @@ import { Button } from '../components/ui/button.tsx'
 import { apiErrorFrom } from '../errors/api-error.ts'
 
 /**
- * `/annotate/$panelSlug` — ONE TRACE, ONE QUESTION (r6, ADR-0066).
+ * `/annotate/$setId` — ONE TRACE, ONE QUESTION, out of an ASSIGNED SET (r6, ADR-0066,
+ * ADR-0079).
  *
  * The trace is drawn by `ShapedTrace`, the SAME component the console's drawer uses: reference
  * collapsed, the flow in time order, tool calls as steps, and only the final reply or proposal
@@ -50,7 +51,7 @@ const OUTCOME_WORDS: Record<string, string> = {
 export const AnnotateSessionPage = () => {
   const context = useConsoleContext()
   const search = useSearch({ strict: false }) as ConsoleSearch
-  const { panelSlug } = useParams({ strict: false }) as { panelSlug: string }
+  const { setId } = useParams({ strict: false }) as { setId: string }
   const orgId = context.state === 'ready' ? context.orgId : ''
 
   /** Advancing the queue is an explicit step, not a refetch — see `annotateNextQuery`. */
@@ -67,11 +68,19 @@ export const AnnotateSessionPage = () => {
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   const item = useQuery({
-    ...annotateNextQuery(orgId, panelSlug, nonce),
+    ...annotateNextQuery(orgId, setId, nonce),
     enabled: context.state === 'ready',
   })
 
-  const previous = useQuery({ ...annotatePreviousQuery(orgId, panelSlug), enabled: false })
+  const previous = useQuery({ ...annotatePreviousQuery(orgId, setId), enabled: false })
+
+  /**
+   * The set's NAME, for the header. Taken from the assigned list rather than added to the item
+   * payload: the list is already warm from the landing page, and the item payload's job is to
+   * carry as little as it can (ADR-0067). The id is the fallback, never a blank.
+   */
+  const sets = useQuery({ ...assignedSetsQuery(orgId), enabled: context.state === 'ready' })
+  const setName = sets.data?.find((set) => set.id === setId)?.name ?? setId
 
   const data = item.data
   /** What is on screen: the step-back item if there is one, otherwise the queue's. */
@@ -80,8 +89,8 @@ export const AnnotateSessionPage = () => {
 
   const save = useMutation({
     mutationFn: async (body: ReturnType<typeof answerBody>) => {
-      const response = await api.internal.annotate.annotations.$post(
-        { json: body },
+      const response = await api.internal.annotate.sets[':id'].annotations.$post(
+        { param: { id: setId }, json: body },
         { headers: { 'X-LabelLoop-Org': orgId } },
       )
       if (!response.ok) throw await apiErrorFrom(response)
@@ -155,7 +164,7 @@ export const AnnotateSessionPage = () => {
       <AnnotateFrame>
         <Stage title="This couldn’t be loaded">
           <p className="m-0 text-muted-foreground">Nothing has been recorded. Try again shortly.</p>
-          <BackToPanels org={search.org} />
+          <BackToSets org={search.org} />
         </Stage>
       </AnnotateFrame>
     )
@@ -169,9 +178,10 @@ export const AnnotateSessionPage = () => {
         <AnnotateFrame>
           <Stage title="Almost ready">
             <p className="m-0 text-muted-foreground">
-              This panel has collected {data.trace_count} traces. Annotating opens at 50.
+              This set’s panel has collected {data.trace_count} traces. Annotating opens at{' '}
+              {ANNOTATION_FLOOR}.
             </p>
-            <BackToPanels org={search.org} />
+            <BackToSets org={search.org} />
           </Stage>
         </AnnotateFrame>
       )
@@ -182,7 +192,7 @@ export const AnnotateSessionPage = () => {
         <AnnotateFrame>
           <Stage title="All caught up">
             <p className="m-0 text-muted-foreground">
-              {data.annotated} annotated here. New traces appear as the panel collects them.
+              {data.annotated} annotated in this set. Nothing left to answer here.
             </p>
             <div className="flex flex-wrap justify-center gap-[var(--gap-inline)]">
               {data.annotated > 0 ? (
@@ -192,7 +202,7 @@ export const AnnotateSessionPage = () => {
               ) : null}
               <Button asChild>
                 <Link to="/annotate" search={{ org: search.org }}>
-                  All panels
+                  Your sets
                 </Link>
               </Button>
             </div>
@@ -217,9 +227,9 @@ export const AnnotateSessionPage = () => {
               search={{ org: search.org }}
               className="text-data text-muted-foreground hover:text-foreground"
             >
-              ← All panels
+              ← Your sets
             </Link>
-            <b className="font-semibold">{panelSlug}</b>
+            <b className="font-semibold">{setName}</b>
           </span>
           {/*
             ANNOTATED, ever — counted by the server from the rows themselves, not by this page.
@@ -262,7 +272,7 @@ export const AnnotateSessionPage = () => {
           </h1>
           {/* Generic on purpose (r6 decision 4): it must stay true when M6 adds samplers. */}
           <p className="m-0 mb-[var(--space-6)] text-data text-muted-foreground">
-            One of the traces this panel collected.
+            One of the traces in this set.
           </p>
 
           {undo === null ? null : (
@@ -392,11 +402,11 @@ const Hint = ({ children }: { children: React.ReactNode }) => (
   </kbd>
 )
 
-const BackToPanels = ({ org }: { org?: string | undefined }) => (
+const BackToSets = ({ org }: { org?: string | undefined }) => (
   <div>
     <Button asChild variant="outline">
       <Link to="/annotate" search={{ org }}>
-        All panels
+        Your sets
       </Link>
     </Button>
   </div>

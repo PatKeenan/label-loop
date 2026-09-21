@@ -203,9 +203,10 @@ const annotateHomeRoute = createRoute({
   component: AnnotateHomePage,
 })
 
+/** A SET, not a panel (ADR-0079): work is what was assigned, and the id is what addresses it. */
 const annotateSessionRoute = createRoute({
   getParentRoute: () => annotateRoute,
-  path: '/annotate/$panelSlug',
+  path: '/annotate/$setId',
   component: AnnotateSessionPage,
 })
 

@@ -136,18 +136,22 @@ const MATRIX: readonly RouteCase[] = [
   { route: 'DELETE /invitations/:id', url: '/invitations/inv_x', admitted: ADMIN },
   { route: 'PATCH /members/:userId', url: '/members/user_x', admitted: ADMIN },
   { route: 'DELETE /members/:userId', url: '/members/user_x', admitted: ADMIN },
-  { route: 'GET /annotate/panels', url: '/annotate/panels', admitted: ANNOTATORS },
+  { route: 'GET /annotate/sets', url: '/annotate/sets', admitted: ANNOTATORS },
   {
-    route: 'GET /annotate/panels/:slug/next',
-    url: '/annotate/panels/some-panel/next',
+    route: 'GET /annotate/sets/:id/next',
+    url: '/annotate/sets/aset_x/next',
     admitted: ANNOTATORS,
   },
   {
-    route: 'GET /annotate/panels/:slug/previous',
-    url: '/annotate/panels/some-panel/previous',
+    route: 'GET /annotate/sets/:id/previous',
+    url: '/annotate/sets/aset_x/previous',
     admitted: ANNOTATORS,
   },
-  { route: 'POST /annotate/annotations', url: '/annotate/annotations', admitted: ANNOTATORS },
+  {
+    route: 'POST /annotate/sets/:id/annotations',
+    url: '/annotate/sets/aset_x/annotations',
+    admitted: ANNOTATORS,
+  },
   /**
    * CURATING IS STAFF, and an ANNOTATOR IS REFUSED — which is the row worth reading (ADR-0083).
    * Choosing what somebody's afternoon is spent on is not the same act as spending it, and

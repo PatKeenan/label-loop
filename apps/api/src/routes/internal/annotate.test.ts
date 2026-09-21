@@ -11,17 +11,18 @@ import { loadConfig } from '../../config.ts'
 import { createFakeProvider, createModelGateway } from '../../llm/index.ts'
 import { ACTIVE_ORG_HEADER } from '../../middleware/session.ts'
 import { createMemoryRateLimitStore } from '../../rate-limit/memory-store.ts'
-import { nextItem } from '../../services/annotation-queue.ts'
+import { nextItem, setProgress } from '../../services/annotation-queue.ts'
 import { fakeCatalogue } from '../../testing/fake-catalogue.ts'
 import { fakeQueue } from '../../testing/fake-queue.ts'
 
 /**
- * THE ANNOTATION QUEUE, against a real Postgres and a real better-auth session (ADR-0066).
+ * THE ANNOTATION QUEUE, against a real Postgres and a real better-auth session (ADR-0066,
+ * ADR-0079, ADR-0081).
  *
- * The three claims worth a database: what the payload does NOT contain (ADR-0067, ADR-0077),
- * who the queue serves a trace to (one person, a skip frees it, never back to the skipper),
- * and that the table cannot be edited afterwards — which is a grant, so only Postgres can
- * answer it.
+ * The claims worth a database: what the payload does NOT contain (ADR-0067, ADR-0077); that
+ * the pool is an ASSIGNED SET and a set you are not on is NOT_FOUND; that EVERYONE assigned
+ * gets the whole set and nobody is served a trace twice; and that the table cannot be edited
+ * afterwards — which is a grant, so only Postgres can answer it.
  */
 
 const DATABASE_URL = (() => {
@@ -48,6 +49,20 @@ const LOCKED_VERSION = newId('pnv_')
 const OTHER_PANEL = newId('pnl_')
 const OTHER_VERSION = newId('pnv_')
 
+/**
+ * FOUR SETS, because the rules they exercise are different.
+ *
+ * `SET` holds the open panel's whole pool, so the drawing tests have somewhere to draw from.
+ * `SMALL_SET` holds three traces, so "both annotators get all of it" is a finite assertion
+ * rather than a probability. `LOCKED_SET` sits on a panel below the floor. `UNASSIGNED_SET`
+ * exists so "a set you are not on" can be asked as a question rather than assumed.
+ */
+const SET = newId('aset_')
+const SMALL_SET = newId('aset_')
+const LOCKED_SET = newId('aset_')
+const UNASSIGNED_SET = newId('aset_')
+const OTHER_SET = newId('aset_')
+
 const ANNOTATOR = `annotator-${tag}@labelloop.test`
 const SECOND = `second-${tag}@labelloop.test`
 const ENGINEER = `engineer-${tag}@labelloop.test`
@@ -58,6 +73,8 @@ const PASSWORD = 'localdev-password'
 /** One over the floor, so "the gate opens at 50" is tested at the boundary, not near it. */
 const OPEN_TRACES = ANNOTATION_FLOOR + 1
 const LOCKED_TRACES = ANNOTATION_FLOOR - 1
+
+let smallTraceIds: string[] = []
 
 let db: Database
 let auth: ReturnType<typeof createAuth>
@@ -156,18 +173,18 @@ type Item = {
   previous_outcome?: string
 }
 
-const next = async (email: string, slug = `open-${tag}`, org = ORG) => {
-  const { status, body } = await call(email, 'GET', `/annotate/panels/${slug}/next`, { org })
+const next = async (email: string, setId = SET, org = ORG) => {
+  const { status, body } = await call(email, 'GET', `/annotate/sets/${setId}/next`, { org })
   return { status, data: (body as { data?: Item }).data, body }
 }
 
-const stepBack = async (email: string, slug = `open-${tag}`) => {
-  const { status, body } = await call(email, 'GET', `/annotate/panels/${slug}/previous`)
+const stepBack = async (email: string, setId = SET) => {
+  const { status, body } = await call(email, 'GET', `/annotate/sets/${setId}/previous`)
   return { status, data: (body as { data?: Item }).data }
 }
 
-const answer = (email: string, itemId: string, outcome: string, note?: string) =>
-  call(email, 'POST', '/annotate/annotations', {
+const answer = (email: string, itemId: string, outcome: string, note?: string, setId = SET) =>
+  call(email, 'POST', `/annotate/sets/${setId}/annotations`, {
     body: { item_id: itemId, outcome, ...(note === undefined ? {} : { note }) },
   })
 
@@ -240,13 +257,96 @@ beforeAll(async () => {
     { id: LOCKED_VERSION, panelId: LOCKED_PANEL, version: 1, threshold: 0.5 },
     { id: OTHER_VERSION, panelId: OTHER_PANEL, version: 1, threshold: 0.5 },
   ])
-  await db
-    .insert(schema.traces)
-    .values([
-      ...traceRows(OPEN_PANEL, OPEN_VERSION, OPEN_TRACES, 'a'),
-      ...traceRows(LOCKED_PANEL, LOCKED_VERSION, LOCKED_TRACES, 'b'),
-      ...traceRows(OTHER_PANEL, OTHER_VERSION, OPEN_TRACES, 'c'),
-    ])
+  const openTraces = traceRows(OPEN_PANEL, OPEN_VERSION, OPEN_TRACES, 'a')
+  const lockedTraces = traceRows(LOCKED_PANEL, LOCKED_VERSION, LOCKED_TRACES, 'b')
+  const theirTraces = traceRows(OTHER_PANEL, OTHER_VERSION, OPEN_TRACES, 'c')
+  await db.insert(schema.traces).values([...openTraces, ...lockedTraces, ...theirTraces])
+
+  // The sets are inserted directly rather than through the curate routes: this file is about
+  // what the QUEUE does with them, and going through HTTP would make every assertion here
+  // depend on a surface `annotation-sets.test.ts` already covers.
+  const engineerId = await userId(ENGINEER)
+  const strangerId = await userId(STRANGER)
+  await db.insert(schema.annotationSets).values([
+    { id: SET, orgId: ORG, panelId: OPEN_PANEL, name: 'Whole pool', createdBy: engineerId },
+    { id: SMALL_SET, orgId: ORG, panelId: OPEN_PANEL, name: 'Three traces', createdBy: engineerId },
+    { id: LOCKED_SET, orgId: ORG, panelId: LOCKED_PANEL, name: 'Too early', createdBy: engineerId },
+    {
+      id: UNASSIGNED_SET,
+      orgId: ORG,
+      panelId: OPEN_PANEL,
+      name: 'Not yours',
+      createdBy: engineerId,
+    },
+    {
+      id: OTHER_SET,
+      orgId: OTHER_ORG,
+      panelId: OTHER_PANEL,
+      name: 'Theirs',
+      createdBy: strangerId,
+    },
+  ])
+  smallTraceIds = openTraces.slice(0, 3).map((row) => row.id)
+  await db.insert(schema.annotationSetTraces).values([
+    ...openTraces.map((row) => ({
+      annotationSetId: SET,
+      traceId: row.id,
+      strategy: 'random_n' as const,
+      addedBy: engineerId,
+    })),
+    // A different picker, so `sampler` recording the MEMBERSHIP ROW rather than a constant is
+    // visible in one assertion.
+    ...smallTraceIds.map((traceId) => ({
+      annotationSetId: SMALL_SET,
+      traceId,
+      strategy: 'manual' as const,
+      addedBy: engineerId,
+    })),
+    ...lockedTraces.map((row) => ({
+      annotationSetId: LOCKED_SET,
+      traceId: row.id,
+      strategy: 'latest_n' as const,
+      addedBy: engineerId,
+    })),
+    ...openTraces.slice(0, 5).map((row) => ({
+      annotationSetId: UNASSIGNED_SET,
+      traceId: row.id,
+      strategy: 'manual' as const,
+      addedBy: engineerId,
+    })),
+    ...theirTraces.slice(0, 3).map((row) => ({
+      annotationSetId: OTHER_SET,
+      traceId: row.id,
+      strategy: 'manual' as const,
+      addedBy: strangerId,
+    })),
+  ])
+  await db.insert(schema.annotationSetAnnotators).values([
+    // Three on the big set, so "an engineer may annotate" is a real assignment (ADR-0084).
+    {
+      annotationSetId: SET,
+      userId: await userId(ANNOTATOR),
+      isDictator: true,
+      assignedBy: engineerId,
+    },
+    { annotationSetId: SET, userId: await userId(SECOND), assignedBy: engineerId },
+    { annotationSetId: SET, userId: engineerId, assignedBy: engineerId },
+    {
+      annotationSetId: SMALL_SET,
+      userId: await userId(ANNOTATOR),
+      isDictator: true,
+      assignedBy: engineerId,
+    },
+    { annotationSetId: SMALL_SET, userId: await userId(SECOND), assignedBy: engineerId },
+    {
+      annotationSetId: LOCKED_SET,
+      userId: await userId(ANNOTATOR),
+      isDictator: true,
+      assignedBy: engineerId,
+    },
+    { annotationSetId: LOCKED_SET, userId: await userId(SECOND), assignedBy: engineerId },
+    { annotationSetId: OTHER_SET, userId: strangerId, assignedBy: strangerId },
+  ])
 })
 
 afterAll(async () => {
@@ -296,41 +396,89 @@ describe('what an annotator is served (ADR-0067, ADR-0077)', () => {
     expect(data?.reference).toEqual({ policy: 'Refunds within 14 days.' })
   })
 
-  test('a panel below the floor is LOCKED, with its count so progress can be drawn', async () => {
-    const { status, data } = await next(ANNOTATOR, `locked-${tag}`)
+  test('the FLOOR still refuses: a set on a panel below it is LOCKED, with its count', async () => {
+    const { status, data } = await next(ANNOTATOR, LOCKED_SET)
     expect(status).toBe(200)
     expect(data).toEqual({ state: 'locked', trace_count: LOCKED_TRACES })
   })
+})
 
-  test('another org’s panel is NOT_FOUND, never FORBIDDEN (ADR-0057)', async () => {
-    const { status, body } = await next(ANNOTATOR, `theirs-${tag}`)
+describe('work is an ASSIGNED SET (ADR-0079)', () => {
+  test('a set you are NOT assigned to is NOT_FOUND, never FORBIDDEN (ADR-0057)', async () => {
+    // It is this org's set, on a panel this person can already annotate, holding traces they
+    // are already being served elsewhere — and it is still not theirs to open.
+    const { status, body } = await next(ANNOTATOR, UNASSIGNED_SET)
     expect(status).toBe(404)
     expect(codeOf(body)?.code).toBe('NOT_FOUND')
   })
 
-  test('the panel list shows the gate, and a locked panel has nothing remaining', async () => {
-    const { status, body } = await call(ANNOTATOR, 'GET', '/annotate/panels')
+  test('another org’s set is NOT_FOUND — the same answer, so neither can be told apart', async () => {
+    const { status, body } = await next(ANNOTATOR, OTHER_SET)
+    expect(status).toBe(404)
+    expect(codeOf(body)?.code).toBe('NOT_FOUND')
+  })
+
+  test('the list is the sets assigned to THIS person, with size, annotated and remaining', async () => {
+    const { status, body } = await call(STRANGER, 'GET', '/annotate/sets', { org: OTHER_ORG })
     expect(status).toBe(200)
-    const panels = (body as { data: { panels: Record<string, unknown>[] } }).data.panels
-    expect(panels.map((panel) => panel.slug).sort()).toEqual([`locked-${tag}`, `open-${tag}`])
-    const locked = panels.find((panel) => panel.slug === `locked-${tag}`)
-    const open = panels.find((panel) => panel.slug === `open-${tag}`)
+    const theirs = (body as { data: { sets: Record<string, unknown>[] } }).data.sets
+    expect(theirs.map((set) => set.id)).toEqual([OTHER_SET])
+
+    const mine = await call(ANNOTATOR, 'GET', '/annotate/sets')
+    const sets = (mine.body as { data: { sets: Record<string, unknown>[] } }).data.sets
+    // The unassigned set is absent, and so is the other org's.
+    expect(sets.map((set) => set.id).sort()).toEqual([SET, SMALL_SET, LOCKED_SET].sort())
+    const locked = sets.find((set) => set.id === LOCKED_SET)
+    const open = sets.find((set) => set.id === SET)
     expect(locked).toMatchObject({ open: false, trace_count: LOCKED_TRACES, remaining: 0 })
-    expect(open).toMatchObject({ open: true, trace_count: OPEN_TRACES })
+    expect(open).toMatchObject({ open: true, size: OPEN_TRACES })
     expect(open?.remaining as number).toBeGreaterThan(0)
+  })
+
+  test('an UNASSIGNED person loses the set, and their answers stay (ADR-0086)', async () => {
+    const answered = (await next(SECOND, SMALL_SET)).data?.item_id ?? ''
+    expect((await answer(SECOND, answered, 'acceptable', undefined, SMALL_SET)).status).toBe(201)
+
+    await db
+      .update(schema.annotationSetAnnotators)
+      .set({ unassignedAt: new Date(clock.now()) })
+      .where(
+        and(
+          eq(schema.annotationSetAnnotators.annotationSetId, SMALL_SET),
+          eq(schema.annotationSetAnnotators.userId, await userId(SECOND)),
+        ),
+      )
+
+    expect((await next(SECOND, SMALL_SET)).status).toBe(404)
+    const listed = await call(SECOND, 'GET', '/annotate/sets')
+    const ids = (listed.body as { data: { sets: { id: string }[] } }).data.sets.map((set) => set.id)
+    expect(ids).not.toContain(SMALL_SET)
+    // The row is still there. Unassigning is a stamp, not a delete.
+    expect(await annotationsOf(answered, SECOND)).toHaveLength(1)
+
+    // Put them back, because the tests below assume both are on it.
+    await db
+      .update(schema.annotationSetAnnotators)
+      .set({ unassignedAt: null })
+      .where(
+        and(
+          eq(schema.annotationSetAnnotators.annotationSetId, SMALL_SET),
+          eq(schema.annotationSetAnnotators.userId, await userId(SECOND)),
+        ),
+      )
   })
 })
 
-describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
+describe('the queue’s rules (ADR-0079, ADR-0081)', () => {
   /**
    * Drawn through the SERVICE rather than the route: the rule is one SQL fragment, and a
    * hundred draws through HTTP would be testing the session middleware's speed. The routes
    * are exercised by every other test in this file.
    */
-  const draw = async (email: string) => {
+  const draw = async (email: string, setId = SET) => {
     const result = await nextItem(db, {
       orgId: ORG,
-      panelSlug: `open-${tag}`,
+      setId,
       annotatorId: await userId(email),
     })
     return result?.state === 'item' ? result.item.traceId : undefined
@@ -343,27 +491,126 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
     return false
   }
 
-  test('an answered trace leaves the queue for EVERYONE, including the other annotator', async () => {
+  test('a trace leaves YOUR queue when YOU answer it — and nobody else’s', async () => {
     const itemId = (await next(ANNOTATOR)).data?.item_id ?? ''
     expect((await answer(ANNOTATOR, itemId, 'acceptable')).status).toBe(201)
 
     // The pool is ~50, so 300 draws that never return it is the rule holding rather than the
     // shuffle being kind: by chance alone it would appear with probability 1 - (1-1/50)^300.
     expect(await drawUntil(ANNOTATOR, itemId, 300)).toBe(false)
-    expect(await drawUntil(SECOND, itemId, 300)).toBe(false)
+    // SUPERSEDES ADR-0066's one-person-per-trace (ADR-0081). It is still SECOND's to answer,
+    // and the overlap that produces is the raw material M6's agreement metrics are computed
+    // from. 600 draws rather than 300 for the positive case: over a pool of ~50 the chance of
+    // a shuffle never landing on one trace in 300 tries is about 1 in 500.
+    expect(await drawUntil(SECOND, itemId, 600)).toBe(true)
   })
 
-  test('a SKIP frees the trace for someone else and never returns to the skipper', async () => {
+  test('the pool is the SET: a draw never returns a trace outside it', async () => {
+    const seen = new Set<string>()
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const drawn = await draw(ENGINEER, SMALL_SET)
+      if (drawn !== undefined) seen.add(drawn)
+    }
+    // ENGINEER is not assigned to SMALL_SET, so they get nothing at all from it.
+    expect([...seen]).toEqual([])
+
+    const mine = new Set<string>()
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const drawn = await draw(ANNOTATOR, SMALL_SET)
+      if (drawn !== undefined) mine.add(drawn)
+    }
+    expect([...mine].every((traceId) => smallTraceIds.includes(traceId))).toBe(true)
+  })
+
+  test('TWO annotators each get the WHOLE set, and neither is served a trace twice', async () => {
+    const drain = async (email: string) => {
+      const served: string[] = []
+      for (let attempt = 0; attempt < 20 && served.length < smallTraceIds.length; attempt += 1) {
+        const itemId = (await next(email, SMALL_SET)).data?.item_id
+        if (itemId === undefined) break
+        served.push(itemId)
+        expect((await answer(email, itemId, 'acceptable', undefined, SMALL_SET)).status).toBe(201)
+      }
+      return served
+    }
+
+    const mine = await drain(ANNOTATOR)
+    const theirs = await drain(SECOND)
+
+    // NOBODY IS SERVED A TRACE TWICE: within one drain, every id is distinct.
+    expect(new Set(mine).size).toBe(mine.length)
+    expect(new Set(theirs).size).toBe(theirs.length)
+
+    // AND EACH GETS THE WHOLE SET — read from the rows rather than from what this drain
+    // happened to serve, because an earlier test may already have answered some of it. That is
+    // the claim either way: when the queue is empty for you, you have answered all of it.
+    const answeredBy = async (email: string) => {
+      const rows = await db
+        .select({ traceId: schema.annotations.traceId })
+        .from(schema.annotations)
+        .where(
+          and(
+            eq(schema.annotations.annotationSetId, SMALL_SET),
+            eq(schema.annotations.annotatorId, await userId(email)),
+          ),
+        )
+      return [...new Set(rows.map((row) => row.traceId))].sort()
+    }
+    expect(await answeredBy(ANNOTATOR)).toEqual([...smallTraceIds].sort())
+    expect(await answeredBy(SECOND)).toEqual([...smallTraceIds].sort())
+
+    expect((await next(ANNOTATOR, SMALL_SET)).data?.state).toBe('drained')
+    expect((await next(SECOND, SMALL_SET)).data?.state).toBe('drained')
+  })
+
+  /**
+   * THE DERIVATION'S POINT (ADR-0086). The set is finished; assigning a third person makes it
+   * unfinished again, because it genuinely is. A stored `completed_at` would still say done.
+   */
+  test('a DONE set becomes not-done when a third annotator is assigned', async () => {
+    const before = (await setProgress(db, [SMALL_SET])).get(SMALL_SET)
+    expect(before?.size).toBe(smallTraceIds.length)
+    expect(before?.annotators).toHaveLength(2)
+    expect(before?.done).toBe(true)
+
+    await db.insert(schema.annotationSetAnnotators).values({
+      annotationSetId: SMALL_SET,
+      userId: await userId(ENGINEER),
+      assignedBy: await userId(ENGINEER),
+    })
+    const after = (await setProgress(db, [SMALL_SET])).get(SMALL_SET)
+    expect(after?.done).toBe(false)
+    expect(after?.annotators.find((row) => row.answered === 0)).toBeDefined()
+
+    // Unassigning them makes it done again: done reads `unassigned_at IS NULL`, and one
+    // unassigned person must never block a set from ever completing.
+    await db
+      .update(schema.annotationSetAnnotators)
+      .set({ unassignedAt: new Date(clock.now()) })
+      .where(
+        and(
+          eq(schema.annotationSetAnnotators.annotationSetId, SMALL_SET),
+          eq(schema.annotationSetAnnotators.userId, await userId(ENGINEER)),
+        ),
+      )
+    expect((await setProgress(db, [SMALL_SET])).get(SMALL_SET)?.done).toBe(true)
+  })
+
+  test('a set with nobody assigned, or with no traces, is NOT done', async () => {
+    // Both are vacuously true under "everyone has answered everything", and both mean a pass
+    // that has not happened.
+    const empty = (await setProgress(db, [UNASSIGNED_SET])).get(UNASSIGNED_SET)
+    expect(empty?.annotators).toEqual([])
+    expect(empty?.done).toBe(false)
+  })
+
+  test('a SKIP never returns to the skipper, and is still somebody else’s to answer', async () => {
     const itemId = (await next(SECOND)).data?.item_id ?? ''
     expect((await answer(SECOND, itemId, 'skipped')).status).toBe(201)
 
+    // "I cannot judge this" is a fact about the pairing of person and trace, not about the
+    // trace — so it leaves this person's queue and nobody else's.
     expect(await drawUntil(SECOND, itemId, 300)).toBe(false)
-    // "Not me" is not "not this": it is still somebody else's to answer.
-    //
-    // 600 draws rather than 300 for the POSITIVE case: over a pool of ~50 the chance of a
-    // shuffle never landing on one trace in 300 tries is about 1 in 500, which is a test that
-    // fails for nobody's benefit a few times a year. The negative cases above stay at 300,
-    // where more draws only strengthen them.
     expect(await drawUntil(ANNOTATOR, itemId, 600)).toBe(true)
   })
 
@@ -392,13 +639,19 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
 
     // And it is the SERVER's count, so a fresh request — a person coming back tomorrow —
     // sees it rather than zero. (The page held this in component state until 2026-09-20.)
-    const panels = await call(ENGINEER, 'GET', '/annotate/panels')
-    const rows = (panels.body as { data: { panels: { slug: string; annotated: number }[] } }).data
-      .panels
-    expect(rows.find((row) => row.slug === `open-${tag}`)?.annotated).toBe(before + 1)
+    const listed = await call(ENGINEER, 'GET', '/annotate/sets')
+    const rows = (listed.body as { data: { sets: { id: string; annotated: number }[] } }).data.sets
+    expect(rows.find((row) => row.id === SET)?.annotated).toBe(before + 1)
   })
 
-  test('an engineer may annotate — a role says what you may DO (ADR-0064)', async () => {
+  /**
+   * "Annotators only" is the assumption a future reader will bring, so the test says otherwise
+   * (M5 decision 3, revised 2026-09-21). A developer is ASSIGNED a set like anybody else and
+   * annotates it on this surface — what ADR-0084 forbids is arriving without having chosen to,
+   * which is a console question rather than a queue one. The queue keys on `annotator_id` and
+   * asks no question about role at all.
+   */
+  test('a DEVELOPER assigned a set is served it like anybody else (ADR-0064, ADR-0084)', async () => {
     const { status, data } = await next(ENGINEER)
     expect(status).toBe(200)
     expect(data?.state).toBe('item')
@@ -407,7 +660,7 @@ describe('the queue’s rules (ADR-0066, plan decision 7)', () => {
 
 describe('one step back (stakeholder, 2026-09-20)', () => {
   test('nothing behind you is `none`, not an error', async () => {
-    const { status, data } = await stepBack(SECOND, `locked-${tag}`)
+    const { status, data } = await stepBack(SECOND, LOCKED_SET)
     expect(status).toBe(200)
     expect(data).toEqual({ state: 'none' } as never)
   })
@@ -467,11 +720,30 @@ describe('the row that gets written', () => {
       panelId: OPEN_PANEL,
       // COPIED FROM THE TRACE, never from the client (ADR-0003).
       panelVersionId: OPEN_VERSION,
+      annotationSetId: SET,
       annotatorId: await userId(ANNOTATOR),
       outcome: 'not_acceptable',
       note,
-      sampler: 'random',
+      // The MEMBERSHIP ROW's picker, not the constant 'random' it was while the queue itself
+      // was the sampler. `SET` was filled by `random_n`; `SMALL_SET` below was filled by hand.
+      sampler: 'random_n',
     })
+  })
+
+  test('`sampler` is the picker that put the trace in THIS set, not a constant', async () => {
+    const itemId = (await next(ENGINEER)).data?.item_id ?? ''
+    expect((await answer(ENGINEER, itemId, 'acceptable')).status).toBe(201)
+    const [fromRandom] = await annotationsOf(itemId, ENGINEER)
+    expect(fromRandom?.sampler).toBe('random_n')
+
+    // The same person, a manually-picked set: a different row, a different answer to "which
+    // strategy found the failures" — which is unanswerable retroactively if it is not stored.
+    const manual = (await next(SECOND, SMALL_SET)).data?.item_id
+    if (manual !== undefined) {
+      expect((await answer(SECOND, manual, 'acceptable', undefined, SMALL_SET)).status).toBe(201)
+      const rows = await annotationsOf(manual, SECOND)
+      expect(rows.at(-1)?.sampler).toBe('manual')
+    }
   })
 
   test('the audit event names the annotation and the outcome, and NEVER the note', async () => {
@@ -510,6 +782,27 @@ describe('the row that gets written', () => {
     expect(status).toBe(404)
     expect(codeOf(body)?.code).toBe('NOT_FOUND')
     expect(await annotationsOf(itemId, ANNOTATOR)).toEqual([])
+  })
+
+  test('answering a trace that is NOT IN THE SET is NOT_FOUND, and writes nothing', async () => {
+    // A trace of the same panel, served to this person from the big set every day — and not a
+    // member of the small one. The write is authorised by the membership row, not by the org.
+    const outside = (await next(ANNOTATOR)).data?.item_id ?? ''
+    expect(smallTraceIds).not.toContain(outside)
+    const { status, body } = await answer(ANNOTATOR, outside, 'acceptable', undefined, SMALL_SET)
+    expect(status).toBe(404)
+    expect(codeOf(body)?.code).toBe('NOT_FOUND')
+  })
+
+  test('answering in a set you are NOT assigned to is NOT_FOUND', async () => {
+    const [inside] = await db
+      .select({ traceId: schema.annotationSetTraces.traceId })
+      .from(schema.annotationSetTraces)
+      .where(eq(schema.annotationSetTraces.annotationSetId, UNASSIGNED_SET))
+      .limit(1)
+    const itemId = inside?.traceId ?? ''
+    const { status } = await answer(ANNOTATOR, itemId, 'acceptable', undefined, UNASSIGNED_SET)
+    expect(status).toBe(404)
   })
 })
 
@@ -585,10 +878,11 @@ describe('append-only, by grant rather than by convention', () => {
         traceId: anyTrace?.id ?? '',
         panelId: OPEN_PANEL,
         panelVersionId: OPEN_VERSION,
+        annotationSetId: SET,
         annotatorId: await userId(ANNOTATOR),
         outcome: 'not_acceptable',
         note: null,
-        sampler: 'random',
+        sampler: 'random_n',
       })
       .catch((error: unknown) => error)
     const failure = (await insert) as { cause?: { constraint?: string } }

@@ -1,30 +1,34 @@
 import { ANNOTATION_FLOOR } from '@labelloop/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
-import { annotatePanelsQuery } from '../api/queries.ts'
+import { assignedSetsQuery } from '../api/queries.ts'
 import { AnnotateFrame, Stage } from '../components/annotate/annotate-frame.tsx'
 import type { ConsoleSearch } from '../components/shell/context.ts'
 import { useConsoleContext } from '../components/shell/context.ts'
 import { Button } from '../components/ui/button.tsx'
 
 /**
- * `/annotate` — WHERE AN ANNOTATOR LANDS (r6 decision 12).
+ * `/annotate` — WHERE AN ANNOTATOR LANDS (r6 decision 12, ADR-0079).
  *
- * Every panel in the org is listed, including the locked ones: an open panel shows how many
- * traces are waiting, and a locked one shows its progress toward the 50-trace gate. Hiding the
- * locked ones would make a new org's annotator surface look broken, and naming only the panel
- * closest to opening would hide where the traffic actually is.
+ * **It lists the SETS ASSIGNED TO THIS PERSON, and nothing else.** r6 drew every panel in the
+ * org; phase 7 replaced the panel-wide queue with assigned work, so a person with nothing
+ * assigned sees an empty landing and the surface says so. That is the honest answer: there is
+ * no work to find, and inventing some would be the opposite of "somebody decided this was
+ * worth your afternoon".
  *
- * Counting traces is not an operator signal (ADR-0067 withholds verdicts, confidence, cost and
- * ids), so a count and a bar are what this screen is allowed to say.
+ * A set whose panel is still below the floor is LISTED with its distance to the gate rather
+ * than hidden — a gate with no visible distance is indistinguishable from a dead end. Counting
+ * traces is not an operator signal (ADR-0067 withholds verdicts, confidence, cost and ids), so
+ * a count and a bar are what this screen is allowed to say. The set's NAME is shown; its
+ * strategy is not.
  */
 export const AnnotateHomePage = () => {
   const context = useConsoleContext()
   const search = useSearch({ strict: false }) as ConsoleSearch
   const orgId = context.state === 'ready' ? context.orgId : ''
-  const panels = useQuery({ ...annotatePanelsQuery(orgId), enabled: context.state === 'ready' })
+  const sets = useQuery({ ...assignedSetsQuery(orgId), enabled: context.state === 'ready' })
 
-  if (context.state === 'pending' || panels.isPending) {
+  if (context.state === 'pending' || sets.isPending) {
     return (
       <AnnotateFrame>
         <Stage title="Loading…" />
@@ -32,7 +36,7 @@ export const AnnotateHomePage = () => {
     )
   }
 
-  if (panels.error !== null) {
+  if (sets.error !== null) {
     return (
       <AnnotateFrame>
         <Stage title="This couldn’t be loaded">
@@ -42,24 +46,24 @@ export const AnnotateHomePage = () => {
     )
   }
 
-  const all = panels.data ?? []
-  const open = all.filter((panel) => panel.open && panel.remaining > 0)
-  const waiting = all.filter((panel) => !panel.open || panel.remaining === 0)
+  const all = sets.data ?? []
+  const ready = all.filter((set) => set.open && set.remaining > 0)
+  const waiting = all.filter((set) => !set.open || set.remaining === 0)
 
-  // NOTHING OPEN YET — the locked state, centred, with each panel's distance to the gate.
-  if (open.length === 0) {
+  // NOTHING ASSIGNED, or nothing open yet — centred, few words (r6 decision 13).
+  if (ready.length === 0) {
     return (
       <AnnotateFrame>
-        <Stage title={all.length === 0 ? 'Nothing here yet' : 'Almost ready'}>
+        <Stage title={all.length === 0 ? 'Nothing assigned yet' : 'All caught up'}>
           <p className="m-0 text-muted-foreground">
             {all.length === 0
-              ? 'This organisation has no panels yet.'
-              : `Annotating opens when a panel has collected ${ANNOTATION_FLOOR} traces.`}
+              ? 'Work appears here when somebody assigns you a set.'
+              : `A set opens for annotation when its panel has collected ${ANNOTATION_FLOOR} traces.`}
           </p>
           {waiting.length === 0 ? null : (
             <div className="grid gap-[var(--gap-tight)] text-left">
-              {waiting.map((panel) => (
-                <PanelRow key={panel.slug} panel={panel} org={search.org} />
+              {waiting.map((set) => (
+                <SetRow key={set.id} set={set} org={search.org} />
               ))}
             </div>
           )}
@@ -72,61 +76,64 @@ export const AnnotateHomePage = () => {
     <AnnotateFrame>
       <Stage title="Annotate traces">
         <div className="grid gap-[var(--gap-tight)] text-left">
-          {[...open, ...waiting].map((panel) => (
-            <PanelRow key={panel.slug} panel={panel} org={search.org} />
+          {[...ready, ...waiting].map((set) => (
+            <SetRow key={set.id} set={set} org={search.org} />
           ))}
         </div>
-        <p className="m-0 text-muted-foreground">
-          A panel opens for annotation at {ANNOTATION_FLOOR} traces.
-        </p>
       </Stage>
     </AnnotateFrame>
   )
 }
 
-type Panel = {
-  slug: string
+type AssignedSet = {
+  id: string
   name: string
+  panel_name: string
   trace_count: number
   open: boolean
+  size: number
   remaining: number
   annotated: number
 }
 
-const PanelRow = ({ panel, org }: { panel: Panel; org?: string | undefined }) => {
-  const ready = panel.open && panel.remaining > 0
-  const pct = Math.min(100, Math.round((panel.trace_count / ANNOTATION_FLOOR) * 100))
+const SetRow = ({ set, org }: { set: AssignedSet; org?: string | undefined }) => {
+  const ready = set.open && set.remaining > 0
+  const pct = Math.min(100, Math.round((set.trace_count / ANNOTATION_FLOOR) * 100))
 
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-x-[var(--gap-inline)] gap-y-[var(--space-2)] rounded-[var(--radius-panel)] border bg-card px-[var(--space-5)] py-[var(--space-4)]">
-      <span className="font-semibold">{panel.name}</span>
+      <span className="grid">
+        <span className="font-semibold">{set.name}</span>
+        {/* The panel it came from, so two sets with similar names are still tellable apart. */}
+        <span className="text-data text-muted-foreground">{set.panel_name}</span>
+      </span>
       {ready ? (
         <span className="flex items-center gap-[var(--gap-inline)]">
           <span className="font-mono text-data text-muted-foreground tabular-nums">
-            {panel.annotated > 0 ? `${panel.annotated} annotated · ` : ''}
-            {panel.remaining} waiting
+            {set.annotated > 0 ? `${set.annotated} of ${set.size} · ` : ''}
+            {set.remaining} left
           </span>
           <Button asChild>
-            <Link to="/annotate/$panelSlug" params={{ panelSlug: panel.slug }} search={{ org }}>
-              Start
+            <Link to="/annotate/$setId" params={{ setId: set.id }} search={{ org }}>
+              {set.annotated > 0 ? 'Continue' : 'Start'}
             </Link>
           </Button>
         </span>
       ) : (
         <span className="font-mono text-data text-muted-foreground tabular-nums">
-          {panel.open ? 'all caught up' : `${panel.trace_count} of ${ANNOTATION_FLOOR}`}
+          {set.open ? 'all caught up' : `${set.trace_count} of ${ANNOTATION_FLOOR}`}
         </span>
       )}
-      {panel.open ? null : (
+      {set.open ? null : (
         // Progress is not a state, so it stays achromatic — the same rule the console's gate
         // card follows (tokens.css rule 4: colour only when the colour is the finding).
         <span
           className="col-span-2 h-[var(--space-1)] overflow-hidden rounded-[var(--radius-pill)] bg-muted"
           role="progressbar"
-          aria-valuenow={panel.trace_count}
+          aria-valuenow={set.trace_count}
           aria-valuemin={0}
           aria-valuemax={ANNOTATION_FLOOR}
-          aria-label={`${panel.trace_count} of ${ANNOTATION_FLOOR} traces collected`}
+          aria-label={`${set.trace_count} of ${ANNOTATION_FLOOR} traces collected`}
         >
           <span className="block h-full bg-foreground" style={{ width: `${pct}%` }} />
         </span>

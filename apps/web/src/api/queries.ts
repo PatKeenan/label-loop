@@ -198,26 +198,31 @@ export const membersQuery = (orgId: string) =>
   })
 
 /**
- * THE ANNOTATOR SURFACE'S READS (ADR-0066, ADR-0067).
+ * THE ANNOTATOR SURFACE'S READS (ADR-0066, ADR-0067, ADR-0079).
  *
- * Both are `annotation: [create]` on the server, which an annotator holds and staff hold too.
- * Neither is cached beyond the moment: the queue is a SEQUENCE, and a cached "next item" is an
- * item somebody else may already have answered. `staleTime: 0` and no structural sharing, so
+ * All three are `annotation: [create]` on the server, which an annotator holds and staff hold
+ * too. None is cached beyond the moment: the queue is a SEQUENCE, and a cached "next item" is an
+ * item this person may already have answered. `staleTime: 0` and no structural sharing, so
  * asking again always asks the server.
  */
-export const annotatePanelsQuery = (orgId: string) =>
+
+/**
+ * THE SETS ASSIGNED TO THIS PERSON, and nothing else (ADR-0079). An empty list is the honest
+ * answer for somebody with nothing assigned — there is no panel-wide queue to fall back to.
+ */
+export const assignedSetsQuery = (orgId: string) =>
   queryOptions({
-    queryKey: ['annotate-panels', orgId],
+    queryKey: ['annotate-sets', orgId],
     queryFn: async () => {
-      const response = await api.internal.annotate.panels.$get(undefined, asOrg(orgId))
+      const response = await api.internal.annotate.sets.$get(undefined, asOrg(orgId))
       if (!response.ok) throw await apiErrorFrom(response)
-      return (await response.json()).data.panels
+      return (await response.json()).data.sets
     },
     staleTime: 0,
   })
 
 /**
- * The next item for this person in this panel, or why there is none.
+ * The next item for this person in this set, or why there is none.
  *
  * `nonce` is what advances the queue: answering increments it, which changes the key, which
  * asks the server for a new item. A refetch of the same key would be a retry of the same
@@ -225,12 +230,12 @@ export const annotatePanelsQuery = (orgId: string) =>
  * to it anyway. Making the advance explicit keeps "what am I looking at" a value rather than
  * a race between a mutation and a refetch.
  */
-export const annotateNextQuery = (orgId: string, slug: string, nonce: number) =>
+export const annotateNextQuery = (orgId: string, setId: string, nonce: number) =>
   queryOptions({
-    queryKey: ['annotate-next', orgId, slug, nonce],
+    queryKey: ['annotate-next', orgId, setId, nonce],
     queryFn: async () => {
-      const response = await api.internal.annotate.panels[':slug'].next.$get(
-        { param: { slug } },
+      const response = await api.internal.annotate.sets[':id'].next.$get(
+        { param: { id: setId } },
         asOrg(orgId),
       )
       if (!response.ok) throw await apiErrorFrom(response)
@@ -241,17 +246,17 @@ export const annotateNextQuery = (orgId: string, slug: string, nonce: number) =>
   })
 
 /**
- * The last thing this person answered in this panel, for the one step back.
+ * The last thing this person answered in this set, for the one step back.
  *
  * Asked only when the Back control is used, and never cached: the answer behind you changes
  * every time you save. `enabled: false` at the call site, fetched on demand.
  */
-export const annotatePreviousQuery = (orgId: string, slug: string) =>
+export const annotatePreviousQuery = (orgId: string, setId: string) =>
   queryOptions({
-    queryKey: ['annotate-previous', orgId, slug],
+    queryKey: ['annotate-previous', orgId, setId],
     queryFn: async () => {
-      const response = await api.internal.annotate.panels[':slug'].previous.$get(
-        { param: { slug } },
+      const response = await api.internal.annotate.sets[':id'].previous.$get(
+        { param: { id: setId } },
         asOrg(orgId),
       )
       if (!response.ok) throw await apiErrorFrom(response)

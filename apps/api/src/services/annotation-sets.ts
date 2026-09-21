@@ -574,3 +574,62 @@ const isUniqueViolation = (error: unknown): boolean => {
   const constraint = wrapped?.cause?.constraint ?? wrapped?.constraint
   return code === '23505' && constraint === NAME_INDEX
 }
+
+// ── Reading a disagreement ────────────────────────────────────────────────────────────────
+
+export type AnswerRow = {
+  annotatorId: string
+  outcome: string
+  createdAt: Date
+  id: string
+}
+
+/**
+ * WHERE ANSWERS DIFFER, THE DICTATOR'S COUNTS (ADR-0081). This is the whole of the mechanism:
+ * a rule for READING rows, with no split queue, no arbitration screen, no resolution object
+ * and nothing waiting on anybody. Every answer stays on the table.
+ *
+ * Pure, and it takes the rows rather than a database handle, because the staff read and the
+ * trace detail both have them already and must not compute this two different ways.
+ *
+ * Two rules compose here, in order:
+ *
+ * 1. **The LATEST row per person**, because the table is append-only and a changed mind is a
+ *    new row (migration 0015). An earlier answer is history, not a second opinion.
+ * 2. Then: if everybody agrees, that answer. If they differ, **the dictator's** — and `null`
+ *    when the dictator has not answered yet, because there is genuinely no tie-break to
+ *    report. Reporting one anyway would be inventing a decision nobody made.
+ *
+ * Changing who holds the role therefore RE-READS every past disagreement in the set: their old
+ * answers stop winning retroactively. That is inherent to "a disagreement is two rows and a
+ * rule for reading them", and it is a known property rather than a surprise (open question 6).
+ */
+export const countingAnswer = (
+  rows: readonly AnswerRow[],
+  dictatorId: string | null,
+): { outcome: string; annotatorId: string } | null => {
+  const latest = new Map<string, AnswerRow>()
+  for (const row of rows) {
+    const held = latest.get(row.annotatorId)
+    // `ann_` is a ULID, so the id breaks a tie within one millisecond.
+    const newer =
+      held === undefined ||
+      row.createdAt > held.createdAt ||
+      (row.createdAt.getTime() === held.createdAt.getTime() && row.id > held.id)
+    if (newer) latest.set(row.annotatorId, row)
+  }
+
+  const answers = [...latest.values()]
+  if (answers.length === 0) return null
+
+  const outcomes = new Set(answers.map((row) => row.outcome))
+  if (outcomes.size === 1) {
+    const [first] = answers
+    // biome-ignore lint/style/noNonNullAssertion: `answers` is non-empty, checked above.
+    return { outcome: first!.outcome, annotatorId: first!.annotatorId }
+  }
+
+  const theirs = dictatorId === null ? undefined : latest.get(dictatorId)
+  if (theirs === undefined) return null
+  return { outcome: theirs.outcome, annotatorId: theirs.annotatorId }
+}
