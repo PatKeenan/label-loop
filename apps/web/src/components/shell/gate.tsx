@@ -1,6 +1,4 @@
 import { ANNOTATION_FLOOR, ANNOTATION_TARGET } from '@labelloop/contracts'
-import { Link } from '@tanstack/react-router'
-import { Button } from '../ui/button.tsx'
 import { Mark } from './mark.tsx'
 
 /**
@@ -24,18 +22,19 @@ import { Mark } from './mark.tsx'
  * Above it, collecting is no longer the job — reading them is — so it counts ANNOTATED traces
  * toward the target, and the trace count moves to the line underneath. Two bars would ask the
  * reader to work out which one is theirs; the card's job is to name the next thing to do.
+ *
+ * **It offers no button, and that is deliberate** (ADR-0084). Phase 5 gave it a "Review traces"
+ * action that left the console for the annotator surface; staff are no longer routed there, and
+ * the section that replaces it arrives with phase 7. A card with no door beats a door into the
+ * wrong room — so this states what happens next and names who does it.
  */
 export const Gate = ({
   traceCount,
   annotatedTraceCount,
-  panelSlug,
-  orgSlug,
 }: {
   traceCount: number
   /** Traces somebody has answered — coverage, so one trace counts once however many did. */
   annotatedTraceCount: number
-  panelSlug: string
-  orgSlug: string
 }) => {
   const open = traceCount >= ANNOTATION_FLOOR
   // Whichever measure the card is on: traces toward the floor, then annotations toward the
@@ -86,9 +85,9 @@ export const Gate = ({
             {/* The trace count keeps its place on the card, demoted to a clause: it is still
                 the denominator of everything above, and dropping it would leave "12 of 100
                 annotated" with nothing saying how much there is to annotate. */}
-            <strong className="text-foreground">{traceCount}</strong> traces collected. An expert
-            reviews these and says what went wrong in their own words; judges are written from those
-            notes.
+            <strong className="text-foreground">{traceCount}</strong> traces collected. Assign these
+            to an annotator and they say what went wrong in their own words; judges are written from
+            those notes.
           </>
         ) : (
           <>
@@ -98,21 +97,6 @@ export const Gate = ({
           </>
         )}
       </p>
-
-      {/*
-        The way IN, from the screen that says the gate is open — live at M5 (plan phase 5). It
-        leaves the console for the annotator surface, which is the point: reviewing is the same
-        act whoever does it, and the frame it happens in is a preference (ADR-0064).
-      */}
-      {open ? (
-        <div>
-          <Button asChild variant="outline">
-            <Link to="/review/$panelSlug" params={{ panelSlug }} search={{ org: orgSlug }}>
-              Review traces
-            </Link>
-          </Button>
-        </div>
-      ) : null}
     </section>
   )
 }
