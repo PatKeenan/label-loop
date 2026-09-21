@@ -247,6 +247,43 @@ guessing at a shape. **Promote** when a real agentic integration sends steps we 
 or before the public writeup, if the agentic story is what the writeup leads with, since a
 framework-native trace rendering as raw JSON is the screenshot nobody wants.
 
+## Due dates on an annotation set (raised 2026-09-21, M5 phase 7)
+
+**Nothing exists for this yet.** `annotation_sets` carries `archived_at` and nothing else that
+is a date with an opinion about the future — no `due_at`, no reminder state, no escalation. The
+column was deliberately the only lifecycle one (ADR-0086), so this is an addition rather than a
+gap somebody forgot.
+
+**The need is real and small.** Assignment is what makes work exist (ADR-0079), and work assigned
+with no date attached is work somebody forgets. A set is a bounded unit that can be COMPLETED —
+which is most of what makes a deadline meaningful in the first place.
+
+**The schema half is easy; the two halves after it are not.**
+
+- **`due_at` on `annotation_sets`** is a nullable timestamp and an afternoon's work. Nullable
+  because most sets will not have one, and a required date would be a date people type to get
+  past the form.
+- **Reminders need an email provider, which is a STACK_DECISIONS row that has never been
+  taken.** ADR-0065 already says "nothing is sent" and makes invitations claimable without it;
+  the same wall is here. "Five days out, then three" is a scheduled job over a table, which
+  pg-boss already does (ADR-0017) — the blocker is the transport, not the trigger.
+- **Overdue escalation is a DESIGN question, not a feature.** The suggestion on the table was
+  freezing the panel, and it collides with two decisions worth restating before anyone builds it:
+  - A panel COLLECTS independently of whether anybody is annotating it (ADR-0060). Freezing
+    collection because an annotation pass ran late would stop capturing the customer's live
+    traffic to punish an internal deadline, which is a different product.
+  - Done is derived and archived is a PERSON's act (ADR-0086). A system-imposed "overdue" or
+    "frozen" state would be a third lifecycle value, written by the platform, on a table whose
+    whole design is that the machine computes progress and a person decides what to do about it.
+
+  Gentler shapes that do not fight either: mark the set overdue on the Annotations list and in
+  the annotator's own list (derived from `due_at` and `now`, stored nowhere); surface it on the
+  assigner's screen rather than the annotator's, since the person who set the date is the person
+  who can move it; or do nothing automatic at all and let the date be information.
+
+**Promote when** an email provider is chosen for anything else — the reminder is most of the
+value, and a date with no reminder is a field people stop filling in.
+
 ## Verification debt
 
 - **The collector-down test.** M3's plan lists "stop the collector; confirm the API keeps
