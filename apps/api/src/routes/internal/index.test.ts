@@ -257,7 +257,7 @@ const seedVerdict = async () => {
  *   second row — the detail must show ONE entry for them, the latest, with the first counted
  *   rather than dropped, and the panel's annotated count must still be 1.
  * - **TRACE, once by somebody else**, with a note: two entries, newest first.
- * - **LEGACY_TRACE, a skip.** A skip is an answer we store and not a review, so it appears on
+ * - **LEGACY_TRACE, a skip.** A skip is an answer we store and not an annotation, so it appears on
  *   the detail and does NOT mark the row annotated or move the panel's count.
  *
  * Explicit timestamps, because the ordering is asserted and `defaultNow()` would put three
@@ -727,7 +727,7 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
 
   /**
    * SEEING THE ANNOTATIONS (M5 phase 6). Three reads carry them, and each one applies the
-   * same two rules — latest row per person, and a skip is not a review — to a different
+   * same two rules — latest row per person, and a skip is not an annotation — to a different
    * question. They are tested together because the failure that matters is the three
    * disagreeing: a row marked annotated whose drawer shows nobody, or a panel counting
    * progress no one made.
@@ -757,7 +757,7 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
     expect(body.data.annotations[0]?.annotator_name).toBe('Test person')
   })
 
-  test('a SKIP is shown on the trace and is not a review anywhere else', async () => {
+  test('a SKIP is shown on the trace and is not an annotation anywhere else', async () => {
     const cookie = await signIn(MEMBER_EMAIL)
     const { status, body } = await detail(cookie, LEGACY_TRACE)
     expect(status).toBe(200)
@@ -789,7 +789,7 @@ describe('one trace, whole — the console’s trace drawer (Deviation 75)', () 
     expect(response.status).toBe(200)
     const data = ((await response.json()) as { data: { annotated_trace_count: number } }).data
     // Four rows across two traces: three on TRACE (one person twice, one person once) and a
-    // skip. Exactly ONE trace has been reviewed, and that is what the gate card fills with.
+    // skip. Exactly ONE trace has been annotated, and that is what the gate card fills with.
     expect(data.annotated_trace_count).toBe(1)
   })
 })

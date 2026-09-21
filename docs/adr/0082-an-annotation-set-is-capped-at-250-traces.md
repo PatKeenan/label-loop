@@ -1,9 +1,12 @@
-# ADR-0082: A review set is capped at 250 traces
+# ADR-0082: An annotation set is capped at 250 traces
 
 **Status:** Accepted · **Date:** 2026-09-20 · **Milestone:** M5 (phase 7)
 
+> **Renamed 2026-09-21 (ADR-0085).** "Review set" is now **annotation set**, and the file name
+> with it. The decision below is unchanged; only its noun is.
+
 ## Decision
-`REVIEW_SET_MAX_SIZE` is 250, in `@labelloop/contracts` so both sides read one number.
+`ANNOTATION_SET_MAX_SIZE` is 250, in `@labelloop/contracts` so both sides read one number.
 
 ## Context
 Saturation is what bounds a pass, not stamina: PRODUCT 5.6 drives taxonomy size by the point where
@@ -12,4 +15,5 @@ larger set pays for attention that finds nothing new. It is also a number a pers
 which is what makes "completed" mean something. Raise it if a real pass is still finding
 categories at the cap.
 
-Plan: `thoughts/shared/plans/approved/2026-09-20_review-sets.md` (decision 9)
+Plan: `thoughts/shared/plans/superseded/2026-09-20_review-sets.md` (decision 9), carried into
+`thoughts/shared/plans/approved/2026-09-21_annotation-sets.md`

@@ -196,7 +196,7 @@ export const findPanelBySlug = async (db: Database, orgId: string, slug: string)
    * measures is COVERAGE: how much of the panel somebody has now read.
    *
    * Skips excluded, the same rule the queue and the trace list use: a skip is an answer we
-   * store and not a review.
+   * store and not an annotation.
    */
   const [annotated] = await db
     .select({ traces: countDistinct(schema.annotations.traceId) })

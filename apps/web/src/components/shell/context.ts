@@ -201,7 +201,7 @@ export type PanelContext =
   | { state: 'pending' }
   | { state: 'failed'; error: unknown }
   | { state: 'not-found' }
-  /** `traceCount` rides along because the sidebar's Review entry opens at the gate (M5 p5). */
+  /** `traceCount` rides along because the sidebar's Annotations entry opens at the gate (M5 p5). */
   | { state: 'ready'; id: string; slug: string; name: string; traceCount: number }
 
 export const usePanelContext = (orgId: string | null): PanelContext => {

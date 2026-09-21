@@ -29,7 +29,7 @@ const html = (...annotations: ReturnType<typeof row>[]) =>
 describe('Annotations — what people said about this trace', () => {
   test('nobody having read it is SAID, not left as an empty section', () => {
     const out = html()
-    expect(out).toContain('Nobody has reviewed this trace yet.')
+    expect(out).toContain('Nobody has annotated this trace yet.')
     // No count beside the heading when there is nothing to count.
     expect(out).not.toContain('Annotations ·')
   })

@@ -10,13 +10,13 @@ import { meQuery, signInMethodsQuery } from './api/queries.ts'
 import { queryClient } from './api/query-client.ts'
 import { safeRedirect } from './api/redirect.ts'
 import { validateConsoleSearch } from './components/shell/context.ts'
+import { AnnotateHomePage } from './routes/annotate.tsx'
+import { AnnotateSessionPage } from './routes/annotate-session.tsx'
 import { HomePage } from './routes/home.tsx'
 import { PanelKeysPage } from './routes/keys.tsx'
 import { LoginRoute } from './routes/login.tsx'
 import { MembersPage } from './routes/members.tsx'
 import { PanelJudgesPage, PanelOverviewPage } from './routes/panel.tsx'
-import { ReviewHomePage } from './routes/review.tsx'
-import { ReviewSessionPage } from './routes/review-session.tsx'
 import { ConsoleLayout, RootLayout } from './routes/root.tsx'
 import { TracePage } from './routes/trace.tsx'
 import { TracesPage } from './routes/traces.tsx'
@@ -107,10 +107,10 @@ const consoleRoute = createRoute({
  * Home, and the ANNOTATOR'S LANDING (plan decision 3).
  *
  * A role that cannot read panels has no console to land in — M4 drew that as "Nothing to
- * review yet", which stopped being true the moment the review surface existed. The redirect
+ * annotate yet", which stopped being true the moment the annotator surface existed. The redirect
  * asks the SAME capability map the server guards with (`can`), so the two cannot disagree
  * about who belongs where, and it carries `?org=` so the surface opens in the org they asked
- * for. Staff land in the console and reach review from a panel.
+ * for. Staff land in the console and reach annotation from a panel.
  */
 const homeRoute = createRoute({
   getParentRoute: () => consoleRoute,
@@ -124,7 +124,7 @@ const homeRoute = createRoute({
       session.memberships.find((membership) => membership.org_id === session.active_org_id) ??
       session.memberships[0]
     if (active !== undefined && !can(active.role, { panel: ['read'] })) {
-      throw redirect({ to: '/review', search: { org: requested } })
+      throw redirect({ to: '/annotate', search: { org: requested } })
     }
   },
   component: HomePage,
@@ -187,9 +187,9 @@ const settingsMembersRoute = createRoute({
  * session guard is the same as the console's — signed out sends you to `/login` carrying where
  * you were — because it is about the session, not about the surface.
  */
-const reviewRoute = createRoute({
+const annotateRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: 'review',
+  id: 'annotate',
   beforeLoad: async ({ context, location }) => {
     if ((await sessionOf(context)) === null) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
@@ -197,16 +197,16 @@ const reviewRoute = createRoute({
   },
 })
 
-const reviewHomeRoute = createRoute({
-  getParentRoute: () => reviewRoute,
-  path: '/review',
-  component: ReviewHomePage,
+const annotateHomeRoute = createRoute({
+  getParentRoute: () => annotateRoute,
+  path: '/annotate',
+  component: AnnotateHomePage,
 })
 
-const reviewSessionRoute = createRoute({
-  getParentRoute: () => reviewRoute,
-  path: '/review/$panelSlug',
-  component: ReviewSessionPage,
+const annotateSessionRoute = createRoute({
+  getParentRoute: () => annotateRoute,
+  path: '/annotate/$panelSlug',
+  component: AnnotateSessionPage,
 })
 
 const loginRoute = createRoute({
@@ -244,7 +244,7 @@ export const router = createRouter({
       panelKeysRoute,
       settingsMembersRoute,
     ]),
-    reviewRoute.addChildren([reviewHomeRoute, reviewSessionRoute]),
+    annotateRoute.addChildren([annotateHomeRoute, annotateSessionRoute]),
     loginRoute,
   ]),
   context: { queryClient },

@@ -34,18 +34,20 @@ none of them gates these three.
 
 Plan: `thoughts/shared/plans/approved/2026-09-18_m5-members-annotation.md`, phase 3.
 
-4. [x] **`annotator-session.html`** — *r6 drawn AND APPROVED 2026-09-20.*
+4. [x] **`annotator-session.html`** — *r6 drawn AND APPROVED 2026-09-20; r7 2026-09-21, wording only.*
    r5 (2026-09-18) redrew it for judgeless panels: *acceptable / not acceptable* with a
-   required note (ADR-0066), no operator signals (ADR-0067), the `/review` landing listing
+   required note (ADR-0066), no operator signals (ADR-0067), the `/annotate` landing listing
    every panel with its progress toward 50, and centred "nothing open yet" and "all caught up"
    states. **r6 redraws the trace itself for ADR-0073**, which landed between r5 and its review
    (#77–#81): the IN/OUT pair becomes ONE FLOW IN TIME ORDER — reference collapsed, turns
-   labelled User and Agent, tool calls as single lines outside the reviewed turn, and the violet
+   labelled User and Agent, tool calls as single lines outside the annotated turn, and the violet
    surface on the final reply alone — the same rules the console now renders by
    (`apps/web/src/components/shaped/`). Metadata is absent entirely (ADR-0077). A sixth state
    draws a LEGACY trace, whose input was never recorded (ADR-0074). Q1 (IN/OUT for the triage
    persona) is CLOSED by the four roles; Q5 (long outputs) and a new Q6 (should an annotator see
    tool steps at all) are the open ones.
+   **r7 (2026-09-21) is the same screen with the word corrected** (ADR-0085: the product says
+   annotation, not review). No layout change, no new open question; r6's approval stands.
    Served for review by the `mockups` launch configuration (`http://localhost:5500`), because
    the preview pane renders a bare file without `tokens.css`.
 

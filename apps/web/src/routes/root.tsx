@@ -128,18 +128,18 @@ export const ConsoleLayout = () => {
           </div>
         </Statement>
       ) : !readsPanels ? (
-        // Reached only by typing a console URL: `/` redirects this role to the review surface
+        // Reached only by typing a console URL: `/` redirects this role to the annotator surface
         // (M5 phase 5). It used to say annotation was not available yet, which stopped being
         // true when that surface shipped.
-        <Statement eyebrow={org.orgSlug} title="Reviewing happens over here">
+        <Statement eyebrow={org.orgSlug} title="Annotating happens over here">
           <p className="m-0">
             Your role in {org.orgName} is {org.role.replace('_', ' ')}, so the console’s panels,
-            keys and traces aren’t yours — reviewing traces is.
+            keys and traces aren’t yours — annotating traces is.
           </p>
           <div>
             <Button asChild>
-              <Link to="/review" search={{ org: org.orgSlug }}>
-                Go to Review
+              <Link to="/annotate" search={{ org: org.orgSlug }}>
+                Go to annotate
               </Link>
             </Button>
           </div>

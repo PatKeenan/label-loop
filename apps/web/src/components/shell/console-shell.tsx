@@ -56,7 +56,7 @@ export const ConsoleShell = ({
   activeOrgId: string
   /**
    * The open panel, or `null` anywhere at the organisation's level. `traceCount` is here for
-   * the sidebar's Review entry, which unlocks at the annotation floor (M5 phase 5).
+   * the sidebar's Annotations entry, which unlocks at the annotation floor (M5 phase 5).
    */
   panel: { slug: string; name: string; traceCount: number } | null
   /**

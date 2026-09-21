@@ -212,7 +212,7 @@
   --violet-400: #A98BFF;
   --violet-rgb: 139 109 240;
 
-  --slate-rgb: 122 133 149;  /* neutral / unreviewed — achromatic by design */
+  --slate-rgb: 122 133 149;  /* neutral / unannotated — achromatic by design */
 
   /* --- Type primitives.
          One grotesque, one mono, chosen to sit at a similar x-height so
@@ -364,7 +364,7 @@
        fail     disagreement, failed eval, regression, revoked access
        warning  low confidence, honeypot, drift detected, approaching cap
        info     judge-generated, system action, model/version metadata
-       neutral  unreviewed, pending, not-yet-run, skipped
+       neutral  unannotated, pending, not-yet-run, skipped
      -------------------------------------------------------------------- */
   --state-success-fg: var(--teal-700);
   --state-success-mark: var(--teal-500);

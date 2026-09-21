@@ -4,15 +4,15 @@ import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from 'cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.ts'
-import { reviewNextQuery, reviewPreviousQuery } from '../api/queries.ts'
+import { annotateNextQuery, annotatePreviousQuery } from '../api/queries.ts'
+import { AnnotateFrame, Stage } from '../components/annotate/annotate-frame.tsx'
 import {
   type Answer,
   answerBody,
   canSave,
   keyToAction,
   noteRequired,
-} from '../components/review/answer-state.ts'
-import { ReviewFrame, Stage } from '../components/review/review-frame.tsx'
+} from '../components/annotate/answer-state.ts'
 import { ShapedTrace } from '../components/shaped/shaped-trace.tsx'
 import type { ConsoleSearch } from '../components/shell/context.ts'
 import { useConsoleContext } from '../components/shell/context.ts'
@@ -20,7 +20,7 @@ import { Button } from '../components/ui/button.tsx'
 import { apiErrorFrom } from '../errors/api-error.ts'
 
 /**
- * `/review/$panelSlug` — ONE TRACE, ONE QUESTION (r6, ADR-0066).
+ * `/annotate/$panelSlug` — ONE TRACE, ONE QUESTION (r6, ADR-0066).
  *
  * The trace is drawn by `ShapedTrace`, the SAME component the console's drawer uses: reference
  * collapsed, the flow in time order, tool calls as steps, and only the final reply or proposal
@@ -34,7 +34,9 @@ import { apiErrorFrom } from '../errors/api-error.ts'
  * than saved on the first key (r6 Q3), so a mis-key is recoverable before it becomes a row.
  */
 type PreviousItem = Extract<
-  NonNullable<Awaited<ReturnType<NonNullable<ReturnType<typeof reviewPreviousQuery>['queryFn']>>>>,
+  NonNullable<
+    Awaited<ReturnType<NonNullable<ReturnType<typeof annotatePreviousQuery>['queryFn']>>>
+  >,
   { state: 'item' }
 >
 
@@ -45,13 +47,13 @@ const OUTCOME_WORDS: Record<string, string> = {
   skipped: 'skip',
 }
 
-export const ReviewSessionPage = () => {
+export const AnnotateSessionPage = () => {
   const context = useConsoleContext()
   const search = useSearch({ strict: false }) as ConsoleSearch
   const { panelSlug } = useParams({ strict: false }) as { panelSlug: string }
   const orgId = context.state === 'ready' ? context.orgId : ''
 
-  /** Advancing the queue is an explicit step, not a refetch — see `reviewNextQuery`. */
+  /** Advancing the queue is an explicit step, not a refetch — see `annotateNextQuery`. */
   const [nonce, setNonce] = useState(0)
   /**
    * ONE STEP BACK, and only one (stakeholder, 2026-09-20). Holding the item rather than a flag
@@ -65,11 +67,11 @@ export const ReviewSessionPage = () => {
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   const item = useQuery({
-    ...reviewNextQuery(orgId, panelSlug, nonce),
+    ...annotateNextQuery(orgId, panelSlug, nonce),
     enabled: context.state === 'ready',
   })
 
-  const previous = useQuery({ ...reviewPreviousQuery(orgId, panelSlug), enabled: false })
+  const previous = useQuery({ ...annotatePreviousQuery(orgId, panelSlug), enabled: false })
 
   const data = item.data
   /** What is on screen: the step-back item if there is one, otherwise the queue's. */
@@ -78,7 +80,7 @@ export const ReviewSessionPage = () => {
 
   const save = useMutation({
     mutationFn: async (body: ReturnType<typeof answerBody>) => {
-      const response = await api.internal.review.annotations.$post(
+      const response = await api.internal.annotate.annotations.$post(
         { json: body },
         { headers: { 'X-LabelLoop-Org': orgId } },
       )
@@ -142,20 +144,20 @@ export const ReviewSessionPage = () => {
 
   if (context.state === 'pending' || item.isPending) {
     return (
-      <ReviewFrame>
+      <AnnotateFrame>
         <Stage title="Loading…" />
-      </ReviewFrame>
+      </AnnotateFrame>
     )
   }
 
   if (item.error !== null || data === undefined) {
     return (
-      <ReviewFrame>
+      <AnnotateFrame>
         <Stage title="This couldn’t be loaded">
           <p className="m-0 text-muted-foreground">Nothing has been recorded. Try again shortly.</p>
           <BackToPanels org={search.org} />
         </Stage>
-      </ReviewFrame>
+      </AnnotateFrame>
     )
   }
 
@@ -164,38 +166,38 @@ export const ReviewSessionPage = () => {
   if (undo === null) {
     if (data.state === 'locked') {
       return (
-        <ReviewFrame>
+        <AnnotateFrame>
           <Stage title="Almost ready">
             <p className="m-0 text-muted-foreground">
-              This panel has collected {data.trace_count} traces. Reviewing opens at 50.
+              This panel has collected {data.trace_count} traces. Annotating opens at 50.
             </p>
             <BackToPanels org={search.org} />
           </Stage>
-        </ReviewFrame>
+        </AnnotateFrame>
       )
     }
 
     if (data.state === 'drained') {
       return (
-        <ReviewFrame>
+        <AnnotateFrame>
           <Stage title="All caught up">
             <p className="m-0 text-muted-foreground">
-              {data.reviewed} reviewed here. New traces appear as the panel collects them.
+              {data.annotated} annotated here. New traces appear as the panel collects them.
             </p>
             <div className="flex flex-wrap justify-center gap-[var(--gap-inline)]">
-              {data.reviewed > 0 ? (
+              {data.annotated > 0 ? (
                 <Button type="button" variant="outline" onClick={() => void stepBack()}>
                   Back to the last one
                 </Button>
               ) : null}
               <Button asChild>
-                <Link to="/review" search={{ org: search.org }}>
+                <Link to="/annotate" search={{ org: search.org }}>
                   All panels
                 </Link>
               </Button>
             </div>
           </Stage>
-        </ReviewFrame>
+        </AnnotateFrame>
       )
     }
   }
@@ -206,12 +208,12 @@ export const ReviewSessionPage = () => {
   const overCap = note.length > ANNOTATION_NOTE_MAX_LENGTH
 
   return (
-    <ReviewFrame>
+    <AnnotateFrame>
       <main className="mx-auto max-w-[46rem] px-[var(--space-6)] pt-[var(--space-8)] pb-[var(--space-16)]">
         <div className="mb-[var(--space-8)] flex flex-wrap items-baseline justify-between gap-[var(--gap-inline)]">
           <span className="flex items-baseline gap-[var(--gap-inline)]">
             <Link
-              to="/review"
+              to="/annotate"
               search={{ org: search.org }}
               className="text-data text-muted-foreground hover:text-foreground"
             >
@@ -220,7 +222,7 @@ export const ReviewSessionPage = () => {
             <b className="font-semibold">{panelSlug}</b>
           </span>
           {/*
-            REVIEWED, ever — counted by the server from the rows themselves, not by this page.
+            ANNOTATED, ever — counted by the server from the rows themselves, not by this page.
             It was a `useState` that reset on every navigation, so leaving and coming back read
             as the work having been lost.
           */}
@@ -230,7 +232,7 @@ export const ReviewSessionPage = () => {
               (decision 11): a list of past answers invites second-guessing, where a mis-key
               needs exactly one door.
             */}
-            {undo === null && shownItem.reviewed > 0 ? (
+            {undo === null && shownItem.annotated > 0 ? (
               <button
                 type="button"
                 onClick={() => void stepBack()}
@@ -249,7 +251,7 @@ export const ReviewSessionPage = () => {
               </button>
             )}
             <span className="font-mono text-data text-muted-foreground tabular-nums">
-              {shownItem.reviewed} reviewed · {remaining} left
+              {shownItem.annotated} annotated · {remaining} left
             </span>
           </span>
         </div>
@@ -349,7 +351,7 @@ export const ReviewSessionPage = () => {
           </div>
         </article>
       </main>
-    </ReviewFrame>
+    </AnnotateFrame>
   )
 }
 
@@ -393,7 +395,7 @@ const Hint = ({ children }: { children: React.ReactNode }) => (
 const BackToPanels = ({ org }: { org?: string | undefined }) => (
   <div>
     <Button asChild variant="outline">
-      <Link to="/review" search={{ org }}>
+      <Link to="/annotate" search={{ org }}>
         All panels
       </Link>
     </Button>

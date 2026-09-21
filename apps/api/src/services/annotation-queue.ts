@@ -4,7 +4,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { recordAuditEvent } from '../repositories/audit-events.ts'
 
 /**
- * THE REVIEW QUEUE (ADR-0066, ADR-0061, ADR-0067): which trace an annotator sees next, and
+ * THE ANNOTATION QUEUE (ADR-0066, ADR-0061, ADR-0067): which trace an annotator sees next, and
  * what happens to their answer.
  *
  * Three rules, and they are the whole design:
@@ -22,7 +22,7 @@ import { recordAuditEvent } from '../repositories/audit-events.ts'
  *    about the trace.
  *
  * The item the annotator holds is addressed by the TRACE id, and the payload never contains it
- * (ADR-0067) — see `review.ts` for what crosses the wire.
+ * (ADR-0067) — see `annotate.ts` for what crosses the wire.
  */
 
 /** The sampler this queue is, recorded on every row it produces (ADR-0066). */
@@ -37,18 +37,18 @@ export type QueuePanel = {
   open: boolean
   /** How many traces are still answerable BY THIS PERSON. Zero while locked. */
   remaining: number
-  /** How many this person has reviewed here, across every visit — not this session's count. */
-  reviewed: number
+  /** How many this person has annotated here, across every visit — not this session's count. */
+  annotated: number
 }
 
 /**
  * Every panel in the org, with this annotator's standing in each.
  *
  * Annotators cannot read `GET /internal/panels` — a panel's judges, keys and versions are not
- * theirs (ADR-0064) — so this is the minimum the review surface needs: a name to choose, a
+ * theirs (ADR-0064) — so this is the minimum the annotator surface needs: a name to choose, a
  * count to see progress toward the gate, and how much is left to do.
  */
-export const listReviewPanels = async (
+export const listAnnotationPanels = async (
   db: Database,
   { orgId, annotatorId }: { orgId: string; annotatorId: string },
 ): Promise<QueuePanel[]> => {
@@ -69,7 +69,7 @@ export const listReviewPanels = async (
         WHERE traces.panel_id = "panels"."id"
           AND ${answerableWhere(annotatorId)}
       )`,
-      reviewed: sql<number>`(
+      annotated: sql<number>`(
         SELECT count(*)::int FROM annotations
         WHERE annotations.panel_id = "panels"."id"
           AND annotations.annotator_id = ${annotatorId}
@@ -87,12 +87,13 @@ export const listReviewPanels = async (
 }
 
 /**
- * How many this person has REVIEWED in this panel — for good, not for this visit.
+ * How many this person has ANNOTATED in this panel — for good, not for this visit.
  *
- * Skips are excluded: a skip is an answer we store ("I cannot judge this") but it is not a
- * review, and counting it would let someone run the counter up by pressing S.
+ * Skips are excluded: a skip is an answer we store ("I cannot judge this") but it is not
+ * an annotation of the trace, and counting it would let someone run the counter up by
+ * pressing S.
  */
-const reviewedWhere = (panelId: string, annotatorId: string) => sql`(
+const annotatedWhere = (panelId: string, annotatorId: string) => sql`(
   SELECT count(*)::int FROM annotations
   WHERE annotations.panel_id = ${panelId}
     AND annotations.annotator_id = ${annotatorId}
@@ -126,14 +127,14 @@ export type QueueItem = {
   reference: unknown
   /** What is left AFTER this one, so the surface can say "44 left" honestly. */
   remaining: number
-  /** Reviewed by this person in this panel, ever. Survives leaving and coming back. */
-  reviewed: number
+  /** Annotated by this person in this panel, ever. Survives leaving and coming back. */
+  annotated: number
 }
 
 export type NextResult =
   | { state: 'locked'; traceCount: number }
-  /** `reviewed` rides along so the finished screen can say what the visit was worth. */
-  | { state: 'drained'; reviewed: number }
+  /** `annotated` rides along so the finished screen can say what the visit was worth. */
+  | { state: 'drained'; annotated: number }
   | { state: 'item'; item: QueueItem }
 
 /**
@@ -177,7 +178,7 @@ export const nextItem = async (
         WHERE traces.panel_id = ${panel.id}
           AND ${answerableWhere(annotatorId)}
       )`,
-      reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number),
+      annotated: annotatedWhere(panel.id, annotatorId).mapWith(Number),
     })
     .from(schema.traces)
     .where(and(eq(schema.traces.panelId, panel.id), answerableWhere(annotatorId)))
@@ -189,11 +190,11 @@ export const nextItem = async (
   const item = rows[0]
   if (item === undefined) {
     const [counted] = await db
-      .select({ reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number) })
+      .select({ annotated: annotatedWhere(panel.id, annotatorId).mapWith(Number) })
       .from(schema.panels)
       .where(eq(schema.panels.id, panel.id))
       .limit(1)
-    return { state: 'drained', reviewed: counted?.reviewed ?? 0 }
+    return { state: 'drained', annotated: counted?.annotated ?? 0 }
   }
   // `remaining` is computed before this answer exists, so the count the annotator sees next to
   // the item INCLUDES it. Subtracting here is what makes "44 left" mean "after this one".
@@ -239,7 +240,7 @@ export const previousItem = async (
         WHERE traces.panel_id = ${panel.id}
           AND ${answerableWhere(annotatorId)}
       )`,
-      reviewed: reviewedWhere(panel.id, annotatorId).mapWith(Number),
+      annotated: annotatedWhere(panel.id, annotatorId).mapWith(Number),
     })
     .from(schema.annotations)
     .innerJoin(schema.traces, eq(schema.traces.id, schema.annotations.traceId))

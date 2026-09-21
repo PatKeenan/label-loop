@@ -65,7 +65,7 @@ Alternatives: keep `artifact` + `context` with better docs; add `input` and a se
 
 ## Consequences
 - M5 pauses after phase 3 for a contract-change plan: contract, storage, judge prompts, the
-  onboarding snippet, the trace view, k6 and the seed. Phase 4's review payload is built on
+  onboarding snippet, the trace view, k6 and the seed. Phase 4's annotation payload is built on
   the new shape; r5 is redrawn for it.
 - Size limits move from a string length to a serialized-JSON byte cap.
 - Rendering by shape needs one shared renderer (console and annotator), with markdown rendered

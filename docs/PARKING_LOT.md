@@ -186,7 +186,7 @@ in the organisation. That is a real limitation, not a hypothetical one.
 **Partly, and accidentally, addressed by assignment (2026-09-21).** M5 phase 7 replaces the
 panel-wide queue with assigned annotation sets (ADR-0079), so an annotator now reaches only the
 sets given to them — the sentence above used to end "and M5's annotator will see every panel's
-review queue", which stopped being true. **Assignment is therefore the only thing narrowing an
+annotation queue", which stopped being true. **Assignment is therefore the only thing narrowing an
 annotator to a panel**, confirmed as the deferral arriving early rather than an accident, and
 assigning somebody a set GRANTS read access to those traces in a panel they can otherwise reach
 nothing of.
@@ -203,7 +203,7 @@ each client as a panel in one org, and must be able to keep a member to the pane
 drift. Shape to start from: a member × panel grant (an absent grant meaning every panel, so
 today's orgs are unaffected), checked ALONGSIDE the role capability map. It is not an extension
 of `createAccessControl` (ADR-0068), which answers "may this role create annotations" with no
-notion of which panel. Every panel-scoped read — the panel list, traces, keys, the review queue —
+notion of which panel. Every panel-scoped read — the panel list, traces, keys, the annotation queue —
 filters by it, and `org_invitations` gains the panels an invitation grants.
 
 **Promote earlier than M8 if** a real customer arrives with competing clients in one org.
