@@ -154,7 +154,7 @@ database was disposable; it would not have been once annotations FK to judge ver
 Showcase tenant candidate: a prompt-injection-detection judge (adversarial eval
 set; natural fine-tune target for M7; demonstrates AI-security fluency via product).
 **Demo moment:** annotate 20 real traces in under 5 minutes on camera.
-**Not now:** gamification, inter-annotator stats, multi-annotator consensus.
+**Not now:** gamification, inter-annotator stats. Multi-annotator **consensus METRICS** stay M6; M5 records the overlaps they will be computed from — several annotators may be assigned one annotation set, and where their answers differ the dictator's is the one that counts (ADR-0079, ADR-0081).
 
 ## M6 — Eval harness (Category 2 complete)
 Axial coding pass over failure notes → versioned taxonomy, with each category triaged

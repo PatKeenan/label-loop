@@ -1,7 +1,9 @@
 ---
 date: 2026-09-20T16:00:00Z
 author: claude-code
-status: approved
+status: superseded
+superseded_by: thoughts/shared/plans/approved/2026-09-21_annotation-sets.md
+superseded_at: 2026-09-21T04:10:00Z
 approved_at: 2026-09-20T17:05:00Z
 approved_by: Pat Keenan
 milestone: M5 (phase 7, after "Seeing the annotations")
@@ -11,6 +13,14 @@ research: thoughts/shared/research/2026-09-20_engineer-curated-review-sets.md
 ---
 
 # Review sets: annotation runs against a curated set, not the whole panel
+
+> **SUPERSEDED 2026-09-21 by `approved/2026-09-21_annotation-sets.md`. Do not implement from
+> this file.** Nothing in it was wrong — its three tables, four pickers, 250 cap, assignment
+> model and dictator rule all carried forward, and ADR-0079…0083 stand. Three things changed
+> when the stakeholder met M5 phase 6 in a running console: staff get a read-only console
+> section of their own rather than being routed into the annotator surface (ADR-0084), the
+> product says annotation rather than review (ADR-0085), and a set is done by derivation and
+> archived by a person. It is kept for provenance.
 
 ## Goal
 A developer creates a **review set** — a named selection of a panel's traces, sized by them and
