@@ -15,7 +15,7 @@
     "test": "bun --env-file=../../.env test"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^1.6.1",
+    "@hono/zod-openapi": "^1.6.3",
     "@labelloop/contracts": "workspace:*",
     "@labelloop/db": "workspace:*",
     "@openrouter/sdk": "^1.2.83",
